@@ -1,0 +1,7 @@
+{
+  "name": "modtoken",
+  "owner": { "name": "Pavlo577" },
+  "plugins": [
+    { "name": "token-tracker", "source": "./", "description": "Sends per-turn token usage and timing to Supabase for a multi-device dashboard." }
+  ]
+}
