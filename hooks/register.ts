@@ -50,6 +50,30 @@ export const register: Register = (on, options) => {
   const device = String(options.device ?? 'unnamed')
   let sessionId = 'unknown'
 
+  on('session.start', async ($, e, next) => {
+    await $.command.register({
+      name: 'tracker-setup',
+      description: 'Set token-tracker: /tracker-setup <supabaseUrl> <anonKey> [deviceName]',
+    })
+    return next(e)
+  })
+
+  on('command.run', { command: 'tracker-setup' }, async ($, e) => {
+    const [u, k, d] = e.args.trim().split(/\s+/)
+    if (!u || !k || !/^https:\/\/.+\.supabase\.co\/?$/.test(u)) {
+      return { text: 'Usage: /tracker-setup https://<ref>.supabase.co <anon-key> [device-name]' }
+    }
+    const set = (field: string, value: string) => $.config.set({ key: `token-tracker.${field}`, value })
+    const results = [await set('supabaseUrl', u), await set('supabaseKey', k)]
+    if (d) results.push(await set('device', d))
+    const denied = results.find(r => 'deny' in r && r.deny)
+    return {
+      text: denied
+        ? `token-tracker: not saved (${(denied as { deny: string }).deny})`
+        : `token-tracker: saved${d ? ` for device "${d}"` : ''}. The status line shows "tracker: ok" after the next turn.`,
+    }
+  })
+
   on('classic.SessionStart', async ($, e, next) => {
     sessionId = e.session_id
     await flush($, url, key)
