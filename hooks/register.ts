@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 
 const QUEUE = 'queue'
+const TOKEN = 'deviceToken'
 const MAX_QUEUE = 500
 
 type Row = {
@@ -16,9 +17,14 @@ type Row = {
   is_subagent: boolean
 }
 
-async function flush($: any, url: string, token: string, extra?: Row) {
-  if (!url || !token) {
-    $.ui.status('tracker: set supabaseUrl and deviceToken')
+async function flush($: any, url: string, extra?: Row) {
+  if (!url) {
+    $.ui.status('tracker: run /tracker-setup <url>')
+    return
+  }
+  const token = (await $.store.get(TOKEN)) as string | undefined
+  if (!token) {
+    $.ui.status('tracker: not linked, run /tracker-link <code>')
     return
   }
   const queued = ((await $.store.get(QUEUE)) as Row[] | undefined) ?? []
@@ -31,7 +37,13 @@ async function flush($: any, url: string, token: string, extra?: Row) {
       body: JSON.stringify(rows),
     })
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
-    $.ui.status(r.ok ? 'tracker: ok' : `tracker: HTTP ${r.status}, ${rows.length} queued`)
+    $.ui.status(
+      r.ok
+        ? 'tracker: ok'
+        : r.status === 401
+          ? 'tracker: device revoked or unknown, run /tracker-link <code>'
+          : `tracker: HTTP ${r.status}, ${rows.length} queued`,
+    )
   } catch {
     await $.store.set(QUEUE, rows.slice(-MAX_QUEUE))
     $.ui.status(`tracker: offline, ${rows.length} queued`)
@@ -40,13 +52,16 @@ async function flush($: any, url: string, token: string, extra?: Row) {
 
 export const register: Register = (on, options) => {
   const url = String(options.supabaseUrl ?? '').replace(/\/$/, '')
-  const token = String(options.deviceToken ?? '')
   let sessionId = 'unknown'
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'tracker-setup',
-      description: 'Set token-tracker: /tracker-setup <supabaseUrl>',
+      description: 'Set the token-tracker backend: /tracker-setup <supabaseUrl>',
+    })
+    await $.command.register({
+      name: 'tracker-link',
+      description: 'Link this device to your account: /tracker-link <code from the site>',
     })
     return next(e)
   })
@@ -54,32 +69,49 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'tracker-setup' }, async ($, e) => {
     const [u] = e.args.trim().split(/\s+/)
     if (!u || !/^https:\/\/.+\.supabase\.co\/?$/.test(u)) {
-      return { text: 'Usage: /tracker-setup https://<ref>.supabase.co ' }
+      return { text: 'Usage: /tracker-setup https://<ref>.supabase.co' }
     }
-    const done: string[] = []
-    for (const [field, value] of [['supabaseUrl', u]] as const) {
-      if (!value) continue
-      try {
-        const r = await $.config.set({ key: `token-tracker.${field}`, value })
-        if ('deny' in r && r.deny) return { text: `token-tracker: ${field} not saved (${r.deny})` }
-        done.push(field)
-      } catch (err) {
-        return { text: `token-tracker: ${field} failed (${String((err as Error)?.message ?? err).slice(0, 200)}); saved so far: ${done.join(', ') || 'nothing'}` }
-      }
+    try {
+      const r = await $.config.set({ key: 'token-tracker.supabaseUrl', value: u })
+      if ('deny' in r && r.deny) return { text: `token-tracker: not saved (${r.deny})` }
+    } catch (err) {
+      return { text: `token-tracker: not saved (${String((err as Error)?.message ?? err).slice(0, 200)})` }
     }
-    return { text: `token-tracker: saved ${done.join(', ')}. Put your device token in deviceToken (settings.json or the install screen); the status line shows "tracker: ok" after the next turn.` }
+    return { text: 'token-tracker: backend saved. Next: /tracker-link <code from the site>.' }
   }).catch(() => ({ text: 'token-tracker: setup failed unexpectedly' }))
+
+  on('command.run', { command: 'tracker-link' }, async ($, e) => {
+    const code = e.args.trim()
+    if (!url) return { text: 'token-tracker: run /tracker-setup <supabaseUrl> first.' }
+    if (!code) return { text: 'Usage: /tracker-link <code>. Create a code on the site (Devices → Add device).' }
+    try {
+      const r = await $.http.fetch(`${url}/functions/v1/link`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      if (r.status === 403) return { text: 'token-tracker: the code is wrong, expired or already used. Create a new one on the site.' }
+      if (!r.ok) return { text: `token-tracker: linking failed (HTTP ${r.status}).` }
+      const out = JSON.parse(r.text) as { token?: string; device?: string }
+      if (!out.token) return { text: 'token-tracker: linking failed (unexpected answer).' }
+      await $.store.set(TOKEN, out.token)
+      $.ui.status('tracker: linked')
+      return { text: `token-tracker: linked as "${out.device}". Usage will be sent after each turn.` }
+    } catch {
+      return { text: 'token-tracker: could not reach the backend. Check the URL and your connection.' }
+    }
+  }).catch(() => ({ text: 'token-tracker: linking failed unexpectedly' }))
 
   on('classic.SessionStart', async ($, e, next) => {
     sessionId = e.session_id
-    await flush($, url, token)
+    await flush($, url)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     const ran = await next(e)
     if (e.usage) {
-      await flush($, url, token, {
+      await flush($, url, {
         session_id: sessionId,
         turn_id: e.turnId,
         ts: new Date(await $.clock.now()).toISOString(),

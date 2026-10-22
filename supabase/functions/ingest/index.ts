@@ -16,7 +16,7 @@ Deno.serve(async req => {
   const token = req.headers.get('x-device-token') ?? ''
   const { data: dev } = await db
     .from('devices')
-    .select('name')
+    .select('id, user_id')
     .eq('token_hash', await sha256(token))
     .eq('revoked', false)
     .maybeSingle()
@@ -27,9 +27,10 @@ Deno.serve(async req => {
     return new Response('bad request', { status: 400 })
   }
 
-  // The device name comes from the token, never from the client.
+  // Owner and device come from the token, never from the client.
   const rows = body.map((r: Record<string, unknown>) => ({
-    device: dev.name,
+    user_id: dev.user_id,
+    device_id: dev.id,
     session_id: str(r.session_id),
     turn_id: str(r.turn_id),
     ts: new Date(str(r.ts)).toISOString(),
@@ -42,6 +43,6 @@ Deno.serve(async req => {
     is_subagent: r.is_subagent === true,
   }))
 
-  const { error } = await db.from('token_events').upsert(rows, { onConflict: 'device,turn_id', ignoreDuplicates: true })
+  const { error } = await db.from('token_events').upsert(rows, { onConflict: 'device_id,turn_id', ignoreDuplicates: true })
   return error ? new Response('db error', { status: 500 }) : new Response(null, { status: 204 })
 })
