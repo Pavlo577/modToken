@@ -18,7 +18,10 @@ type Row = {
 }
 
 async function flush($: any, url: string, key: string, extra?: Row) {
-  if (!url || !key) return
+  if (!url || !key) {
+    $.ui.status('tracker: set supabaseUrl and supabaseKey')
+    return
+  }
   const queued = ((await $.store.get(QUEUE)) as Row[] | undefined) ?? []
   const rows = extra ? [...queued, extra] : queued
   if (rows.length === 0) return
@@ -34,8 +37,10 @@ async function flush($: any, url: string, key: string, extra?: Row) {
       body: JSON.stringify(rows),
     })
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
+    $.ui.status(r.ok ? 'tracker: ok' : `tracker: HTTP ${r.status}, ${rows.length} queued`)
   } catch {
     await $.store.set(QUEUE, rows.slice(-MAX_QUEUE))
+    $.ui.status(`tracker: offline, ${rows.length} queued`)
   }
 }
 
