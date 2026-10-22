@@ -4,7 +4,6 @@ const QUEUE = 'queue'
 const MAX_QUEUE = 500
 
 type Row = {
-  device: string
   session_id: string
   turn_id: string
   ts: string
@@ -17,23 +16,18 @@ type Row = {
   is_subagent: boolean
 }
 
-async function flush($: any, url: string, key: string, extra?: Row) {
-  if (!url || !key) {
-    $.ui.status('tracker: set supabaseUrl and supabaseKey')
+async function flush($: any, url: string, token: string, extra?: Row) {
+  if (!url || !token) {
+    $.ui.status('tracker: set supabaseUrl and deviceToken')
     return
   }
   const queued = ((await $.store.get(QUEUE)) as Row[] | undefined) ?? []
   const rows = extra ? [...queued, extra] : queued
   if (rows.length === 0) return
   try {
-    const r = await $.http.fetch(`${url}/rest/v1/token_events?on_conflict=device,turn_id`, {
+    const r = await $.http.fetch(`${url}/functions/v1/ingest`, {
       method: 'POST',
-      headers: {
-        apikey: key,
-        authorization: `Bearer ${key}`,
-        'content-type': 'application/json',
-        prefer: 'resolution=ignore-duplicates,return=minimal',
-      },
+      headers: { 'x-device-token': token, 'content-type': 'application/json' },
       body: JSON.stringify(rows),
     })
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
@@ -46,25 +40,24 @@ async function flush($: any, url: string, key: string, extra?: Row) {
 
 export const register: Register = (on, options) => {
   const url = String(options.supabaseUrl ?? '').replace(/\/$/, '')
-  const key = String(options.supabaseKey ?? '')
-  const device = String(options.device ?? 'unnamed')
+  const token = String(options.deviceToken ?? '')
   let sessionId = 'unknown'
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'tracker-setup',
-      description: 'Set token-tracker: /tracker-setup <supabaseUrl> <anonKey> [deviceName]',
+      description: 'Set token-tracker: /tracker-setup <supabaseUrl>',
     })
     return next(e)
   })
 
   on('command.run', { command: 'tracker-setup' }, async ($, e) => {
-    const [u, k, d] = e.args.trim().split(/\s+/)
-    if (!u || !k || !/^https:\/\/.+\.supabase\.co\/?$/.test(u)) {
-      return { text: 'Usage: /tracker-setup https://<ref>.supabase.co <anon-key> [device-name]' }
+    const [u] = e.args.trim().split(/\s+/)
+    if (!u || !/^https:\/\/.+\.supabase\.co\/?$/.test(u)) {
+      return { text: 'Usage: /tracker-setup https://<ref>.supabase.co ' }
     }
     const done: string[] = []
-    for (const [field, value] of [['supabaseUrl', u], ['supabaseKey', k], ['device', d]] as const) {
+    for (const [field, value] of [['supabaseUrl', u]] as const) {
       if (!value) continue
       try {
         const r = await $.config.set({ key: `token-tracker.${field}`, value })
@@ -74,20 +67,19 @@ export const register: Register = (on, options) => {
         return { text: `token-tracker: ${field} failed (${String((err as Error)?.message ?? err).slice(0, 200)}); saved so far: ${done.join(', ') || 'nothing'}` }
       }
     }
-    return { text: `token-tracker: saved ${done.join(', ')}. The status line shows "tracker: ok" after the next turn.` }
+    return { text: `token-tracker: saved ${done.join(', ')}. Put your device token in deviceToken (settings.json or the install screen); the status line shows "tracker: ok" after the next turn.` }
   }).catch(() => ({ text: 'token-tracker: setup failed unexpectedly' }))
 
   on('classic.SessionStart', async ($, e, next) => {
     sessionId = e.session_id
-    await flush($, url, key)
+    await flush($, url, token)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     const ran = await next(e)
     if (e.usage) {
-      await flush($, url, key, {
-        device,
+      await flush($, url, token, {
         session_id: sessionId,
         turn_id: e.turnId,
         ts: new Date(await $.clock.now()).toISOString(),
