@@ -63,16 +63,19 @@ export const register: Register = (on, options) => {
     if (!u || !k || !/^https:\/\/.+\.supabase\.co\/?$/.test(u)) {
       return { text: 'Usage: /tracker-setup https://<ref>.supabase.co <anon-key> [device-name]' }
     }
-    const set = (field: string, value: string) => $.config.set({ key: `token-tracker.${field}`, value })
-    const results = [await set('supabaseUrl', u), await set('supabaseKey', k)]
-    if (d) results.push(await set('device', d))
-    const denied = results.find(r => 'deny' in r && r.deny)
-    return {
-      text: denied
-        ? `token-tracker: not saved (${(denied as { deny: string }).deny})`
-        : `token-tracker: saved${d ? ` for device "${d}"` : ''}. The status line shows "tracker: ok" after the next turn.`,
+    const done: string[] = []
+    for (const [field, value] of [['supabaseUrl', u], ['supabaseKey', k], ['device', d]] as const) {
+      if (!value) continue
+      try {
+        const r = await $.config.set({ key: `token-tracker.${field}`, value })
+        if ('deny' in r && r.deny) return { text: `token-tracker: ${field} not saved (${r.deny})` }
+        done.push(field)
+      } catch (err) {
+        return { text: `token-tracker: ${field} failed (${String((err as Error)?.message ?? err).slice(0, 200)}); saved so far: ${done.join(', ') || 'nothing'}` }
+      }
     }
-  })
+    return { text: `token-tracker: saved ${done.join(', ')}. The status line shows "tracker: ok" after the next turn.` }
+  }).catch(() => ({ text: 'token-tracker: setup failed unexpectedly' }))
 
   on('classic.SessionStart', async ($, e, next) => {
     sessionId = e.session_id
