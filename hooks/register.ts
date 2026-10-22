@@ -31,7 +31,7 @@ async function flush($: any, url: string, extra?: Row) {
   const rows = extra ? [...queued, extra] : queued
   if (rows.length === 0) return
   try {
-    const r = await $.http.fetch(`${url}/functions/v1/ingest`, {
+    const r = await $.http.fetch(`${url}/api/ingest`, {
       method: 'POST',
       headers: { 'x-device-token': token, 'content-type': 'application/json' },
       body: JSON.stringify(rows),
@@ -51,13 +51,13 @@ async function flush($: any, url: string, extra?: Row) {
 }
 
 export const register: Register = (on, options) => {
-  const url = String(options.supabaseUrl ?? '').replace(/\/$/, '')
+  const url = String(options.backendUrl ?? '').replace(/\/$/, '')
   let sessionId = 'unknown'
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'tracker-setup',
-      description: 'Set the token-tracker backend: /tracker-setup <supabaseUrl>',
+      description: 'Set the token-tracker site: /tracker-setup <https://your-site>',
     })
     await $.command.register({
       name: 'tracker-link',
@@ -68,11 +68,11 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'tracker-setup' }, async ($, e) => {
     const [u] = e.args.trim().split(/\s+/)
-    if (!u || !/^https:\/\/.+\.supabase\.co\/?$/.test(u)) {
-      return { text: 'Usage: /tracker-setup https://<ref>.supabase.co' }
+    if (!u || !/^https:\/\/[^\s/]+\/?$/.test(u)) {
+      return { text: 'Usage: /tracker-setup https://<your-site>' }
     }
     try {
-      const r = await $.config.set({ key: 'token-tracker.supabaseUrl', value: u })
+      const r = await $.config.set({ key: 'token-tracker.backendUrl', value: u })
       if ('deny' in r && r.deny) return { text: `token-tracker: not saved (${r.deny})` }
     } catch (err) {
       return { text: `token-tracker: not saved (${String((err as Error)?.message ?? err).slice(0, 200)})` }
@@ -82,10 +82,10 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'tracker-link' }, async ($, e) => {
     const code = e.args.trim()
-    if (!url) return { text: 'token-tracker: run /tracker-setup <supabaseUrl> first.' }
-    if (!code) return { text: 'Usage: /tracker-link <code>. Create a code on the site (Devices → Add device).' }
+    if (!url) return { text: 'token-tracker: run /tracker-setup <site url> first.' }
+    if (!code) return { text: 'Usage: /tracker-link <code>. Create a code on the site (Add device).' }
     try {
-      const r = await $.http.fetch(`${url}/functions/v1/link`, {
+      const r = await $.http.fetch(`${url}/api/link`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ code }),

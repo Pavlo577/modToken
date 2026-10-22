@@ -1,0 +1,13 @@
+{
+  "name": "modtoken",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "modtoken", "database_id": "REPLACE_WITH_D1_ID" }
+  ],
+  "vars": {
+    "TEAM_DOMAIN": "https://REPLACE.cloudflareaccess.com",
+    "POLICY_AUD": "REPLACE_WITH_ACCESS_APP_AUD"
+  }
+}

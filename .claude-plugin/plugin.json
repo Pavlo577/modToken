@@ -1,12 +1,12 @@
 {
   "name": "token-tracker",
-  "version": "0.4.0",
-  "description": "Sends per-turn token usage and timing to Supabase so several devices roll up into one dashboard.",
+  "version": "0.5.0",
+  "description": "Sends per-turn token usage and timing to your token-tracker site so several devices roll up under one account.",
   "userConfig": {
-    "supabaseUrl": {
+    "backendUrl": {
       "type": "string",
-      "title": "Backend URL",
-      "description": "https://<ref>.supabase.co",
+      "title": "Site URL",
+      "description": "https://<your-site>",
       "default": ""
     }
   }

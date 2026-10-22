@@ -1,16 +1,31 @@
 # token-tracker
 
-A Claude Code mod that records token usage and timing for every turn (session, model, input/output/cache tokens, duration) and sends it to a Supabase backend, so several devices roll up under one account. Devices are linked with a one-time code created on the site (sign-in by email); each device keeps its own revocable token.
+A Claude Code mod that records token usage and timing for every turn (session, model, input/output/cache tokens, duration) and sends it to your own Cloudflare Worker, so several devices roll up under one account. The site (sign-in by email, invite only) shows the statistics and creates one-time codes that link devices.
 
-## Backend setup (once, by the owner)
-1. Run `schema.sql` in the Supabase SQL editor.
-2. Deploy both functions without JWT checks: `supabase functions deploy ingest --no-verify-jwt` and `supabase functions deploy link --no-verify-jwt`.
-3. Enable email sign-in in Supabase Auth.
+```
+device (mod) ──/api/ingest──▶ Worker ──▶ D1
+browser ──Cloudflare Access (email PIN)──▶ /admin  (devices, dashboard)
+```
 
-## Using it
-1. Install: `/plugin marketplace add Pavlo577/modToken`, then `/plugin install token-tracker@modtoken`.
-2. `/tracker-setup https://<ref>.supabase.co` (once per device).
-3. On the site: sign in, Devices → Add device, copy the one-time code (valid 10 minutes).
-4. On the device: `/tracker-link <code>`. A code links one device only.
+## Deploy the backend (once, by the owner)
+```bash
+cd worker && npm install
+npx wrangler d1 create modtoken            # put the printed database_id into wrangler.jsonc
+npx wrangler d1 execute modtoken --remote --file=schema.sql
+npx wrangler deploy
+```
+Then protect the admin in Cloudflare Zero Trust → Access → Applications → Self-hosted:
+- Application paths: `<your-worker-host>/admin*` and `<your-worker-host>/api/admin*` (**not** `/api/ingest` and `/api/link`: devices authenticate with their own token).
+- Login method: One-time PIN. Policy: Allow, Emails = the people you invite (add an email to invite someone).
+- Copy the application's **Audience (AUD) tag** and your team domain (`https://<team>.cloudflareaccess.com`) into `TEAM_DOMAIN` and `POLICY_AUD` in `wrangler.jsonc`, then `npx wrangler deploy` again.
 
-The status line shows `tracker: ok` after an upload. Failed uploads are queued and retried at the next session start.
+## Use it
+1. Install the mod: `/plugin marketplace add Pavlo577/modToken`, then `/plugin install token-tracker@modtoken`.
+2. `/tracker-setup https://<your-worker-host>` (once per device).
+3. On the site: Devices → create a code (valid 10 minutes, links one device only).
+4. On the device: `/tracker-link <code>`.
+
+The status line shows `tracker: ok` after an upload. Failed uploads are queued and retried at the next session start. A device can be revoked on the site at any time.
+
+## Tests
+`worker/test/smoke.sh` runs against `wrangler dev` (put `DEV_EMAIL=me@example.com` in `worker/.dev.vars` first); `smoke.sh --gate` runs against a dev server started without it and checks that the admin API refuses unauthenticated and forged requests.

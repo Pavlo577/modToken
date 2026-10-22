@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Tracker</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4; --surface: #fcfcfb; --line: #e4e3de; --grid: #ecebe7;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --accent: #2a78d6; --danger: #c43d3c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --line: #2c2c2a; --grid: #242422;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --accent: #3987e5; --danger: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111110; --surface: #1a1a19; --line: #2c2c2a; --grid: #242422;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --accent: #3987e5; --danger: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+h1 { font-size: 20px; margin: 0; }
+.who { color: var(--muted); font-size: 13px; }
+nav { display: flex; gap: 6px; }
+button, select, input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+button { cursor: pointer; }
+button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--danger); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.card h2 { font-size: 14px; margin: 0 0 2px; }
+.card .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.tile .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile .l { color: var(--text-2); font-size: 12.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.cols { display: flex; align-items: flex-end; gap: 3px; height: 180px; border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(to top, transparent 0, transparent 44px, var(--grid) 44px, var(--grid) 45px); }
+.col { flex: 1; min-width: 2px; display: flex; flex-direction: column-reverse; height: 100%; justify-content: flex-start; position: relative; }
+.col:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.seg { border-top: 2px solid var(--surface); }
+.seg:last-child { border-radius: 4px 4px 0 0; }
+.axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; margin-top: 4px; }
+.rows { display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: minmax(80px, 160px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.track { height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
+.track b { display: block; height: 100%; background: var(--s1); border-radius: 0 5px 5px 0; }
+.row .val { font-variant-numeric: tabular-nums; color: var(--text); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-2); font-weight: 600; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--text); color: var(--bg); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.5; display: none; max-width: 240px; }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.code { font: 600 28px/1 ui-monospace, monospace; letter-spacing: 3px; padding: 12px 0; }
+.dev { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.dev:last-child { border-bottom: 0; }
+.dev small { color: var(--muted); display: block; }
+.tag { font-size: 11.5px; color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 1px 6px; }
+form { display: flex; gap: 8px; flex-wrap: wrap; }
+form input { flex: 1; min-width: 180px; }
+.hide { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>Token Tracker</h1><div class="who" id="who">…</div></div>
+    <nav>
+      <button id="tab-dash" aria-pressed="true">Статистика</button>
+      <button id="tab-dev" aria-pressed="false">Пристрої</button>
+    </nav>
+  </header>
+
+  <section id="dash">
+    <div style="margin-bottom:12px">
+      <select id="range" aria-label="Період">
+        <option value="7">7 днів</option><option value="30" selected>30 днів</option><option value="90">90 днів</option>
+      </select>
+      <select id="measure" aria-label="Що показувати на графіку днів">
+        <option value="new" selected>Графік: без кешу</option><option value="all">Графік: з кешем</option>
+      </select>
+    </div>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <h2>Токени по днях</h2>
+      <p class="sub">Дні та години — за UTC. Наведи на стовпець, щоб побачити цифри.</p>
+      <div class="legend" id="legend"></div>
+      <div class="cols" id="days" role="img" aria-label="Токени по днях"></div>
+      <div class="axis" id="days-axis"></div>
+      <p style="margin:12px 0 0"><button id="toggle-table" aria-pressed="false">Показати таблицею</button></p>
+      <div id="table" class="hide"></div>
+    </div>
+
+    <div class="card">
+      <h2>Коли використовується</h2>
+      <p class="sub">Вихідні токени по годинах доби (UTC)</p>
+      <div class="cols" id="hours" style="height:120px" role="img" aria-label="Токени по годинах доби"></div>
+      <div class="axis"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+    </div>
+
+    <div class="two">
+      <div class="card"><h2>За моделями</h2><p class="sub">Вихідні токени</p><div class="rows" id="models"></div></div>
+      <div class="card"><h2>За пристроями</h2><p class="sub">Вихідні токени</p><div class="rows" id="devices-bars"></div></div>
+    </div>
+  </section>
+
+  <section id="dev" class="hide">
+    <div class="card">
+      <h2>Додати пристрій</h2>
+      <p class="sub">Створи код, потім на пристрої виконай <b>/tracker-link КОД</b>. Код діє 10 хвилин і прив'язує лише один пристрій.</p>
+      <form id="new-code"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button type="submit">Створити код</button></form>
+      <div id="code-box" class="hide"><div class="code" id="code"></div><div class="sub" id="code-note"></div></div>
+    </div>
+    <div class="card"><h2>Мої пристрої</h2><div id="dev-list"></div></div>
+  </section>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+const $ = id => document.getElementById(id)
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag)
+  for (const [k, v] of Object.entries(props)) k === 'style' ? (n.style.cssText = v) : k.startsWith('on') ? n.addEventListener(k.slice(2), v) : n.setAttribute(k, v)
+  for (const c of kids) n.append(c)
+  return n
+}
+const fmt = n => { n = Number(n) || 0; return n >= 1e9 ? (n / 1e9).toFixed(2) + ' млрд' : n >= 1e6 ? (n / 1e6).toFixed(2) + ' млн' : n >= 1e3 ? (n / 1e3).toFixed(1) + ' тис' : String(n) }
+const dur = ms => { const m = Math.round((Number(ms) || 0) / 60000); return m >= 60 ? Math.floor(m / 60) + ' год ' + (m % 60) + ' хв' : m + ' хв' }
+const api = async (path, opts) => {
+  const r = await fetch('/api/admin' + path, opts)
+  if (!r.ok) throw new Error(await r.text() || r.status)
+  return r.status === 204 ? null : r.json()
+}
+const SERIES = [
+  ['output', 'Вихідні', 'var(--s1)'], ['input', 'Вхідні', 'var(--s2)'],
+  ['cache_read', 'Кеш (читання)', 'var(--s3)'], ['cache_creation', 'Кеш (запис)', 'var(--s4)'],
+]
+
+const tip = $('tip')
+function showTip(e, lines) {
+  tip.replaceChildren(...lines.flatMap((l, i) => [i ? el('br') : '', document.createTextNode(l)]))
+  tip.style.display = 'block'
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8)
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = (e.clientY + 14) + 'px'
+}
+const hideTip = () => { tip.style.display = 'none' }
+const hover = (node, lines) => { node.addEventListener('mousemove', e => showTip(e, lines)); node.addEventListener('mouseleave', hideTip) }
+
+function bars(container, rows, key) {
+  const max = Math.max(1, ...rows.map(r => r[key]))
+  container.replaceChildren(...(rows.length ? rows : [null]).map(r => r
+    ? el('div', { class: 'row' }, el('span', { class: 'name', title: r.label }, r.label),
+        el('div', { class: 'track' }, el('b', { style: `width:${(r[key] / max) * 100}%` })), el('span', { class: 'val' }, fmt(r[key])))
+    : el('div', { class: 'empty' }, 'Поки немає даних')))
+}
+
+let lastStats = null
+const activeSeries = () => ($('measure').value === 'all' ? SERIES : SERIES.slice(0, 2))
+
+function renderStats(s) {
+  lastStats = s
+  const ACTIVE = activeSeries()
+  const sum = k => s.byDay.reduce((a, d) => a + (Number(d[k]) || 0), 0)
+  const turns = sum('turns')
+  $('tiles').replaceChildren(...[
+    ['Вихідні токени', fmt(sum('output'))], ['Вхідні токени', fmt(sum('input'))],
+    ['Кеш (читання + запис)', fmt(sum('cache_read') + sum('cache_creation'))],
+    ['Ходів', String(turns)], ['Час відповідей', dur(sum('duration_ms'))],
+  ].map(([l, v]) => el('div', { class: 'tile' }, el('div', { class: 'v' }, v), el('div', { class: 'l' }, l))))
+
+  $('legend').replaceChildren(...ACTIVE.map(([, name, color]) => el('span', {}, el('i', { style: `background:${color}` }), name)))
+
+  // one column per calendar day, empty days kept so gaps are visible
+  const byDay = new Map(s.byDay.map(d => [d.day, d]))
+  const days = []
+  for (let i = s.days - 1; i >= 0; i--) days.push(new Date(Date.now() - i * 864e5).toISOString().slice(0, 10))
+  const total = d => ACTIVE.reduce((a, [k]) => a + (Number(d?.[k]) || 0), 0)
+  const max = Math.max(1, ...days.map(d => total(byDay.get(d))))
+  $('days').replaceChildren(...days.map(day => {
+    const d = byDay.get(day)
+    const col = el('div', { class: 'col' }, ...ACTIVE.map(([k, , color]) =>
+      el('div', { class: 'seg', style: `height:${((Number(d?.[k]) || 0) / max) * 100}%;background:${color}` })))
+    hover(col, [day, ...SERIES.map(([k, name]) => `${name}: ${fmt(d?.[k])}`), `Ходів: ${d?.turns ?? 0}`])
+    return col
+  }))
+  $('days-axis').replaceChildren(...[days[0], days[Math.floor(days.length / 2)], days[days.length - 1]].map(t => el('span', {}, t)))
+
+  const table = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'День'), ...SERIES.map(([, n]) => el('th', {}, n)), el('th', {}, 'Ходів'))),
+    el('tbody', {}, ...s.byDay.slice().reverse().map(d => el('tr', {}, el('td', {}, d.day), ...SERIES.map(([k]) => el('td', {}, fmt(d[k]))), el('td', {}, String(d.turns))))))
+  $('table').replaceChildren(table)
+
+  const hours = Array.from({ length: 24 }, (_, h) => ({ h, v: Number(s.byHour.find(x => x.hour === h)?.output) || 0 }))
+  const hmax = Math.max(1, ...hours.map(x => x.v))
+  $('hours').replaceChildren(...hours.map(({ h, v }) => {
+    const col = el('div', { class: 'col' }, el('div', { class: 'seg', style: `height:${(v / hmax) * 100}%;background:var(--s1)` }))
+    hover(col, [`${h}:00–${h}:59`, `Вихідні: ${fmt(v)}`])
+    return col
+  }))
+
+  bars($('models'), s.byModel.map(m => ({ label: m.model, output: Number(m.output) || 0 })), 'output')
+  bars($('devices-bars'), s.byDevice.map(m => ({ label: m.device, output: Number(m.output) || 0 })), 'output')
+}
+
+async function loadStats() {
+  try { renderStats(await api('/stats?days=' + $('range').value)) }
+  catch (e) { $('tiles').replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) }
+}
+
+async function loadDevices() {
+  const list = await api('/devices')
+  $('dev-list').replaceChildren(...(list.length ? list.map(d => el('div', { class: 'dev' },
+    el('div', {}, el('b', {}, d.name), ' ', d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
+      el('small', {}, 'Додано ' + d.created_at.slice(0, 10) + (d.last_seen ? ' · остання активність ' + d.last_seen.replace('T', ' ').slice(0, 16) + ' UTC' : ' · ще не надсилав дані'))),
+    d.revoked ? '' : el('button', { class: 'danger', onclick: async () => {
+      if (confirm(`Відкликати «${d.name}»? Пристрій перестане надсилати дані.`)) { await api('/devices/' + d.id, { method: 'DELETE' }); loadDevices() }
+    } }, 'Відкликати'))) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
+}
+
+let timer
+$('new-code').addEventListener('submit', async e => {
+  e.preventDefault()
+  try {
+    const { code, expires_at } = await api('/codes', { method: 'POST', body: JSON.stringify({ name: $('dev-name').value }) })
+    $('code').textContent = code
+    $('code-box').classList.remove('hide')
+    clearInterval(timer)
+    const tick = () => {
+      const left = Math.max(0, Math.round((new Date(expires_at) - Date.now()) / 1000))
+      $('code-note').textContent = left ? `На пристрої: /tracker-link ${code} · діє ще ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'Код прострочено. Створи новий.'
+      if (!left) clearInterval(timer)
+    }
+    tick(); timer = setInterval(tick, 1000)
+    $('dev-name').value = ''
+  } catch (err) { alert(err.message === 'too many open codes' ? 'Забагато відкритих кодів, зачекай або використай наявні.' : 'Не вдалося створити код: ' + err.message) }
+})
+
+function tab(name) {
+  $('dash').classList.toggle('hide', name !== 'dash'); $('dev').classList.toggle('hide', name !== 'dev')
+  $('tab-dash').setAttribute('aria-pressed', name === 'dash'); $('tab-dev').setAttribute('aria-pressed', name === 'dev')
+  name === 'dev' ? loadDevices() : loadStats()
+}
+$('tab-dash').onclick = () => tab('dash'); $('tab-dev').onclick = () => tab('dev')
+$('range').onchange = loadStats
+$('measure').onchange = () => lastStats && renderStats(lastStats)
+$('toggle-table').onclick = () => {
+  const on = $('toggle-table').getAttribute('aria-pressed') !== 'true'
+  $('toggle-table').setAttribute('aria-pressed', on); $('toggle-table').textContent = on ? 'Сховати таблицю' : 'Показати таблицею'
+  $('table').classList.toggle('hide', !on)
+}
+api('/me').then(m => { $('who').textContent = m.email }).catch(() => { $('who').textContent = 'не вдалося визначити користувача' })
+loadStats()
+</script>
+</body>
+</html>
