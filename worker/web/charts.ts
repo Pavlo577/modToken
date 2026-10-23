@@ -262,6 +262,8 @@ export function calendarHeatmap(container: HTMLElement, opts: CalendarOptions): 
 
 export interface HeatCell {
   value: number
+  /** Short figure written on big calendar squares. */
+  text?: string
   tip: TipRow[]
 }
 
@@ -291,7 +293,8 @@ export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
     const width = labelW + cols * (cw + gap)
     const height = topH + rows * (ch + gap)
     const root = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img' })
-    for (let c = 0; c < cols; c++) {
+    const step = cw < 22 ? 3 : cw < 30 ? 2 : 1
+    for (let c = 0; c < cols; c += step) {
       const label = opts.colLabel(c)
       if (label != null) root.append(svg('text', { x: labelW + c * (cw + gap), y: 11, class: 'ax' }, label))
     }
@@ -311,7 +314,7 @@ export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
 
 /** Week x hour grid: cells[dow][hour], Monday first. */
 export const hourGrid = (container: HTMLElement, opts: { cells: HeatCell[][]; tipTitle: (dow: number, hour: number) => string }): void =>
-  heatGrid(container, { cells: opts.cells, rowLabel: r => DOW[r], colLabel: h => (h % 3 === 0 ? String(h) : null), tipTitle: opts.tipTitle })
+  heatGrid(container, { cells: opts.cells, rowLabel: r => DOW[r], colLabel: h => String(h), tipTitle: opts.tipTitle })
 
 /** Puts a freshly drawn chart into its container, replacing the previous drawing but keeping the tooltip. */
 function place(container: HTMLElement, root: Element): void {
@@ -356,15 +359,16 @@ export function monthCalendars(container: HTMLElement, opts: MonthCalendarsOptio
     const grid = el('div', { class: 'mgrid' }, ...DOW.map(n => el('span', { class: 'mh' }, n)))
     const first = m + '-01'
     for (let i = 0; i < dayOfWeek(first); i++) grid.append(el('span', {}))
+    const big = months.length === 1
     for (let d = first; d.slice(0, 7) === m; d = addDays(d, 1)) {
       if (d < from || d > to) { grid.append(el('span', { class: 'md off' }, String(+d.slice(8)))); continue }
       const c = days.get(d)
-      const cell = el('span', { class: `md l${level(c?.value ?? 0)}` }, String(+d.slice(8)))
+      const cell = el('span', { class: `md l${level(c?.value ?? 0)}` }, String(+d.slice(8)), big && c?.text ? el('small', {}, c.text) : '')
       cell.addEventListener('pointerenter', () => showAt(host, cell, opts.tipTitle(d), c?.tip ?? []))
       cell.addEventListener('pointerleave', () => tipOf(host).hide())
       grid.append(cell)
     }
-    return el('div', { class: 'mcal' }, el('h3', {}, opts.monthTitle(m)), grid)
+    return el('div', { class: months.length === 1 ? 'mcal big' : 'mcal' }, el('h3', {}, opts.monthTitle(m)), grid)
   })
   container.replaceChildren(el('div', { class: 'mcals' }, ...blocks))
 }

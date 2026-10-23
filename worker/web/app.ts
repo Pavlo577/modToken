@@ -13,7 +13,11 @@ type Metric = 'io' | 'all' | 'cost'
 
 interface State {
   tab: Tab
-  range: string // 'today' | '7' | '30' | '90' | '365' | 'custom'
+  range: string // 'today' | 'week' | 'month' | 'year' | 'custom'
+  /** A day inside the shown week / month / year; '' means today. Not saved. */
+  anchor: string
+  /** Year view of the activity card: month tiles or month calendars; '' = by length of the period. */
+  actMode: '' | 'min' | 'detail'
   from: string
   to: string
   device: string
@@ -30,6 +34,8 @@ interface Range {
   to: number
   len: number
   prevFrom: number
+  /** Text for the pager: which week / month / year is shown. */
+  label: string
 }
 
 interface Data {
@@ -46,9 +52,11 @@ const iso = (ms: number): string => new Date(ms).toISOString()
 
 let saved: Partial<State> = {}
 try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<State> } catch { /* private mode: start with defaults */ }
-const state: State = { range: '30', from: '', to: '', device: '', view: 'line', metric: 'io', day: '', ...saved, tab: 'overview' }
+const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
+const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', day: '', actMode: '', ...saved, anchor: '', tab: 'overview' }
+state.range = OLD_RANGES[state.range] ?? state.range
 const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, actMode: state.actMode })) } catch { /* ignore */ }
 }
 
 let prices: Prices | null = null
@@ -66,29 +74,49 @@ const q = (a: number, b: number): string => `from=${encodeURIComponent(iso(a))}&
 const need = (): Data => { if (!data) throw new Error('data not loaded'); return data }
 
 // ---------- period
+const monthName = (month: string): string => new Intl.DateTimeFormat('uk-UA', { month: 'long', timeZone: 'UTC' }).format(Date.parse(month + '-15T12:00:00Z'))
+const lastOfMonth = (month: string): string => new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).toISOString().slice(0, 10)
+
 function currentRange(): Range {
   const today = tz.today()
-  let fromDay = today, toDay = today
+  const at = state.anchor || today
+  let fromDay = today, toDay = today, prevDay = ''
+  let label = ''
   if (state.range === 'custom') {
     fromDay = state.from || S.addDays(today, -29); toDay = state.to || today
     if (fromDay > toDay) [fromDay, toDay] = [toDay, fromDay]
     if (S.daysBetween(fromDay, toDay) > 399) fromDay = S.addDays(toDay, -399)
-  } else if (state.range !== 'today') fromDay = S.addDays(today, -(Number(state.range) - 1))
+  } else if (state.range === 'week') {
+    fromDay = S.addDays(at, -tz.parts(tz.startOfDay(at) + 12 * 3_600_000).dow); toDay = S.addDays(fromDay, 6)
+    prevDay = S.addDays(fromDay, -7)
+    label = `${dayLabel(fromDay)} – ${dayLong(toDay)}`
+  } else if (state.range === 'month') {
+    fromDay = at.slice(0, 7) + '-01'; toDay = lastOfMonth(at.slice(0, 7))
+    prevDay = S.addDays(fromDay, -1).slice(0, 7) + '-01'
+    label = `${monthName(at.slice(0, 7))} ${at.slice(0, 4)}`
+  } else if (state.range === 'year') {
+    fromDay = at.slice(0, 4) + '-01-01'; toDay = at.slice(0, 4) + '-12-31'
+    prevDay = `${+at.slice(0, 4) - 1}-01-01`
+    label = at.slice(0, 4)
+  }
   const { from, to } = S.rangeMs(tz, fromDay, toDay)
   const len = S.daysBetween(fromDay, toDay) + 1
-  return { today, fromDay, toDay, from, to, len, prevFrom: tz.startOfDay(S.addDays(fromDay, -len)) }
+  let prevFrom = tz.startOfDay(prevDay || S.addDays(fromDay, -len))
+  // the Worker serves at most 400 days at a time: where the previous period does not fit, skip the comparison
+  if (to - prevFrom > 395 * 86_400_000) prevFrom = from
+  return { today, fromDay, toDay, from, to, len, prevFrom, label }
 }
 
 async function load(): Promise<void> {
   $('kpis').replaceChildren(el('div', { class: 'empty', style: 'grid-column:1/-1' }, 'Завантаження…'))
   const r = currentRange()
   const now = Date.now()
-  const histFrom = Math.min(r.prevFrom, tz.startOfDay(S.addDays(r.today, -90)))
+  const histFrom = r.prevFrom
   try {
     const [buckets, sessions, limits] = await Promise.all([
       get<Bucket[]>('/buckets?' + q(histFrom, r.to)),
       get<SessionRow[]>('/sessions?' + q(r.from, r.to)),
-      get<LimitRow[]>('/limits?' + q(Math.min(r.from, now - 60 * 86_400_000), Math.max(r.to, now + 1))),
+      get<LimitRow[]>('/limits?' + q(Math.max(Math.min(r.from, now - 60 * 86_400_000), now - 395 * 86_400_000), Math.max(r.to, now + 1))),
     ])
     data = { r, buckets, sessions, limits }
     const names = [...new Set(buckets.map(b => b.device))].sort()
@@ -107,7 +135,7 @@ const aggregate = (opts: S.AggregateOptions = {}): S.Aggregate => {
 const rangeTitle = (r: Range): string => (r.len === 1 ? dayLong(r.fromDay) : `${dayLong(r.fromDay)} — ${dayLong(r.toDay)}`)
 
 // ---------- overview
-const arrow = (d: number | null): HTMLElement | '' => (d == null ? '' : el('span', { class: 'delta ' + (d >= 0 ? 'up' : 'down'), title: 'Порівняно з попереднім періодом такої самої тривалості' }, (d >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(d * 100)) + '%'))
+const arrow = (d: number | null): HTMLElement | '' => (d == null ? '' : el('span', { class: 'delta ' + (d >= 0 ? 'up' : 'down'), title: 'Порівняно з попереднім періодом (тиждень, місяць, рік або така сама кількість днів)' }, (d >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(d * 100)) + '%'))
 
 function renderKpis(agg: S.Aggregate): void {
   const r = need().r
@@ -225,51 +253,64 @@ const totalsTip = (output: number, freshIn: number, turns: number): TipRow[] =>
   [['Вихідні', fmt(output), COLORS.out], ['Вхідні (нові)', fmt(freshIn), COLORS.in], ['Ходів', String(turns)]]
 
 let activitySeq = 0
-/** "When do you work": the grid fits the length of the shown period. */
+
+/** "When do you work": the grid fits the period (a day, a week, a month, a year or your own span). */
 function renderActivity(agg: S.Aggregate): void {
   const r = need().r
   const title = $('act-title'), sub = $('act-sub'), box = $('hour-grid')
   const seq = ++activitySeq
+  const long = r.len > 31 // a year, or your own span longer than a month: tiles or calendars
+  const mode = state.actMode || (state.range === 'year' || r.len > 366 ? 'min' : 'detail')
+  $('act-mode').classList.toggle('hide', !long)
+  press($('act-mode'), 'm', mode)
+  const dayCells = (): Map<string, HeatCell> => {
+    const m = new Map<string, HeatCell>()
+    for (const [d, t] of agg.days) m.set(d, { value: t.output, text: fmt(t.output), tip: totalsTip(t.output, S.freshInput(t), t.turns) })
+    return m
+  }
+  const calendars = (): void => monthCalendars(box, {
+    from: r.fromDay, to: r.toDay, days: dayCells(), addDays: S.addDays,
+    dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
+    monthTitle: m => `${monthName(m)} ${m.slice(0, 4)}`,
+    tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
+  })
   if (r.len === 1) {
     title.textContent = 'Активність за день'
-    sub.textContent = `${dayLong(r.fromDay)}: вихідні токени по 5 хвилин (рядок: година, клітинка: 5 хвилин)`
+    sub.textContent = `${dayLong(r.fromDay)}: вихідні токени по 5 хвилин (стовпець: година, рядок: 5 хвилин)`
     box.replaceChildren(el('div', { class: 'empty' }, 'Завантаження…'))
     void get<TurnRow[]>('/turns?' + q(r.from, r.to)).then(all => {
       if (seq !== activitySeq) return
-      const cells: HeatCell[][] = Array.from({ length: 24 }, () => Array.from({ length: 12 }, () => ({ value: 0, tip: [] as TipRow[] })))
-      const acc = cells.map(row => row.map(() => ({ output: 0, input: 0, turns: 0 })))
+      // cells[five-minute slot][hour]
+      const acc = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0 })))
       for (const t of all) {
         if (state.device && t.device !== state.device) continue
-        const p = tz.parts(Date.parse(t.ts)), a = acc[p.h][Math.floor(p.min / 5)]
+        const p = tz.parts(Date.parse(t.ts)), a = acc[Math.floor(p.min / 5)][p.h]
         a.output += t.output; a.input += S.freshInput(t); a.turns++
       }
-      acc.forEach((row, h) => row.forEach((a, m) => { cells[h][m] = { value: a.output, tip: totalsTip(a.output, a.input, a.turns) } }))
       heatGrid(box, {
-        cells, rowLabel: h => `${h}:00`, colLabel: m => (m % 3 === 0 ? `:${pad(m * 5)}` : null), maxCell: 56, cellH: 14, labelW: 42,
-        tipTitle: (h, m) => `${pad(h)}:${pad(m * 5)}–${pad(m * 5 + 4)}`,
+        cells: acc.map(row => row.map(a => ({ value: a.output, tip: totalsTip(a.output, a.input, a.turns) }))),
+        rowLabel: m => `:${pad(m * 5)}`, colLabel: h => String(h), maxCell: 80, cellH: 22, labelW: 36,
+        tipTitle: (m, h) => `${pad(h)}:${pad(m * 5)}–${pad(h)}:${pad(m * 5 + 4)}`,
       })
     }).catch((e: Error) => { if (seq === activitySeq) box.replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) })
   } else if (r.len <= 7) {
     title.textContent = 'Коли ти працюєш'
     sub.textContent = 'Вихідні токени за днем тижня й годиною (за твоїм часовим поясом)'
     hourGrid(box, { cells: agg.matrix.map(row => row.map(c => ({ value: c.output, tip: totalsTip(c.output, c.input, c.turns) }))), tipTitle: (row, h) => `${DOW[row]}, ${h}:00–${h}:59` })
-  } else if (r.len <= 200) {
+  } else if (!long) {
     title.textContent = 'Активність по днях'
-    sub.textContent = 'Вихідні токени за кожен день, календар по місяцях'
-    const days = new Map<string, HeatCell>()
-    for (const [d, t] of agg.days) days.set(d, { value: t.output, tip: totalsTip(t.output, S.freshInput(t), t.turns) })
-    monthCalendars(box, {
-      from: r.fromDay, to: r.toDay, days, addDays: S.addDays,
-      dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
-      monthTitle: m => `${new Intl.DateTimeFormat('uk-UA', { month: 'long', timeZone: 'UTC' }).format(Date.parse(m + '-15T12:00:00Z'))} ${m.slice(0, 4)}`,
-      tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
-    })
+    sub.textContent = 'Вихідні токени за кожен день'
+    calendars()
+  } else if (mode === 'detail') {
+    title.textContent = 'Активність по днях'
+    sub.textContent = 'Вихідні токени за кожен день, календарі по місяцях'
+    calendars()
   } else {
     title.textContent = 'Активність по місяцях'
     sub.textContent = 'Вихідні токени за кожен місяць'
     const months = new Map<string, Totals>()
     for (const [d, t] of agg.days) {
-      const m = months.get(d.slice(0, 7)) ?? { input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 }
+      const m = months.get(d.slice(0, 7)) ?? { ...ZERO }
       for (const k of Object.keys(m) as (keyof Totals)[]) m[k] += t[k]
       months.set(d.slice(0, 7), m)
     }
@@ -278,10 +319,11 @@ function renderActivity(agg: S.Aggregate): void {
     monthTiles(box, list.map(m => {
       const t = months.get(m)
       const name = `${new Intl.DateTimeFormat('uk-UA', { month: 'short', timeZone: 'UTC' }).format(Date.parse(m + '-15T12:00:00Z')).replace('.', '')} ${m.slice(0, 4)}`
-      return { label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), tipTitle: name, tip: t ? [...totalsTip(t.output, S.freshInput(t), t.turns), ['Вартість', fmtUsd(t.cost)] as TipRow] : [] }
+      return { label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), tipTitle: `${monthName(m)} ${m.slice(0, 4)}`, tip: t ? [...totalsTip(t.output, S.freshInput(t), t.turns), ['Вартість', fmtUsd(t.cost)] as TipRow] : [] }
     }))
   }
 }
+
 function renderAnalytics(agg: S.Aggregate): void {
   renderActivity(agg)
   const active = [...agg.days].filter(([, t]) => S.cacheHit(t) != null).sort(([a], [b]) => (a < b ? -1 : 1))
@@ -358,12 +400,16 @@ function renderLimits(): void {
   // efficiency: what each past week cost per 1% of the limit (account-wide)
   // only devices that reported limits count: others (cloud credits, API key) do not draw on the subscription
   const subDevices = new Set(d.limits.map(l => l.device))
-  const wins = S.efficiency(S.weeklyWindows(d.limits).filter(w => w.peak > 0).slice(-8), d.buckets.filter(b => subDevices.has(b.device)), prices)
+  // the last ten weeks of usage are fetched on their own, so this does not depend on the period shown
+  const recent = tz.startOfDay(S.addDays(d.r.today, -70))
+  void get<Bucket[]>('/buckets?' + q(recent, Date.now() + 3_600_000)).then(buckets => {
+  const wins = S.efficiency(S.weeklyWindows(d.limits).filter(w => w.peak > 0).slice(-8), buckets.filter(b => subDevices.has(b.device)), prices)
   const maxTok = Math.max(1, ...wins.map(w => w.tokensPerPct ?? 0))
   $('efficiency').replaceChildren(...(wins.length ? wins.reverse().map(w => el('div', { class: 'hrow', style: 'grid-template-columns:minmax(90px,130px) 1fr auto;margin-bottom:12px;--c:var(--in)' },
     el('span', { class: 'name', title: w.reset ? 'Ліміт скинуто вручну до кінця тижня' : '' }, `${dayLabel(tz.parts(w.start + 3_600_000).day)} – ${dayLabel(tz.parts(w.end - 3_600_000).day)}${w.reset ? ' · скинуто' : ''}`),
     el('div', { class: 'track' }, el('b', { style: `width:${((w.tokensPerPct ?? 0) / maxTok) * 100}%` }), el('span', { class: 'hatch' })),
     el('span', { class: 'val', title: `Використано ${w.peak.toFixed(0)}% ліміту${w.peak >= 99.5 ? ' (вичерпано)' : ''} за цей період` }, `${fmt(w.tokensPerPct)} / 1% · ${fmtUsd(w.costPerPct ?? 0)}`))) : [el('div', { class: 'empty' }, 'З\'явиться, коли накопичаться виміри хоча б за один тиждень')]))
+  }).catch(() => {})
 }
 
 function renderCost(agg: S.Aggregate): void {
@@ -455,6 +501,13 @@ function syncControls(): void {
   press($('view'), 'v', state.view)
   $<HTMLSelectElement>('metric').value = state.metric
   $('custom').classList.toggle('hide', state.range !== 'custom')
+  const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
+  $('pager').classList.toggle('hide', !paged)
+  if (paged) {
+    const r = currentRange()
+    $('pg-label').textContent = r.label
+    $<HTMLButtonElement>('pg-next').disabled = r.toDay >= r.today
+  }
   const today = tz.today()
   $<HTMLInputElement>('from').value = state.from || S.addDays(today, -29)
   $<HTMLInputElement>('to').value = state.to || today
@@ -465,8 +518,20 @@ const clicked = (e: Event): HTMLButtonElement | null => (e.target as HTMLElement
 $('nav').addEventListener('click', e => { const b = clicked(e); if (b) setTab(b.dataset.tab as Tab) })
 $('range').addEventListener('click', e => {
   const b = clicked(e); if (!b) return
-  state.range = b.dataset.r ?? '30'; persist(); syncControls(); void load()
+  state.range = b.dataset.r ?? 'month'; state.anchor = ''; persist(); syncControls(); void load()
 })
+/** Moves the shown week / month / year back or forward by one. */
+const step = (dir: -1 | 1): void => {
+  const at = state.anchor || tz.today()
+  if (state.range === 'week') state.anchor = S.addDays(at, 7 * dir)
+  else if (state.range === 'month') state.anchor = dir < 0 ? S.addDays(at.slice(0, 7) + '-01', -1) : S.addDays(lastOfMonth(at.slice(0, 7)), 1)
+  else state.anchor = `${+at.slice(0, 4) + dir}-${at.slice(5)}`
+  if (state.anchor >= tz.today()) state.anchor = ''
+  syncControls(); void load()
+}
+$('pg-prev').onclick = () => step(-1)
+$('pg-next').onclick = () => step(1)
+$('act-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.actMode = b.dataset.m as 'min' | 'detail'; persist(); renderActivity(aggregate()) })
 const dateChanged = (): void => { state.from = $<HTMLInputElement>('from').value; state.to = $<HTMLInputElement>('to').value; persist(); void load() }
 $('from').onchange = dateChanged
 $('to').onchange = dateChanged

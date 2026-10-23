@@ -25,12 +25,12 @@
   <div class="controls" id="controls">
     <div class="seg" id="range" role="group" aria-label="Період">
       <button data-r="today" aria-pressed="false">Сьогодні</button>
-      <button data-r="7" aria-pressed="false">7 днів</button>
-      <button data-r="30" aria-pressed="true">30 днів</button>
-      <button data-r="90" aria-pressed="false">90 днів</button>
-      <button data-r="365" aria-pressed="false">Рік</button>
+      <button data-r="week" aria-pressed="false">Тиждень</button>
+      <button data-r="month" aria-pressed="true">Місяць</button>
+      <button data-r="year" aria-pressed="false">Рік</button>
       <button data-r="custom" aria-pressed="false">Свій</button>
     </div>
+    <span id="pager" class="pager hide"><button class="sq" id="pg-prev" aria-label="Назад">‹</button><span id="pg-label"></span><button class="sq" id="pg-next" aria-label="Вперед">›</button></span>
     <span id="custom" class="dtools hide"><input type="date" id="from" aria-label="Від"> <span>—</span> <input type="date" id="to" aria-label="До"></span>
     <select id="device" aria-label="Пристрій"><option value="">Усі пристрої</option></select>
     <span class="spacer"></span>
@@ -77,7 +77,8 @@
 
   <section id="tab-analytics" class="tab hide">
     <div class="card">
-      <div class="card-head"><div><h2 id="act-title">Коли ти працюєш</h2><p class="sub" id="act-sub"></p></div></div>
+      <div class="card-head"><div><h2 id="act-title">Коли ти працюєш</h2><p class="sub" id="act-sub"></p></div>
+        <div class="seg hide" id="act-mode" role="group" aria-label="Вигляд"><button data-m="min" aria-pressed="true">Мінімальний</button><button data-m="detail" aria-pressed="false">Детальний</button></div></div>
       <div id="hour-grid"></div>
     </div>
     <div class="card">
