@@ -19,6 +19,8 @@ interface State {
   anchor: string
   /** Year view of the activity card: month tiles or month calendars; '' = by length of the period. */
   actMode: '' | 'min' | 'detail'
+  /** Activity card: colour each cell by the device that used the most (all devices only). */
+  topDevice: boolean
   from: string
   to: string
   device: string
@@ -54,13 +56,14 @@ const iso = (ms: number): string => new Date(ms).toISOString()
 let saved: Partial<State> = {}
 try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<State> } catch { /* private mode: start with defaults */ }
 const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
-const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', day: '', actMode: '', ...saved, anchor: '', tab: 'overview' }
+const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
 state.range = OLD_RANGES[state.range] ?? state.range
 const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, actMode: state.actMode })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
 }
 
 let prices: Prices | null = null
+let deviceNames: string[] = []
 let data: Data | null = null
 const memo = new Map<string, { t: number; v: unknown }>()
 const get = async <T>(path: string): Promise<T> => {
@@ -129,6 +132,7 @@ async function load(): Promise<void> {
     clearTimeout(slow)
     data = { r, buckets, sessions, limits }
     const names = [...new Set(buckets.map(b => b.device))].sort()
+    deviceNames = names
     if (state.device && !names.includes(state.device)) state.device = ''
     deviceMenu.set([{ value: '', label: 'Усі пристрої' }, ...names.map(n => ({ value: n, label: n }))], state.device)
     render()
@@ -263,6 +267,7 @@ const totalsTip = (output: number, freshIn: number, turns: number): TipRow[] =>
   [['Вихідні', fmt(output), COLORS.out], ['Вхідні (нові)', fmt(freshIn), COLORS.in], ['Ходів', String(turns)]]
 
 let activitySeq = 0
+const devColor = (name: string): string => PALETTE[Math.max(0, deviceNames.indexOf(name)) % PALETTE.length]
 
 /** "When do you work": the grid fits the period (a day, a week, a month, a year or your own span). */
 function renderActivity(agg: S.Aggregate): void {
@@ -274,18 +279,33 @@ function renderActivity(agg: S.Aggregate): void {
   const mode = state.actMode || (long && !(state.range === 'year' || r.len > 366) ? 'detail' : 'min')
   $('act-mode').classList.toggle('hide', r.len <= 7)
   press($('act-mode'), 'm', mode)
-  const dayCells = (): Map<string, HeatCell> => {
-    const m = new Map<string, HeatCell>()
-    for (const [d, t] of agg.days) m.set(d, { value: t.output, text: fmt(t.output), tip: totalsTip(t.output, S.freshInput(t), t.turns) })
-    return m
+
+  // "most used" mode: each cell takes the colour of the device that used the most in it
+  const topMode = state.topDevice && !state.device && deviceNames.length > 1
+  const per = new Map<string, S.Aggregate>()
+  if (topMode) for (const n of deviceNames) per.set(n, aggregate({ device: n }))
+  const leader = (value: (a: S.Aggregate) => number | undefined): { color: string; name: string } | undefined => {
+    if (!topMode) return undefined
+    let best = '', max = 0
+    for (const [n, a] of per) { const v = value(a) ?? 0; if (v > max) { max = v; best = n } }
+    return best ? { color: devColor(best), name: best } : undefined
   }
-  const calendars = (): void => monthCalendars(box, {
-    from: r.fromDay, to: r.toDay, days: dayCells(), addDays: S.addDays,
-    dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
-    monthTitle: m => `${monthName(m)} ${m.slice(0, 4)}`,
-    showTitle: state.range !== 'month', // the pager already names the month
-    tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
-  })
+  const tinted = (cell: HeatCell, w: { color: string; name: string } | undefined): HeatCell =>
+    w ? { ...cell, color: w.color, tip: [...cell.tip, ['Найбільше', w.name, w.color] as TipRow] } : cell
+  $('act-legend').classList.toggle('hide', !topMode)
+  $('act-legend').replaceChildren(...(topMode ? deviceNames.map(n => el('span', {}, el('i', { style: `background:${devColor(n)}` }), n)) : []))
+
+  const calendars = (): void => {
+    const days = new Map<string, HeatCell>()
+    for (const [d, t] of agg.days) days.set(d, tinted({ value: t.output, text: fmt(t.output), tip: totalsTip(t.output, S.freshInput(t), t.turns) }, leader(a => a.days.get(d)?.output)))
+    monthCalendars(box, {
+      from: r.fromDay, to: r.toDay, days, addDays: S.addDays,
+      dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
+      monthTitle: m => `${monthName(m)} ${m.slice(0, 4)}`,
+      showTitle: state.range !== 'month', // the pager already names the month
+      tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
+    })
+  }
   if (r.len === 1) {
     title.textContent = 'Активність за день'
     sub.textContent = `${dayLong(r.fromDay)}: вихідні токени по 5 хвилин (стовпець: година, рядок: 5 хвилин)`
@@ -293,15 +313,20 @@ function renderActivity(agg: S.Aggregate): void {
     void get<TurnRow[]>('/turns?' + q(r.from, r.to)).then(all => {
       clearTimeout(slow)
       if (seq !== activitySeq) return
-      // cells[five-minute slot][hour]
-      const acc = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0 })))
+      // acc[five-minute slot][hour]
+      const acc = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0, by: new Map<string, number>() })))
       for (const t of all) {
         if (state.device && t.device !== state.device) continue
         const p = tz.parts(Date.parse(t.ts)), a = acc[Math.floor(p.min / 5)][p.h]
         a.output += t.output; a.input += S.freshInput(t); a.turns++
+        a.by.set(t.device, (a.by.get(t.device) ?? 0) + t.output)
       }
       heatGrid(box, {
-        cells: acc.map(row => row.map(a => ({ value: a.output, tip: totalsTip(a.output, a.input, a.turns) }))),
+        cells: acc.map(row => row.map(a => {
+          let best = '', max = 0
+          if (topMode) for (const [n, v] of a.by) if (v > max) { max = v; best = n }
+          return tinted({ value: a.output, tip: totalsTip(a.output, a.input, a.turns) }, best ? { color: devColor(best), name: best } : undefined)
+        })),
         rowLabel: m => `:${pad(m * 5)}`, colLabel: h => String(h), maxCell: 80, cellH: 22, labelW: 36,
         tipTitle: (m, h) => `${pad(h)}:${pad(m * 5)}–${pad(h)}:${pad(m * 5 + 4)}`,
       })
@@ -309,7 +334,10 @@ function renderActivity(agg: S.Aggregate): void {
   } else if (r.len <= 7) {
     title.textContent = 'Коли ти працюєш'
     sub.textContent = 'Вихідні токени за днем тижня й годиною (за твоїм часовим поясом)'
-    hourGrid(box, { cells: agg.matrix.map(row => row.map(c => ({ value: c.output, tip: totalsTip(c.output, c.input, c.turns) }))), tipTitle: (row, h) => `${DOW[row]}, ${h}:00–${h}:59` })
+    hourGrid(box, {
+      cells: agg.matrix.map((row, d) => row.map((c, h) => tinted({ value: c.output, tip: totalsTip(c.output, c.input, c.turns) }, leader(a => a.matrix[d][h].output)))),
+      tipTitle: (row, h) => `${DOW[row]}, ${h}:00–${h}:59`,
+    })
   } else if (!long && mode === 'min') {
     title.textContent = 'Активність по днях'
     sub.textContent = 'Вихідні токени за кожен день'
@@ -320,11 +348,12 @@ function renderActivity(agg: S.Aggregate): void {
     const days = S.dayList(r.fromDay, r.toDay)
     heatGrid(box, {
       cells: days.map(d => Array.from({ length: 24 }, (_, h) => {
-        const t = agg.hours.get(`${d}T${pad(h)}`)
-        return { value: t?.output ?? 0, tip: t ? totalsTip(t.output, S.freshInput(t), t.turns) : [] }
+        const key = `${d}T${pad(h)}`, t = agg.hours.get(key)
+        return tinted({ value: t?.output ?? 0, tip: t ? totalsTip(t.output, S.freshInput(t), t.turns) : [] }, leader(a => a.hours.get(key)?.output))
       })),
-      rowLabel: i => `${DOW[tz.parts(tz.startOfDay(days[i]) + 12 * 3_600_000).dow]} ${+days[i].slice(8)}`,
-      colLabel: h => String(h), labelW: 52, maxCell: 60, cellH: 18,
+      rowLabel: i => String(+days[i].slice(8)),
+      rightLabel: i => DOW[tz.parts(tz.startOfDay(days[i]) + 12 * 3_600_000).dow],
+      colLabel: h => String(h), labelW: 24, maxCell: 60, cellH: 18,
       tipTitle: (i, h) => `${weekday(days[i])}, ${dayLong(days[i])}, ${h}:00–${h}:59`,
     })
   } else if (mode === 'detail') {
@@ -334,18 +363,28 @@ function renderActivity(agg: S.Aggregate): void {
   } else {
     title.textContent = 'Активність по місяцях'
     sub.textContent = 'Вихідні токени за кожен місяць'
+    const sumByMonth = (a: S.Aggregate): Map<string, number> => {
+      const m = new Map<string, number>()
+      for (const [d, t] of a.days) m.set(d.slice(0, 7), (m.get(d.slice(0, 7)) ?? 0) + t.output)
+      return m
+    }
     const months = new Map<string, Totals>()
     for (const [d, t] of agg.days) {
       const m = months.get(d.slice(0, 7)) ?? { ...ZERO }
       for (const k of Object.keys(m) as (keyof Totals)[]) m[k] += t[k]
       months.set(d.slice(0, 7), m)
     }
+    const byDevice = new Map([...per].map(([n, a]) => [n, sumByMonth(a)] as const))
     const list: string[] = []
     for (let d = r.fromDay; d <= r.toDay; d = S.addDays(d, 1)) if (!list.length || list[list.length - 1] !== d.slice(0, 7)) list.push(d.slice(0, 7))
     monthTiles(box, list.map(m => {
       const t = months.get(m)
       const name = `${new Intl.DateTimeFormat('uk-UA', { month: 'short', timeZone: 'UTC' }).format(Date.parse(m + '-15T12:00:00Z')).replace('.', '')} ${m.slice(0, 4)}`
-      return { label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), tipTitle: `${monthName(m)} ${m.slice(0, 4)}`, tip: t ? [...totalsTip(t.output, S.freshInput(t), t.turns), ['Вартість', fmtUsd(t.cost)] as TipRow] : [] }
+      let best = '', max = 0
+      if (topMode) for (const [n, sums] of byDevice) { const v = sums.get(m) ?? 0; if (v > max) { max = v; best = n } }
+      const tip: TipRow[] = t ? [...totalsTip(t.output, S.freshInput(t), t.turns), ['Вартість', fmtUsd(t.cost)]] : []
+      if (best) tip.push(['Найбільше', best, devColor(best)])
+      return { label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), color: best ? devColor(best) : undefined, tipTitle: `${monthName(m)} ${m.slice(0, 4)}`, tip }
     }))
   }
 }
@@ -504,6 +543,8 @@ function render(): void {
   if (!data) return
   const agg = aggregate()
   $('tzchip').textContent = `${tz.tz} · UTC${offsetText()}`
+  $('dev-mode').classList.toggle('hide', !(state.tab === 'analytics' && !state.device && deviceNames.length > 1))
+  press($('dev-mode'), 't', state.topDevice ? 'top' : '')
   if (state.tab === 'overview') { renderKpis(agg); renderMain(agg); void renderDay() }
   else if (state.tab === 'analytics') renderAnalytics(agg)
   else if (state.tab === 'money') { renderLimits(); renderCost(agg) }
@@ -562,6 +603,7 @@ const step = (dir: -1 | 1): void => {
 }
 $('pg-prev').onclick = () => step(-1)
 $('pg-next').onclick = () => step(1)
+$('dev-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.topDevice = b.dataset.t === 'top'; persist(); press($('dev-mode'), 't', b.dataset.t ?? ''); renderActivity(aggregate()) })
 $('act-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.actMode = b.dataset.m as 'min' | 'detail'; persist(); renderActivity(aggregate()) })
 const dateChanged = (): void => { state.from = $<HTMLInputElement>('from').value; state.to = $<HTMLInputElement>('to').value; persist(); void load() }
 $('from').onchange = dateChanged

@@ -3,6 +3,8 @@ import { el, svg, fmtAxis, responsive, release, DOW, monthLabel } from './util.t
 
 export const COLORS = { out: '#ff7a1a', in: '#3d8bff', cache: '#9b7bff', ok: '#35c98c', muted: '#6f655c' }
 export const HEAT = ['#2b2522', '#5b3418', '#8f4c14', '#cc640f', '#ff7a1a']
+/** Level 0-4 of a colour: faint to full, over the empty-cell grey. */
+export const shade = (color: string, level: number): string => (level <= 0 ? HEAT[0] : `color-mix(in srgb, ${color} ${[0, 35, 55, 78, 100][level]}%, ${HEAT[0]})`)
 
 /** A label, a formatted value and an optional colour dot: one row of a tooltip. */
 export type TipRow = [label: string, value: string, color?: string]
@@ -270,12 +272,16 @@ export interface HeatCell {
   value: number
   /** Short figure written on big calendar squares. */
   text?: string
+  /** Own colour (a device's) instead of the orange heat scale; the level still sets how strong it is. */
+  color?: string
   tip: TipRow[]
 }
 
 export interface HeatGridOptions {
   cells: HeatCell[][]
   rowLabel: (row: number) => string
+  /** Label after the last column (e.g. the weekday), optional. */
+  rightLabel?: (row: number) => string
   /** Label above a column, or null for none. */
   colLabel: (col: number) => string | null
   tipTitle: (row: number, col: number) => string
@@ -294,9 +300,10 @@ export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
   if (!(max > 0)) return empty(container)
   responsive(container, W => {
     const labelW = opts.labelW ?? 28, topH = 18, gap = 2
-    const cw = Math.max(8, Math.min(opts.maxCell ?? 60, Math.floor((W - labelW) / cols) - gap))
+    const rightW = opts.rightLabel ? 30 : 0
+    const cw = Math.max(8, Math.min(opts.maxCell ?? 60, Math.floor((W - labelW - rightW) / cols) - gap))
     const ch = opts.cellH ?? cw
-    const width = labelW + cols * (cw + gap)
+    const width = labelW + cols * (cw + gap) + rightW
     const height = topH + rows * (ch + gap)
     const root = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img' })
     const step = cw < 22 ? 3 : cw < 30 ? 2 : 1
@@ -304,12 +311,16 @@ export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
       const label = opts.colLabel(c)
       if (label != null) root.append(svg('text', { x: labelW + c * (cw + gap), y: 11, class: 'ax' }, label))
     }
-    for (let r = 0; r < rows; r++) root.append(svg('text', { x: 0, y: topH + r * (ch + gap) + Math.min(ch, 14) - 3, class: 'ax' }, opts.rowLabel(r)))
+    for (let r = 0; r < rows; r++) {
+      const ty = topH + r * (ch + gap) + Math.min(ch, 14) - 3
+      root.append(svg('text', { x: 0, y: ty, class: 'ax' }, opts.rowLabel(r)))
+      if (opts.rightLabel) root.append(svg('text', { x: labelW + cols * (cw + gap) + 4, y: ty, class: 'ax' }, opts.rightLabel(r)))
+    }
     const tip = tipOf(host)
     cells.forEach((row, r) => row.forEach((c, i) => {
       const lvl = c.value <= 0 ? 0 : Math.max(1, Math.ceil((c.value / max) * 4))
       const x = labelW + i * (cw + gap), y = topH + r * (ch + gap)
-      const rect = svg('rect', { x, y, width: cw, height: ch, rx: 3, fill: HEAT[lvl], class: 'cell' })
+      const rect = svg('rect', { x, y, width: cw, height: ch, rx: 3, fill: c.color ? shade(c.color, lvl) : HEAT[lvl], class: 'cell' })
       rect.addEventListener('pointerenter', () => tip.show(x + cw / 2, y, opts.tipTitle(r, i), c.tip))
       rect.addEventListener('pointerleave', () => tip.hide())
       root.append(rect)
@@ -371,7 +382,8 @@ export function monthCalendars(container: HTMLElement, opts: MonthCalendarsOptio
     for (let d = first; d.slice(0, 7) === m; d = addDays(d, 1)) {
       if (d < from || d > to) { grid.append(el('span', { class: 'md off' }, String(+d.slice(8)))); continue }
       const c = days.get(d)
-      const cell = el('span', { class: `md l${level(c?.value ?? 0)}` }, String(+d.slice(8)), big && c?.text ? el('small', {}, c.text) : '')
+      const lvl = level(c?.value ?? 0)
+      const cell = el('span', { class: `md l${lvl}`, style: c?.color ? `background:${shade(c.color, lvl)}` : '' }, String(+d.slice(8)), big && c?.text ? el('small', {}, c.text) : '')
       cell.addEventListener('pointerenter', () => showAt(host, cell, opts.tipTitle(d), c?.tip ?? []))
       cell.addEventListener('pointerleave', () => tipOf(host).hide())
       grid.append(cell)
@@ -385,6 +397,7 @@ export interface MonthTile {
   label: string
   value: number
   text: string
+  color?: string
   tipTitle: string
   tip: TipRow[]
 }
@@ -396,7 +409,7 @@ export function monthTiles(container: HTMLElement, tiles: MonthTile[]): void {
   release(container)
   const level = levels(tiles.map(t => t.value))
   container.replaceChildren(el('div', { class: 'mtiles' }, ...tiles.map(t => {
-    const tile = el('div', { class: `mt l${level(t.value)}` }, el('span', {}, t.label), el('b', {}, t.value > 0 ? t.text : '—'))
+    const tile = el('div', { class: `mt l${level(t.value)}`, style: t.color ? `background:${shade(t.color, level(t.value))}` : '' }, el('span', {}, t.label), el('b', {}, t.value > 0 ? t.text : '—'))
     tile.addEventListener('pointerenter', () => showAt(host, tile, t.tipTitle, t.tip))
     tile.addEventListener('pointerleave', () => tipOf(host).hide())
     return tile
