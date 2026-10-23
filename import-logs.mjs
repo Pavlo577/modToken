@@ -40,13 +40,16 @@ async function send(rows) {
   return res.json()
 }
 
+const seen = new Set()
 const total = { files: 0, turns: 0, inserted: 0, duplicates: 0, afterLink: 0 }
 
 try {
-  for await (const file of jsonlFiles(root)) {
+  const files = []
+  for await (const file of jsonlFiles(root)) files.push(file)
+  for (const file of files.sort()) {
     // Same key the website import builds, so both ways never count a turn twice.
     const key = relative(root, file).split(sep).join('/').replace(/\.jsonl$/, '')
-    const parser = createParser(key)
+    const parser = createParser(key, seen)
     for await (const line of createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity })) parser.push(line)
     const turns = parser.finish()
     total.files++

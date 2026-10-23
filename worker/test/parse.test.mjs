@@ -35,17 +35,30 @@ test('garbage lines, synthetic messages and empty turns are ignored', () => {
   assert.equal(p.finish().length, 0)
 })
 
+test('a session copied into a second file is counted once', () => {
+  const history = [user('2026-01-01T10:00:00Z'), asst('a', '2026-01-01T10:00:05Z', 50), user('2026-01-01T10:05:00Z'), asst('b', '2026-01-01T10:05:09Z', 70)]
+  const seen = new Set()
+  const first = createParser('dir1/s', seen)
+  history.slice(0, 2).forEach(l => first.push(l))
+  const a = first.finish()
+  const second = createParser('dir2/s', seen)
+  history.forEach(l => second.push(l)) // the copy has the old turn and a new one
+  const b = second.finish()
+  assert.equal(a.reduce((n, t) => n + t.output_tokens, 0) + b.reduce((n, t) => n + t.output_tokens, 0), 120)
+})
+
 // Compare with an independent count (unique message ids) on real logs when present.
 const dir = process.env.CLAUDE_LOGS || `${process.env.HOME}/.claude/projects`
 test('totals match an independent count on real logs', { skip: !existsSync(dir) }, () => {
-  let want = 0, got = 0, files = 0
+  let got = 0, files = 0
+  const best = new Map() // message id -> output tokens, across ALL files: a copied session counts once
+  const seen = new Set()
   for (const proj of readdirSync(dir)) {
     let names = []
     try { names = readdirSync(`${dir}/${proj}`).filter(f => f.endsWith('.jsonl')) } catch { continue }
     for (const f of names) {
       const text = readFileSync(`${dir}/${proj}/${f}`, 'utf8')
-      const best = new Map()
-      const p = createParser(f)
+      const p = createParser(`${proj}/${f}`, seen)
       for (const line of text.split('\n')) {
         if (!line) continue
         p.push(line)
@@ -53,11 +66,11 @@ test('totals match an independent count on real logs', { skip: !existsSync(dir) 
         const m = e.type === 'assistant' ? e.message : null
         if (m?.usage && m.id && m.model !== '<synthetic>') best.set(m.id, Math.max(best.get(m.id) ?? 0, m.usage.output_tokens ?? 0))
       }
-      for (const v of best.values()) want += v
       for (const t of p.finish()) got += t.output_tokens
       files++
     }
   }
+  const want = [...best.values()].reduce((a, b) => a + b, 0)
   console.log(`files ${files}, output tokens ${got}`)
   assert.equal(got, want)
 })

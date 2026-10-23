@@ -11,8 +11,13 @@ function isPrompt(e) {
   return Array.isArray(c) && c.some(b => b?.type === 'text' || b?.type === 'image')
 }
 
-/** `fileKey` makes turn ids stable between imports of the same file. */
-export function createParser(fileKey) {
+/**
+ * `fileKey` makes turn ids stable between imports of the same file.
+ * `seen` is shared by all files of one run: a session copied into another file (after a `cd`,
+ * a resume) repeats the same messages, which must be counted once, by the first file that has them.
+ */
+export function createParser(fileKey, seen = new Set()) {
+  const own = new Set()
   const turns = []
   let cur = null
   let n = 0
@@ -60,6 +65,8 @@ export function createParser(fileKey) {
       const msg = e.type === 'assistant' ? e.message : null
       const u = msg?.usage
       if (!u || !msg.id || msg.model === SYNTHETIC || Number.isNaN(ts)) return
+      if (seen.has(msg.id) && !own.has(msg.id)) return
+      own.add(msg.id)
       if (!cur) start(null)
       cur.lastTs = Math.max(cur.lastTs ?? 0, ts)
       cur.sessionId ||= String(e.sessionId ?? '')
@@ -74,6 +81,10 @@ export function createParser(fileKey) {
         model: msg.model,
       })
     },
-    finish() { close(); return turns },
+    finish() {
+      close()
+      for (const id of own) seen.add(id)
+      return turns
+    },
   }
 }

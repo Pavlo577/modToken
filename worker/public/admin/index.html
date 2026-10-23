@@ -251,7 +251,8 @@ $('import-files').addEventListener('change', async () => {
   const input = $('import-files')
   const status = $('import-status')
   const deviceId = $('import-device').value
-  const files = [...input.files].filter(f => f.name.endsWith('.jsonl'))
+  const files = [...input.files].filter(f => f.name.endsWith('.jsonl')).sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name))
+  const seen = new Set()
   if (!deviceId) { status.textContent = 'Спершу додай пристрій.'; input.value = ''; return }
   if (!files.length) { status.textContent = 'У вибраній папці нема файлів .jsonl. Потрібна папка projects.'; input.value = ''; return }
   const { createParser } = await import('./parse.mjs')
@@ -260,7 +261,7 @@ $('import-files').addEventListener('change', async () => {
   try {
     for (const [i, file] of files.entries()) {
       status.textContent = `Файл ${i + 1} з ${files.length}: ${file.name}`
-      const parser = createParser((file.webkitRelativePath || file.name).split('/').slice(1).join('/').replace(/\.jsonl$/, '') || file.name)
+      const parser = createParser((file.webkitRelativePath || file.name).split('/').slice(1).join('/').replace(/\.jsonl$/, '') || file.name, seen)
       const reader = file.stream().pipeThrough(new TextDecoderStream()).getReader()
       let buf = ''
       for (;;) {
