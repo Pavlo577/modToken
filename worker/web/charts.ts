@@ -306,7 +306,7 @@ export function calendarHeatmap(container: HTMLElement, opts: CalendarOptions): 
   const weeks = Math.ceil((first + list.length) / 7)
   responsive(container, W => {
     const labelW = 30, topH = 20, gap = 3
-    const cell = Math.max(8, Math.min(20, Math.floor((W - labelW) / weeks) - gap))
+    const cell = Math.max(8, Math.min(26, Math.floor((W - labelW) / weeks) - gap))
     const width = labelW + weeks * (cell + gap)
     const height = topH + 7 * (cell + gap)
     const root = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img' })

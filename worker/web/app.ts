@@ -180,8 +180,8 @@ const OUT: Def = ['Вихідні', COLORS.out, t => t.output]
 const IN: Def = ['Вхідні (нові)', COLORS.in, S.freshInput]
 const ioDefs = (): Def[] => (state.io === 'in' ? [IN] : state.io === 'out' ? [OUT] : state.io === 'off' ? [] : [OUT, IN])
 const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
-/** Height of the main chart: about a third of the window, between 240 and 380 px. */
-const mainHeight = (): number => Math.round(Math.min(380, Math.max(240, window.innerHeight * 0.34)))
+/** Height of the main chart, close to the calendar's: about a quarter of the window, between 200 and 300 px. */
+const mainHeight = (): number => Math.round(Math.min(300, Math.max(200, window.innerHeight * 0.26)))
 const ZERO: Totals = { input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 }
 
 function renderMain(agg: S.Aggregate): void {
@@ -190,6 +190,7 @@ function renderMain(agg: S.Aggregate): void {
   const yFmt = fmtAxis
   const valFmt = fmt
   $('main-chart').replaceChildren()
+  $('main-chart').style.minHeight = mainHeight() + 'px' // the same footprint in every view, so nothing below moves
   $('main-legend').replaceChildren()
 
   if (view === 'cal') {
