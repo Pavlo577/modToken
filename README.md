@@ -15,13 +15,13 @@ npx wrangler d1 execute modtoken --remote --file=schema.sql
 npx wrangler deploy
 ```
 Then protect the admin in Cloudflare Zero Trust → Access → Applications → Self-hosted:
-- Application paths: `<your-worker-host>/admin*` and `<your-worker-host>/api/admin*` (**not** `/api/ingest` and `/api/link`: devices authenticate with their own token).
+- Application paths: `track.brolafkodev.pp.ua/admin*` and `track.brolafkodev.pp.ua/api/admin*` (**not** `/api/ingest` and `/api/link`: devices authenticate with their own token).
 - Login method: One-time PIN. Policy: Allow, Emails = the people you invite (add an email to invite someone).
 - Copy the application's **Audience (AUD) tag** and your team domain (`https://<team>.cloudflareaccess.com`) into `TEAM_DOMAIN` and `POLICY_AUD` in `wrangler.jsonc`, then `npx wrangler deploy` again.
 
 ## Use it
 1. Install the mod: `/plugin marketplace add Pavlo577/modToken`, then `/plugin install token-tracker@modtoken`.
-2. `/tracker-setup https://<your-worker-host>` (once per device).
+2. `/tracker-setup https://track.brolafkodev.pp.ua` (once per device).
 3. On the site: Devices → create a code (valid 10 minutes, links one device only).
 4. On the device: `/tracker-link <code>`.
 

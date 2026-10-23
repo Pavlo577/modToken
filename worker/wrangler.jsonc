@@ -7,7 +7,7 @@
     { "binding": "DB", "database_name": "modtoken", "database_id": "ecefe683-56d6-4e79-bc16-a62c6c5591e4" }
   ],
   "vars": {
-    "TEAM_DOMAIN": "https://REPLACE.cloudflareaccess.com",
-    "POLICY_AUD": "REPLACE_WITH_ACCESS_APP_AUD"
+    "TEAM_DOMAIN": "https://billowing-feather-dc63.cloudflareaccess.com",
+    "POLICY_AUD": "093672a00c66038093a36f747d866eb508b1d8e4be440a0e5b9a0c91313803a2"
   }
 }
