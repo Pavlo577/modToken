@@ -502,6 +502,10 @@ function setTab(tab: Tab): void {
   press($('nav'), 'tab', tab)
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('hide', s.id !== 'tab-' + tab))
   $('controls').classList.toggle('hide', tab === 'devices')
+  // the date pager lives in the activity card on Analytics and in the controls bar elsewhere
+  const pager = $('pager')
+  if (tab === 'analytics') $('act-pager').append(pager)
+  else $('range').after(pager)
   if (tab === 'devices') void loadDevices().catch(() => {})
   else render()
 }
