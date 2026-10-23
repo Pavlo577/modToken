@@ -45,10 +45,10 @@ const EVENT_SQL = `INSERT OR IGNORE INTO token_events
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 /** One validated row as an INSERT, or null when its timestamp is not a date. */
-function eventStmt(env: Env, email: string, deviceId: string, r: Record<string, unknown>, turnId = str(r.turn_id)) {
+function eventStmt(env: Env, email: string, deviceId: string, r: Record<string, unknown>, turnId = str(r.turn_id), sql = EVENT_SQL) {
   const ts = new Date(str(r.ts))
   if (Number.isNaN(ts.getTime())) return null
-  return env.DB.prepare(EVENT_SQL).bind(
+  return env.DB.prepare(sql).bind(
     email, deviceId, str(r.session_id), turnId, ts.toISOString(), str(r.model),
     int(r.input_tokens), int(r.output_tokens), int(r.cache_read_tokens), int(r.cache_creation_tokens),
     int(r.duration_ms), r.is_subagent === true ? 1 : 0,
@@ -84,6 +84,14 @@ async function importFromDevice(req: Request, env: Env): Promise<Response> {
   return importRows(env, dev.user_email, dev, body?.rows)
 }
 
+const INGEST_SQL = `${EVENT_SQL.replace('INSERT OR IGNORE', 'INSERT')}
+  ON CONFLICT (device_id, turn_id) DO UPDATE SET
+    input_tokens = MAX(input_tokens, excluded.input_tokens),
+    output_tokens = MAX(output_tokens, excluded.output_tokens),
+    cache_read_tokens = MAX(cache_read_tokens, excluded.cache_read_tokens),
+    cache_creation_tokens = MAX(cache_creation_tokens, excluded.cache_creation_tokens),
+    duration_ms = MAX(duration_ms, excluded.duration_ms)`
+
 async function ingest(req: Request, env: Env): Promise<Response> {
   const token = req.headers.get('x-device-token') ?? ''
   const dev = await env.DB.prepare('SELECT id, user_email FROM devices WHERE token_hash = ? AND revoked = 0')
@@ -96,13 +104,22 @@ async function ingest(req: Request, env: Env): Promise<Response> {
 
   const stmts: D1PreparedStatement[] = []
   for (const r of body as Record<string, unknown>[]) {
-    const stmt = eventStmt(env, dev.user_email, dev.id, r)
+    const stmt = eventStmt(env, dev.user_email, dev.id, r, str(r.turn_id), INGEST_SQL)
     if (!stmt) return text('bad request', 400)
     stmts.push(stmt)
   }
   stmts.push(env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(new Date().toISOString(), dev.id))
   await env.DB.batch(stmts)
   return new Response(null, { status: 204 })
+}
+
+/** A new device for `email` with a fresh random token; the token is returned once and only its hash is stored. */
+async function createDevice(env: Env, email: string, name: string): Promise<string> {
+  const token = randomHex(32)
+  await env.DB.prepare('INSERT INTO devices (id, user_email, name, token_hash, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(crypto.randomUUID(), email, name, await sha256(token), new Date().toISOString())
+    .run()
+  return token
 }
 
 async function link(req: Request, env: Env): Promise<Response> {
@@ -119,10 +136,7 @@ async function link(req: Request, env: Env): Promise<Response> {
     .first<{ user_email: string; device_name: string }>()
   if (!spent) return text('invalid or used code', 403)
 
-  const token = randomHex(32)
-  await env.DB.prepare('INSERT INTO devices (id, user_email, name, token_hash, created_at) VALUES (?, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), spent.user_email, spent.device_name, await sha256(token), now)
-    .run()
+  const token = await createDevice(env, spent.user_email, spent.device_name)
   return json({ token, device: spent.device_name })
 }
 
@@ -144,6 +158,13 @@ async function admin(req: Request, env: Env, url: URL): Promise<Response> {
   if (dev && req.method === 'DELETE') {
     await env.DB.prepare('UPDATE devices SET revoked = 1 WHERE id = ? AND user_email = ?').bind(dev[1], email).run()
     return new Response(null, { status: 204 })
+  }
+
+  if (path === '/cloud-device' && req.method === 'POST') {
+    const body = (await req.json().catch(() => null)) as { name?: unknown } | null
+    const name = str(body?.name, 60).trim()
+    if (!name) return text('name required', 400)
+    return json({ token: await createDevice(env, email, name), device: name })
   }
 
   if (path === '/codes' && req.method === 'POST') {

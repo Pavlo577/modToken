@@ -27,6 +27,14 @@ Then protect the admin in Cloudflare Zero Trust → Access → Applications → 
 
 The status line shows `token-tracker: ok` after an upload. Failed uploads are queued and retried at the next session start. A device can be revoked on the site at any time.
 
+## Cloud sessions (claude.ai/code)
+Plugins from marketplaces are not installed in cloud sessions, so the mod cannot run there. Instead the cloud *environment* is set up once, and every session in it reports through a Stop hook (it runs at the end of each turn, not at the end of the conversation):
+1. On the site: Devices, "Cloud sessions", create a token. The page shows the Setup script line and the token (once).
+2. claude.ai/code, the environment's menu, Edit, **Setup script**: paste `curl -fsSL https://raw.githubusercontent.com/Pavlo577/modToken/main/cloud/setup.sh | bash -s -- https://your-site` (it downloads `cloud/stop-hook.mjs` and the parser and adds the hook to `~/.claude/settings.json`).
+3. Same dialog, **Network secrets**: host = your site, a custom header named `x-device-token` with no prefix, value = the token. Anthropic's proxy adds the header outside the VM, so the token never enters the session.
+
+Needs Node.js in the environment (cloud sessions ship it) and `raw.githubusercontent.com` reachable while the setup script runs. All sessions of the environment report as one device; revoking it on the site stops them. Set up each environment you use. Turns are keyed by session id, so a session that continues in a second log file (after a `cd`) is not counted twice, and a turn the log had not fully written yet is completed by the next report.
+
 ## Import old history
 The mod only counts turns after a device is linked. To bring in earlier history from the device's own logs, run `/tracker-import` there (needs Node.js on that device; with the npm install of Claude Code it is always there). It reads `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) with `import-logs.mjs` and sends only token counts, timestamps and model names. Nothing runs automatically; run it once after `/tracker-link`.
 

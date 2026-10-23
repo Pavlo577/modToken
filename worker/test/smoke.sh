@@ -45,6 +45,16 @@ OLD2="{\"turn_id\":\"imp:g:1\",\"session_id\":\"s0\",\"ts\":\"$YDAY\",\"model\":
 check "token import: no token"     "$(code_of -XPOST $B/api/import -d '{"rows":[{}]}')" 401
 check "token import adds history"  "$(dimp "$TOKEN" "$OLD2" | grep -c '"inserted":1')" 1
 check "token import is idempotent" "$(dimp "$TOKEN" "$OLD2" | grep -c '"inserted":0,"duplicates":1')" 1
+# Cloud device: created behind Access, token returned once, works for ingest
+CR=$(curl -s -XPOST $B/api/admin/cloud-device -d '{"name":"cloud"}')
+CT=$(echo "$CR" | sed -E 's/.*"token":"([a-f0-9]+)".*/\1/')
+check "cloud device gets a token"  "${#CT}" 64
+check "cloud token ingests"        "$(code_of -XPOST $B/api/ingest -H "x-device-token: $CT" -d "[{\"turn_id\":\"cc:s:1\",\"session_id\":\"s\",\"ts\":\"$YDAY\",\"model\":\"m\",\"output_tokens\":3}]")" 204
+check "cloud device needs a name"  "$(code_of -XPOST $B/api/admin/cloud-device -d '{}')" 400
+# A later, fuller report of the same turn completes it (the log can lag a moment)
+code_of -XPOST $B/api/ingest -H "x-device-token: $CT" -d "[{\"turn_id\":\"cc:s:1\",\"session_id\":\"s\",\"ts\":\"$YDAY\",\"model\":\"m\",\"output_tokens\":50}]" >/dev/null
+code_of -XPOST $B/api/ingest -H "x-device-token: $CT" -d "[{\"turn_id\":\"cc:s:1\",\"session_id\":\"s\",\"ts\":\"$YDAY\",\"model\":\"m\",\"output_tokens\":7}]" >/dev/null
+curl -s "$B/api/admin/stats?days=30" | python3 -c "import sys,json; d=json.load(sys.stdin); c=[x for x in d['byDevice'] if x['device']=='cloud'][0]; sys.exit(0 if (c['output'],c['turns'])==(50,1) else 1)" && echo "ok   later report completes a turn, never shrinks it" || { echo "FAIL turn merge"; fail=1; }
 check "revoke device"            "$(code_of -XDELETE $B/api/admin/devices/$ID)" 204
 check "revoked token rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$ROW")" 401
 exit $fail

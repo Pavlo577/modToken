@@ -75,6 +75,8 @@ th { color: var(--text-2); font-weight: 600; }
 .dev small { color: var(--muted); display: block; }
 .tag { font-size: 11.5px; color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 1px 6px; }
 form { display: flex; gap: 8px; flex-wrap: wrap; }
+.snip { margin: 0 0 8px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: 12.5px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+code { font: 12.5px ui-monospace, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 form input { flex: 1; min-width: 180px; }
 .hide { display: none !important; }
 </style>
@@ -129,6 +131,18 @@ form input { flex: 1; min-width: 180px; }
       <p class="sub">Створи код, потім на пристрої виконай <b>/tracker-link КОД</b>. Код діє 10 хвилин і прив'язує лише один пристрій.</p>
       <form id="new-code"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button type="submit">Створити код</button></form>
       <div id="code-box" class="hide"><div class="code" id="code"></div><div class="sub" id="code-note"></div></div>
+    </div>
+    <div class="card">
+      <h2>Хмарні сесії (claude.ai/code)</h2>
+      <p class="sub">Один раз на хмарне середовище: плагіни там не працюють, тому токени збирає хук, який ставить Setup script. Потім нічого робити не треба.</p>
+      <form id="cloud-form"><input id="cloud-name" value="cloud" maxlength="60" required aria-label="Назва пристрою"><button type="submit">Створити токен для хмари</button></form>
+      <div id="cloud-box" class="hide">
+        <p class="sub" style="margin:14px 0 6px"><b>1.</b> У claude.ai/code → меню середовища → Edit → <b>Setup script</b> встав:</p>
+        <pre class="snip" id="cloud-script"></pre><button type="button" id="copy-script">Копіювати</button>
+        <p class="sub" style="margin:14px 0 6px"><b>2.</b> Там само, <b>Network secrets → Add secret</b>: Allowed website <code id="cloud-host"></code>, Custom headers: Name <code>x-device-token</code>, Prefix порожній, Value:</p>
+        <pre class="snip" id="cloud-token"></pre><button type="button" id="copy-token">Копіювати токен</button>
+        <p class="sub" style="margin:10px 0 0">Токен показується один раз. Втратиш: створи новий і відклич старий пристрій нижче.</p>
+      </div>
     </div>
     <div class="card"><h2>Мої пристрої</h2><div id="dev-list"></div></div>
     <div class="card">
@@ -286,6 +300,24 @@ $('import-files').addEventListener('change', async () => {
     input.disabled = false; input.value = ''
   }
 })
+
+$('cloud-form').addEventListener('submit', async e => {
+  e.preventDefault()
+  try {
+    const { token } = await api('/cloud-device', { method: 'POST', body: JSON.stringify({ name: $('cloud-name').value }) })
+    $('cloud-script').textContent = `curl -fsSL https://raw.githubusercontent.com/Pavlo577/modToken/main/cloud/setup.sh | bash -s -- ${location.origin}`
+    $('cloud-host').textContent = location.hostname
+    $('cloud-token').textContent = token
+    $('cloud-box').classList.remove('hide')
+    loadDevices()
+  } catch (err) { alert('Не вдалося створити токен: ' + err.message) }
+})
+const copy = (id, btn) => async () => {
+  try { await navigator.clipboard.writeText($(id).textContent); const t = btn.textContent; btn.textContent = 'Скопійовано'; setTimeout(() => (btn.textContent = t), 1500) }
+  catch { alert('Не вдалося скопіювати, виділи текст вручну.') }
+}
+$('copy-script').onclick = copy('cloud-script', $('copy-script'))
+$('copy-token').onclick = copy('cloud-token', $('copy-token'))
 
 let timer
 $('new-code').addEventListener('submit', async e => {
