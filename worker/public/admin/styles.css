@@ -199,3 +199,5 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .mi[data-tip] { position: relative; }
 .mi[data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: max-content; max-width: 230px; padding: 7px 11px; border-radius: 10px; background: rgba(24,20,17,.97); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 12px 30px rgba(0,0,0,.5); color: var(--text-2); font-size: 12.5px; line-height: 1.4; white-space: normal; text-align: left; opacity: 0; pointer-events: none; transition: opacity .12s; }
 .mi[data-tip]:hover::after, .mi[data-tip]:focus-visible::after { opacity: 1; }
+#io-mode[data-mode="in"] { color: var(--in); border-color: rgba(61,139,255,.55); background: rgba(61,139,255,.14); }
+#io-mode[data-mode="out"] { color: var(--out); border-color: rgba(255,122,26,.55); background: rgba(255,122,26,.14); }

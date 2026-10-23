@@ -11,6 +11,9 @@ import type { Bucket, LimitRow, Prices, SessionRow, TurnRow, Totals } from './ty
 type Tab = 'overview' | 'analytics' | 'money' | 'sessions' | 'devices'
 type View = 'line' | 'bars' | 'cal'
 type Metric = 'io' | 'all' // 'all' adds the cache reads
+/** Which of the two to draw: both, only input (arrow down) or only output (arrow up). */
+type IoMode = 'both' | 'in' | 'out'
+const IO_NEXT: Record<IoMode, IoMode> = { both: 'in', in: 'out', out: 'both' }
 
 interface State {
   tab: Tab
@@ -26,6 +29,7 @@ interface State {
   device: string
   view: View
   metric: Metric
+  io: IoMode
   day: string
 }
 
@@ -56,11 +60,12 @@ const iso = (ms: number): string => new Date(ms).toISOString()
 let saved: Partial<State> = {}
 try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<State> } catch { /* private mode: start with defaults */ }
 const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
-const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
+const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', io: 'both', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
 state.range = OLD_RANGES[state.range] ?? state.range
+if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, io: state.io, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
 }
 
 let prices: Prices | null = null
@@ -169,7 +174,9 @@ function renderKpis(agg: S.Aggregate): void {
 }
 
 type Def = [label: string, color: string, pick: (t: Totals) => number]
-const IO: Def[] = [['Вихідні', COLORS.out, t => t.output], ['Вхідні (нові)', COLORS.in, S.freshInput]]
+const OUT: Def = ['Вихідні', COLORS.out, t => t.output]
+const IN: Def = ['Вхідні (нові)', COLORS.in, S.freshInput]
+const ioDefs = (): Def[] => (state.io === 'in' ? [IN] : state.io === 'out' ? [OUT] : [OUT, IN])
 const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
 /** Height of the main chart: grows with the window, at most 70% of it. */
 const mainHeight = (): number => Math.round(Math.max(300, Math.min(window.innerHeight * 0.5, window.innerHeight * 0.7)))
@@ -190,8 +197,9 @@ function renderMain(agg: S.Aggregate): void {
     void get<Bucket[]>('/buckets?' + q(tz.startOfDay(from), tz.startOfDay(S.addDays(to, 1)))).then(buckets => {
       if (state.view !== 'cal') return
       const a = S.aggregate(buckets, tz, { device: state.device || null, prices })
-      const days = new Map([...a.days].map(([d, t]) => [d, t.output + S.freshInput(t)])) // the cache is not shown here
-      const label = 'Нові вхідні + вихідні'
+      const picks = ioDefs() // the cache is not shown here
+      const days = new Map([...a.days].map(([d, t]) => [d, picks.reduce((sum, [, , pick]) => sum + pick(t), 0)]))
+      const label = state.io === 'in' ? 'Нові вхідні' : state.io === 'out' ? 'Вихідні' : 'Нові вхідні + вихідні'
       calendarHeatmap($('main-chart'), {
         from, to, days, addDays: S.addDays,
         dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
@@ -208,7 +216,7 @@ function renderMain(agg: S.Aggregate): void {
   const src = hourly ? agg.hours : agg.days
   const rows = keys.map(k => src.get(k) ?? ZERO)
   const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
-  const series: Series[] = IO.map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
+  const series: Series[] = ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
   // the cache is far larger than the rest, so it gets its own scale on the right
   const secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
   $('main-title').textContent = 'Токени'
@@ -567,9 +575,20 @@ function setTab(tab: Tab): void {
   else render()
 }
 
+const IO_ICON: Record<IoMode, string> = {
+  both: '<path d="M8 20V5M8 5l-4 4M8 5l4 4"/><path d="M16 4v15M16 19l-4-4M16 19l4-4"/>',
+  in: '<path d="M12 4v15M12 19l-5-5M12 19l5-5"/>',
+  out: '<path d="M12 20V5M12 5l-5 5M12 5l5 5"/>',
+}
+
 function syncControls(): void {
   press($('range'), 'r', state.range)
   press($('view'), 'v', state.view)
+  const io = $('io-mode')
+  io.dataset.mode = state.io
+  $('io-icon').innerHTML = IO_ICON[state.io]
+  const ioName: Record<IoMode, string> = { both: 'вхідні та вихідні', in: 'лише вхідні', out: 'лише вихідні' }
+  io.dataset.tip = `Показуються ${ioName[state.io]} токени. Натисни, щоб ${IO_NEXT[state.io] === 'in' ? 'лише вхідні' : IO_NEXT[state.io] === 'out' ? 'лише вихідні' : 'вхідні та вихідні'}`
   const cache = $<HTMLButtonElement>('cache-on'), off = state.view === 'cal'
   cache.setAttribute('aria-pressed', String(state.metric === 'all' && !off))
   cache.setAttribute('aria-disabled', String(off))
@@ -613,6 +632,7 @@ $('to').onchange = dateChanged
 const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); render() })
 
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
+$('io-mode').onclick = () => { state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
 $('cache-on').onclick = () => {
   if (state.view === 'cal') return
   state.metric = state.metric === 'all' ? 'io' : 'all'; persist(); syncControls(); render()

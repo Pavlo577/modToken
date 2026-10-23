@@ -54,9 +54,9 @@
             <button data-v="cal" aria-pressed="false">Календар</button>
           </div>
           <span class="mtools">
-            <span class="mi" tabindex="0" data-tip="Показуються вхідні та вихідні токени" aria-label="Показуються вхідні та вихідні токени">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 20V5M8 5l-4 4M8 5l4 4"/><path d="M16 4v15M16 19l-4-4M16 19l4-4"/></svg>
-            </span>
+            <button type="button" class="mi tgl" id="io-mode" data-mode="both" data-tip="Показуються вхідні та вихідні токени. Натисни, щоб лише вхідні" aria-label="Які токени показувати">
+              <svg id="io-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg>
+            </button>
             <button type="button" class="mi tgl" id="cache-on" aria-pressed="false" data-tip="Показати кеш">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
               Кеш
