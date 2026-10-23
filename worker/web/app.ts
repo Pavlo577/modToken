@@ -107,9 +107,15 @@ function currentRange(): Range {
   return { today, fromDay, toDay, from, to, len, prevFrom, label }
 }
 
+/** How long loading may take before grey placeholders appear instead of the old charts. */
+const SKELETON_AFTER_MS = 250
+
 async function load(): Promise<void> {
-  $('kpis').replaceChildren(...Array.from({ length: 6 }, skeletonTile))
-  for (const [id, h] of [['main-chart', 260], ['day-chart', 200], ['hour-grid', 200], ['cache-chart', 200], ['cost-chart', 220], ['limits-chart', 200]] as const) skeleton($(id), h)
+  // placeholders only if loading is slow; a quick load goes straight to the charts
+  const slow = setTimeout(() => {
+    $('kpis').replaceChildren(...Array.from({ length: 6 }, skeletonTile))
+    for (const [id, h] of [['main-chart', 260], ['day-chart', 200], ['hour-grid', 200], ['cache-chart', 200], ['cost-chart', 220], ['limits-chart', 200]] as const) skeleton($(id), h)
+  }, SKELETON_AFTER_MS)
   const r = currentRange()
   const now = Date.now()
   const histFrom = r.prevFrom
@@ -119,12 +125,14 @@ async function load(): Promise<void> {
       get<SessionRow[]>('/sessions?' + q(r.from, r.to)),
       get<LimitRow[]>('/limits?' + q(Math.max(Math.min(r.from, now - 60 * 86_400_000), now - 395 * 86_400_000), Math.max(r.to, now + 1))),
     ])
+    clearTimeout(slow)
     data = { r, buckets, sessions, limits }
     const names = [...new Set(buckets.map(b => b.device))].sort()
     $('device').replaceChildren(el('option', { value: '' }, 'Усі пристрої'), ...names.map(n => el('option', { value: n, selected: n === state.device }, n)))
     if (state.device && !names.includes(state.device)) { state.device = ''; $<HTMLSelectElement>('device').value = '' }
     render()
   } catch (e) {
+    clearTimeout(slow)
     $('kpis').replaceChildren(el('div', { class: 'empty', style: 'grid-column:1/-1' }, 'Не вдалося завантажити: ' + (e as Error).message))
   }
 }
@@ -278,8 +286,9 @@ function renderActivity(agg: S.Aggregate): void {
   if (r.len === 1) {
     title.textContent = 'Активність за день'
     sub.textContent = `${dayLong(r.fromDay)}: вихідні токени по 5 хвилин (стовпець: година, рядок: 5 хвилин)`
-    skeleton(box, 300)
+    const slow = setTimeout(() => { if (seq === activitySeq) skeleton(box, 300) }, SKELETON_AFTER_MS)
     void get<TurnRow[]>('/turns?' + q(r.from, r.to)).then(all => {
+      clearTimeout(slow)
       if (seq !== activitySeq) return
       // cells[five-minute slot][hour]
       const acc = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0 })))
@@ -293,7 +302,7 @@ function renderActivity(agg: S.Aggregate): void {
         rowLabel: m => `:${pad(m * 5)}`, colLabel: h => String(h), maxCell: 80, cellH: 22, labelW: 36,
         tipTitle: (m, h) => `${pad(h)}:${pad(m * 5)}–${pad(h)}:${pad(m * 5 + 4)}`,
       })
-    }).catch((e: Error) => { if (seq === activitySeq) box.replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) })
+    }).catch((e: Error) => { clearTimeout(slow); if (seq === activitySeq) box.replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) })
   } else if (r.len <= 7) {
     title.textContent = 'Коли ти працюєш'
     sub.textContent = 'Вихідні токени за днем тижня й годиною (за твоїм часовим поясом)'
