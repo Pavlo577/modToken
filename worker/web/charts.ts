@@ -79,9 +79,36 @@ function empty(container: HTMLElement, text = 'Немає даних за цей
   container.replaceChildren(el('div', { class: 'empty' }, text))
 }
 
-/** Right-hand value axis for a series with its own scale: labels in the series colour at the shared grid lines. */
-function rightAxis(root: SVGElement, sec: Series, secMax: number, W: number, right: number, yAt: (frac: number) => number): void {
-  ticks(secMax).forEach((v, k) => root.append(svg('text', { x: W - right + 8, y: yAt(k / 4) + 4, class: 'ax', style: `fill:${sec.color}` }, fmtAxis(v))))
+/** Largest "nice" number (1, 2, 2.5, 5 times a power of ten) that does not exceed v. */
+const niceFloor = (v: number): number => {
+  if (v <= 0) return 1
+  const p = 10 ** Math.floor(Math.log10(v))
+  const f = v / p
+  return (f >= 5 ? 5 : f >= 2.5 ? 2.5 : f >= 2 ? 2 : 1) * p
+}
+
+/**
+ * Value-axis maximum when an extra series (the cache) shares the scale: fitted to the main series, so that its highest
+ * point reaches at least the first grid line; the extra series is clipped at the top if it is larger.
+ */
+function sharedMax(mainMax: number, extraMax: number): number {
+  const full = niceMax(Math.max(mainMax, extraMax))
+  return Math.max(niceMax(mainMax), Math.min(full, niceFloor(4 * mainMax)))
+}
+
+/** Logarithmic value axis: one gridline per power of ten that spans all the values; zero sits on the bottom line. */
+function logAxis(values: number[], top: number, ih: number): { ticks: number[]; y: (v: number) => number } {
+  const pos = values.filter(v => v > 0)
+  const lo = Math.floor(Math.log10(Math.min(...pos))), hi = Math.max(lo + 1, Math.ceil(Math.log10(Math.max(...pos))))
+  return {
+    ticks: Array.from({ length: hi - lo + 1 }, (_, k) => 10 ** (lo + k)),
+    y: v => top + ih - ((Math.log10(Math.max(v, 10 ** lo)) - lo) / (hi - lo)) * ih,
+  }
+}
+
+/** Small note inside the plot that the extra series runs off the top of the scale. */
+const clipNote = (root: SVGElement, x: number, y: number, sec: Series): void => {
+  root.append(svg('text', { x, y, class: 'ax', style: `fill:${sec.color}` }, `↑ ${sec.label.toLowerCase()} виходить за шкалу (значення в підказці)`))
 }
 
 export interface Series {
@@ -101,8 +128,10 @@ export interface LineOptions {
   /** lower end of the value axis (default 0) */
   yMin?: number
   area?: boolean
-  /** A series on its own scale (right axis), for values far larger than the rest, e.g. cache reads. */
+  /** An extra series on the same scale, clipped at the top when far larger than the rest (cache reads). */
   secondary?: Series
+  /** Logarithmic axis: values of very different size (the cache) all stay readable, nothing is clipped. */
+  logScale?: boolean
 }
 
 /** Lines over evenly spaced categories (days or hours), with a crosshair and a tooltip. */
@@ -115,33 +144,36 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
   responsive(container, W => {
     const animate = first
     first = false
-    const m = { l: 44, r: sec ? 50 : 14, t: 14, b: 26 }
+    const m = { l: 44, r: 14, t: 14, b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const lo = opts.yMin ?? 0
-    const max = opts.yMax ?? niceMax(Math.max(...all))
+    const secTop = sec ? Math.max(...sec.values) : 0
+    const logOn = !!opts.logScale && [...all, ...(sec?.values ?? [])].some(v => v > 0)
+    const lg = logOn ? logAxis([...all, ...(sec?.values ?? [])], m.t, ih) : null
+    const max = opts.yMax ?? (sec ? sharedMax(Math.max(...all), secTop) : niceMax(Math.max(...all)))
     const x = (i: number): number => m.l + (labels.length === 1 ? iw / 2 : (iw * i) / (labels.length - 1))
-    const y = (v: number): number => m.t + ih - ((v - lo) / (max - lo || 1)) * ih
-    const secMax = sec ? niceMax(Math.max(...sec.values)) : 1
-    const ys = (v: number): number => m.t + ih - (v / secMax) * ih
-    const plot: { s: Series; y: (v: number) => number }[] = [...series.map(s => ({ s, y })), ...(sec ? [{ s: sec, y: ys }] : [])]
+    const y = (v: number): number => (lg ? lg.y(v) : m.t + ih - ((v - lo) / (max - lo || 1)) * ih)
+    const yc = (v: number): number => (lg ? lg.y(v) : y(Math.min(v, max))) // clipped at the top of the scale
+    const plot: { s: Series; y: (v: number) => number }[] = [...series.map(s => ({ s, y })), ...(sec ? [{ s: sec, y: yc }] : [])]
     const uid = `g${container.id}`
     const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
     const defs = svg('defs')
     series.forEach((s, k) => defs.append(svg('linearGradient', { id: `${uid}${k}`, x1: 0, x2: 0, y1: 0, y2: 1 },
       svg('stop', { offset: '0%', 'stop-color': s.color, 'stop-opacity': 0.28 }), svg('stop', { offset: '100%', 'stop-color': s.color, 'stop-opacity': 0 }))))
     root.append(defs)
-    for (const t of ticks(max - lo).map(v => v + lo)) {
+    for (const t of lg ? lg.ticks : ticks(max - lo).map(v => v + lo)) {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
-    if (sec) rightAxis(root, sec, secMax, W, m.r, f => m.t + ih - f * ih)
     for (const i of evenLabels(labels.length, iw)) root.append(svg('text', { x: x(i), y: height - 6, class: 'ax', 'text-anchor': i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle' }, labels[i]))
     plot.forEach(({ s, y: yf }, k) => {
       const pts = s.values.map((v, i): [number, number] => [x(i), yf(v)])
-      if (area && k < 2 && pts.length > 1) root.append(svg('path', { d: `${smooth(pts)}L${pts[pts.length - 1][0]},${m.t + ih}L${pts[0][0]},${m.t + ih}Z`, fill: `url(#${uid}${k})`, class: 'fade' }))
-      root.append(svg('path', { d: smooth(pts), fill: 'none', stroke: s.color, 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw' }))
+      if (area && !lg && k < 2 && pts.length > 1) root.append(svg('path', { d: `${smooth(pts)}L${pts[pts.length - 1][0]},${m.t + ih}L${pts[0][0]},${m.t + ih}Z`, fill: `url(#${uid}${k})`, class: 'fade' }))
+      const extra = s === sec // the cache: thinner and fainter so the main lines stay readable
+      root.append(svg('path', { d: smooth(pts), fill: 'none', stroke: s.color, 'stroke-width': extra ? 1.7 : 2.4, 'stroke-opacity': extra ? 0.7 : 1, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw' }))
       if (pts.length === 1) root.append(svg('circle', { cx: pts[0][0], cy: pts[0][1], r: 4, fill: s.color }))
     })
+    if (sec && !lg && secTop > max) clipNote(root, m.l + 6, m.t + 12, sec)
     const cross = svg('line', { y1: m.t, y2: m.t + ih, class: 'cross', style: 'display:none' })
     const dots = plot.map(({ s }) => svg('circle', { r: 5, fill: '#14110f', stroke: s.color, 'stroke-width': 2.5, style: 'display:none' }))
     root.append(cross, ...dots)
@@ -169,8 +201,10 @@ export interface BarOptions {
   height?: number
   yFmt?: (v: number) => string
   extraTip?: (i: number) => TipRow[]
-  /** Drawn as a line over the bars, on its own scale (right axis). */
+  /** Drawn as a line over the bars on the same scale, clipped at the top when larger. */
   secondary?: Series
+  /** Logarithmic axis; the bars are then side by side instead of stacked, the extra series is a bar too. */
+  logScale?: boolean
 }
 
 /** Stacked bars over categories, rounded on top, with a tooltip. */
@@ -183,26 +217,35 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
   responsive(container, W => {
     const animate = first
     first = false
-    const m = { l: 44, r: sec ? 50 : 8, t: 14, b: 26 }
+    const m = { l: 44, r: 8, t: 14, b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
-    const max = niceMax(Math.max(...totals))
-    const secMax = sec ? niceMax(Math.max(...sec.values)) : 1
-    const ys = (v: number): number => m.t + ih - (v / secMax) * ih
+    const secTop = sec ? Math.max(...sec.values) : 0
+    const list = [...series, ...(sec ? [sec] : [])]
+    const lg = opts.logScale && list.some(l => l.values.some(v => v > 0)) ? logAxis(list.flatMap(l => l.values), m.t, ih) : null
+    const max = sec ? sharedMax(Math.max(...totals), secTop) : niceMax(Math.max(...totals))
     const slotW = iw / labels.length
     const bw = Math.max(2, Math.min(34, slotW * 0.68))
-    const y = (v: number): number => m.t + ih - (v / max) * ih
+    const y = (v: number): number => (lg ? lg.y(v) : m.t + ih - (Math.min(v, max) / max) * ih)
+    const ys = y
     const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
-    for (const t of ticks(max)) {
+    for (const t of lg ? lg.ticks : ticks(max)) {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
-    if (sec) rightAxis(root, sec, secMax, W, m.r, f => m.t + ih - f * ih)
     for (const i of evenLabels(labels.length, iw, 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
     const groups = labels.map((_, i): [SVGElement, number, number] => {
       const cx = m.l + slotW * (i + 0.5)
       const g = svg('g', { class: 'bar grow', style: `--d:${Math.min(600, i * 14)}ms` })
       g.append(svg('rect', { x: m.l + slotW * i, y: m.t, width: slotW, height: ih, class: 'bar-hit' }))
       let acc = 0
+      if (lg) { // side by side, each from the bottom line up to its value
+        const n = list.length, w = Math.max(2, Math.min(34, (slotW * 0.8) / n))
+        list.forEach((s, j) => {
+          const top = y(s.values[i])
+          if (s.values[i] > 0) g.append(svg('rect', { x: cx - (w * n) / 2 + j * w + 0.5, y: top, width: Math.max(1, w - 1), height: m.t + ih - top, rx: Math.min(3, w / 3), fill: s.color }))
+        })
+        return [g, cx, Math.max(...list.map(s => s.values[i]))]
+      }
       const live = series.filter(s => s.values[i] > 0)
       live.forEach((s, n) => {
         const y1 = y(acc + s.values[i]), y0 = y(acc)
@@ -220,13 +263,14 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
       return [g, cx, acc]
     })
     root.append(...groups.map(([g]) => g))
-    if (sec && labels.length > 1) root.append(svg('path', { d: smooth(sec.values.map((v, i): [number, number] => [m.l + slotW * (i + 0.5), ys(v)])), fill: 'none', stroke: sec.color, 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw', style: 'pointer-events:none' }))
+    if (sec && !lg && labels.length > 1) root.append(svg('path', { d: smooth(sec.values.map((v, i): [number, number] => [m.l + slotW * (i + 0.5), ys(v)])), fill: 'none', stroke: sec.color, 'stroke-width': 1.7, 'stroke-opacity': 0.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw', style: 'pointer-events:none' }))
+    if (sec && !lg && secTop > max) clipNote(root, m.l + 6, m.t + 12, sec)
     place(container, root)
     const tip = tipOf(host)
     groups.forEach(([g, cx, top], i) => {
       const show = (): void => {
         g.classList.add('on')
-        tip.show(cx, Math.min(y(top), sec ? ys(sec.values[i]) : Infinity), opts.tipTitle(i), [...series.map((s): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]), ...(sec ? [[sec.label, (sec.fmt ?? yFmt)(sec.values[i]), sec.color] as TipRow] : []), ...(opts.extraTip?.(i) ?? [])])
+        tip.show(cx, lg ? y(top) : Math.min(y(top), sec ? ys(sec.values[i]) : Infinity), opts.tipTitle(i), [...series.map((s): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]), ...(sec ? [[sec.label, (sec.fmt ?? yFmt)(sec.values[i]), sec.color] as TipRow] : []), ...(opts.extraTip?.(i) ?? [])])
       }
       g.addEventListener('pointerenter', show); g.addEventListener('pointerdown', show)
       g.addEventListener('pointerleave', () => { g.classList.remove('on'); tip.hide() })

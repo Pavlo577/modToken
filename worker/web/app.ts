@@ -30,6 +30,8 @@ interface State {
   view: View
   metric: Metric
   io: IoMode
+  /** Main chart with the cache on: 'log' = logarithmic, 'linear' = one linear scale, cache clipped at the top. */
+  scale: 'log' | 'linear'
   day: string
 }
 
@@ -60,12 +62,12 @@ const iso = (ms: number): string => new Date(ms).toISOString()
 let saved: Partial<State> = {}
 try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<State> } catch { /* private mode: start with defaults */ }
 const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
-const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', io: 'both', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
+const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', io: 'both', scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
 state.range = OLD_RANGES[state.range] ?? state.range
 if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, io: state.io, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, io: state.io, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
 }
 
 let prices: Prices | null = null
@@ -217,13 +219,13 @@ function renderMain(agg: S.Aggregate): void {
   const rows = keys.map(k => src.get(k) ?? ZERO)
   const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
   const series: Series[] = ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
-  // the cache is far larger than the rest, so it gets its own scale on the right
+  // the cache is far larger than the rest: logarithmic axis, or one linear scale fitted to input/output with the cache clipped at the top
   const secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
   $('main-title').textContent = 'Токени'
   $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}`
-  $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label + ' (права вісь)' }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
+  $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
   const opts = {
-    labels, series, secondary, yFmt, height: mainHeight(),
+    labels, series, secondary, yFmt, height: mainHeight(), logScale: !!secondary && state.scale === 'log',
     tipTitle: (i: number): string => (hourly ? `${dayLong(r.fromDay)}, ${keys[i].slice(11)}:00` : dayLong(keys[i])),
     extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)]],
   }
@@ -589,10 +591,12 @@ function syncControls(): void {
   $('io-icon').innerHTML = IO_ICON[state.io]
   const ioName: Record<IoMode, string> = { both: 'вхідні та вихідні', in: 'лише вхідні', out: 'лише вихідні' }
   io.dataset.tip = `Показуються ${ioName[state.io]} токени. Натисни, щоб ${IO_NEXT[state.io] === 'in' ? 'лише вхідні' : IO_NEXT[state.io] === 'out' ? 'лише вихідні' : 'вхідні та вихідні'}`
+  $('scale-mode').classList.toggle('hide', !(state.metric === 'all' && state.view !== 'cal'))
+  press($('scale-mode'), 's', state.scale)
   const cache = $<HTMLButtonElement>('cache-on'), off = state.view === 'cal'
   cache.setAttribute('aria-pressed', String(state.metric === 'all' && !off))
   cache.setAttribute('aria-disabled', String(off))
-  cache.dataset.tip = off ? 'У режимі «Календар» кеш не відображається' : state.metric === 'all' ? 'Кеш показується на правій осі. Натисни, щоб сховати' : 'Показати кеш на правій осі'
+  cache.dataset.tip = off ? 'У режимі «Календар» кеш не відображається' : state.metric === 'all' ? 'Кеш показується. Натисни, щоб сховати' : 'Показати кеш'
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
@@ -632,6 +636,7 @@ $('to').onchange = dateChanged
 const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); render() })
 
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
+$('scale-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.scale = b.dataset.s === 'linear' ? 'linear' : 'log'; persist(); syncControls(); render() })
 $('io-mode').onclick = () => { state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
 $('cache-on').onclick = () => {
   if (state.view === 'cal') return
