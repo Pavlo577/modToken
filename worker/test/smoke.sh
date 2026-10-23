@@ -39,6 +39,12 @@ check "after-link rows skipped"  "$(imp "$NEW" | grep -c '"afterLink":1')" 1
 check "import needs imp: ids"    "$(code_of -XPOST $B/api/admin/import -d "{\"device_id\":\"$ID\",\"rows\":[{\"turn_id\":\"x\",\"ts\":\"2020-01-01T00:00:00Z\"}]}")" 400
 check "import: unknown device"   "$(code_of -XPOST $B/api/admin/import -d '{"device_id":"00000000-0000-0000-0000-000000000000","rows":[{}]}')" 404
 curl -s "$B/api/admin/stats?days=30" | grep -q '"turns":2' && echo "ok   imported turn counted" || { echo "FAIL imported turn missing"; fail=1; }
+# Device-token import (what /tracker-import uses)
+dimp() { curl -s -XPOST $B/api/import -H "x-device-token: $1" -d "{\"rows\":[$2]}"; }
+OLD2="{\"turn_id\":\"imp:g:1\",\"session_id\":\"s0\",\"ts\":\"$YDAY\",\"model\":\"m\",\"output_tokens\":4}"
+check "token import: no token"     "$(code_of -XPOST $B/api/import -d '{"rows":[{}]}')" 401
+check "token import adds history"  "$(dimp "$TOKEN" "$OLD2" | grep -c '"inserted":1')" 1
+check "token import is idempotent" "$(dimp "$TOKEN" "$OLD2" | grep -c '"inserted":0,"duplicates":1')" 1
 check "revoke device"            "$(code_of -XDELETE $B/api/admin/devices/$ID)" 204
 check "revoked token rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$ROW")" 401
 exit $fail

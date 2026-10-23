@@ -55,6 +55,35 @@ function eventStmt(env: Env, email: string, deviceId: string, r: Record<string, 
   )
 }
 
+/** Old history for a device: only turns from before it was linked (later ones are collected live). */
+async function importRows(env: Env, email: string, dev: { id: string; created_at: string }, rows: unknown): Promise<Response> {
+  if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_ROWS) return text('bad request', 400)
+  const cutoff = new Date(dev.created_at).getTime()
+  const stmts: D1PreparedStatement[] = []
+  let afterLink = 0
+  for (const r of rows as Record<string, unknown>[]) {
+    const turnId = str(r.turn_id)
+    if (!turnId.startsWith('imp:')) return text('bad request', 400)
+    const stmt = eventStmt(env, email, dev.id, r, turnId)
+    if (!stmt) return text('bad request', 400)
+    if (new Date(str(r.ts)).getTime() >= cutoff) { afterLink++; continue }
+    stmts.push(stmt)
+  }
+  const results = stmts.length ? await env.DB.batch(stmts) : []
+  const inserted = results.reduce((n, r) => n + (r.meta.changes ?? 0), 0)
+  return json({ inserted, duplicates: stmts.length - inserted, afterLink })
+}
+
+async function importFromDevice(req: Request, env: Env): Promise<Response> {
+  const token = req.headers.get('x-device-token') ?? ''
+  const dev = await env.DB.prepare('SELECT id, user_email, created_at FROM devices WHERE token_hash = ? AND revoked = 0')
+    .bind(await sha256(token))
+    .first<{ id: string; user_email: string; created_at: string }>()
+  if (!dev) return text('unauthorized', 401)
+  const body = (await req.json().catch(() => null)) as { rows?: unknown } | null
+  return importRows(env, dev.user_email, dev, body?.rows)
+}
+
 async function ingest(req: Request, env: Env): Promise<Response> {
   const token = req.headers.get('x-device-token') ?? ''
   const dev = await env.DB.prepare('SELECT id, user_email FROM devices WHERE token_hash = ? AND revoked = 0')
@@ -138,24 +167,7 @@ async function admin(req: Request, env: Env, url: URL): Promise<Response> {
     const dev = await env.DB.prepare('SELECT id, created_at FROM devices WHERE id = ? AND user_email = ? AND revoked = 0')
       .bind(str(body?.device_id, 40), email).first<{ id: string; created_at: string }>()
     if (!dev) return text('device not found', 404)
-    const rows = body?.rows
-    if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_ROWS) return text('bad request', 400)
-
-    // Only history from before the device was linked: later turns are collected live by the mod.
-    const cutoff = new Date(dev.created_at).getTime()
-    const stmts: D1PreparedStatement[] = []
-    let afterLink = 0
-    for (const r of rows as Record<string, unknown>[]) {
-      const turnId = str(r.turn_id)
-      if (!turnId.startsWith('imp:')) return text('bad request', 400)
-      const stmt = eventStmt(env, email, dev.id, r, turnId)
-      if (!stmt) return text('bad request', 400)
-      if (new Date(str(r.ts)).getTime() >= cutoff) { afterLink++; continue }
-      stmts.push(stmt)
-    }
-    const results = stmts.length ? await env.DB.batch(stmts) : []
-    const inserted = results.reduce((n, r) => n + (r.meta.changes ?? 0), 0)
-    return json({ inserted, duplicates: stmts.length - inserted, afterLink })
+    return importRows(env, email, dev, body?.rows)
   }
 
   if (path === '/stats' && req.method === 'GET') {
@@ -186,6 +198,7 @@ export default {
     const url = new URL(req.url)
     if (url.pathname === '/api/ingest' && req.method === 'POST') return ingest(req, env)
     if (url.pathname === '/api/link' && req.method === 'POST') return link(req, env)
+    if (url.pathname === '/api/import' && req.method === 'POST') return importFromDevice(req, env)
     if (url.pathname.startsWith('/api/admin/')) return admin(req, env, url)
     if (url.pathname.startsWith('/api/')) return text('not found', 404)
     return env.ASSETS.fetch(req)

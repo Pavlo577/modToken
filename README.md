@@ -28,9 +28,11 @@ Then protect the admin in Cloudflare Zero Trust → Access → Applications → 
 The status line shows `token-tracker: ok` after an upload. Failed uploads are queued and retried at the next session start. A device can be revoked on the site at any time.
 
 ## Import old history
-The mod only counts turns after a device is linked. To bring in earlier history: on the site open Devices → "Import old data", pick the device and the folder `~/.claude/projects` (Windows: `%USERPROFILE%\.claude\projects`). The browser reads the `.jsonl` logs and sends only token counts, timestamps and model names. Only history from before the device was linked is imported, and a repeat import adds nothing twice. Logs on a headless server: copy them first, e.g. `scp -r user@host:~/.claude/projects ./projects`, then pick the copy and the server's device.
+The mod only counts turns after a device is linked. To bring in earlier history from the device's own logs, run `/tracker-import` there (needs Node.js on that device; with the npm install of Claude Code it is always there). It reads `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) with `import-logs.mjs` and sends only token counts, timestamps and model names. Nothing runs automatically; run it once after `/tracker-link`.
 
-Imported turns are grouped by prompt; their duration is the time from the prompt to the last reply, so it includes waiting for approvals and can look longer than live-tracked turns.
+Without Node.js, or for logs copied from another machine, use the site instead: Devices, "Import old data", pick the device and the `projects` folder (`scp -r user@host:~/.claude/projects ./projects` brings a server's logs over). Both ways build the same turn ids, so running one after the other never counts a turn twice.
+
+Only history from before the device was linked is imported (later turns are collected live), and a repeat import adds nothing. Imported turns are grouped by prompt; their duration is the time from the prompt to the last reply, so it includes waiting for approvals and can look longer than live-tracked turns.
 
 ## Tests
 `npm test` (in `worker/`) checks the log parser, including against real logs in `~/.claude/projects` when present. `worker/test/smoke.sh` runs against `wrangler dev` (put `DEV_EMAIL=me@example.com` in `worker/.dev.vars` first); `smoke.sh --gate` runs against a dev server started without it and checks that the admin API refuses unauthenticated and forged requests.

@@ -81,6 +81,10 @@ export const register: Register = on => {
       name: 'tracker-link',
       description: 'Link this device to your account: /tracker-link <code from the site>',
     })
+    await $.command.register({
+      name: 'tracker-import',
+      description: 'Send the usage history from before linking (needs Node.js on this device)',
+    })
     return next(e)
   })
 
@@ -109,11 +113,30 @@ export const register: Register = on => {
       if (!out.token) return { text: 'token-tracker: linking failed (unexpected answer).' }
       await $.store.set(TOKEN, out.token)
       $.ui.status('linked')
-      return { text: `token-tracker: linked as "${out.device}". Usage will be sent after each turn.` }
+      return { text: `token-tracker: linked as "${out.device}". Usage will be sent after each turn. Run /tracker-import to add the history from before linking.` }
     } catch {
       return { text: 'token-tracker: could not reach the backend. Check the URL and your connection.' }
     }
   }).catch(() => ({ text: 'token-tracker: linking failed unexpectedly' }))
+
+  on('command.run', { command: 'tracker-import' }, async ($, e) => {
+    const token = (await $.store.get(TOKEN)) as string | undefined
+    if (!token) return { text: 'token-tracker: not linked yet. Run /tracker-link <code> first.' }
+    const noNode = 'token-tracker: could not run Node.js here. Install Node.js, or import on the site: Devices, Import old data.'
+    try {
+      const r = await $.process.run(['node', `${$.plugin.root}/import-logs.mjs`], {
+        env: { TRACKER_URL: await backend($), TRACKER_TOKEN: token },
+        timeoutMs: 600_000,
+      })
+      if (r.exitCode !== 0) return { text: `token-tracker: import failed. ${r.stderr.trim().slice(0, 300) || `exit code ${r.exitCode}`}` }
+      const t = JSON.parse(r.stdout.trim().split('\n').pop() ?? '{}') as { turns?: number; inserted?: number; duplicates?: number; afterLink?: number }
+      return {
+        text: `token-tracker: found ${t.turns ?? 0} turns in the logs, added ${t.inserted ?? 0}, already there ${t.duplicates ?? 0}, newer than linking ${t.afterLink ?? 0} (collected live).`,
+      }
+    } catch {
+      return { text: noNode }
+    }
+  }).catch(() => ({ text: 'token-tracker: import failed unexpectedly' }))
 
   on('classic.SessionStart', async ($, e, next) => {
     sessionId = e.session_id
