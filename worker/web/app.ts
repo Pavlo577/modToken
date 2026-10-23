@@ -10,7 +10,7 @@ import type { Bucket, LimitRow, Prices, SessionRow, TurnRow, Totals } from './ty
 
 type Tab = 'overview' | 'analytics' | 'money' | 'sessions' | 'devices'
 type View = 'line' | 'bars' | 'cal'
-type Metric = 'io' | 'all' | 'cost'
+type Metric = 'io' | 'all' // 'all' adds the cache reads
 
 interface State {
   tab: Tab
@@ -58,6 +58,7 @@ try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<St
 const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
 const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
 state.range = OLD_RANGES[state.range] ?? state.range
+if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 const persist = (): void => {
   try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
 }
@@ -171,7 +172,6 @@ type Def = [label: string, color: string, pick: (t: Totals) => number]
 const METRICS: Record<Metric, Def[]> = {
   io: [['Вихідні', COLORS.out, t => t.output], ['Вхідні (нові)', COLORS.in, S.freshInput]],
   all: [['Вихідні', COLORS.out, t => t.output], ['Вхідні (нові)', COLORS.in, S.freshInput], ['З кешу', COLORS.cache, t => t.cache_read]],
-  cost: [['Вартість', COLORS.out, t => t.cost]],
 }
 const ZERO: Totals = { input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 }
 
@@ -179,9 +179,8 @@ function renderMain(agg: S.Aggregate): void {
   const r = need().r
   const { view, metric } = state
   const defs = METRICS[metric]
-  const money = metric === 'cost'
-  const yFmt = money ? (v: number): string => '$' + fmtAxis(v) : fmtAxis
-  const valFmt = money ? fmtUsd : fmt
+  const yFmt = fmtAxis
+  const valFmt = fmt
   $('main-chart').replaceChildren()
   $('main-legend').replaceChildren()
 
@@ -192,14 +191,14 @@ function renderMain(agg: S.Aggregate): void {
     void get<Bucket[]>('/buckets?' + q(tz.startOfDay(from), tz.startOfDay(S.addDays(to, 1)))).then(buckets => {
       if (state.view !== 'cal') return
       const a = S.aggregate(buckets, tz, { device: state.device || null, prices })
-      const pick = (t: Totals): number => (metric === 'cost' ? t.cost : metric === 'all' ? t.output + t.input + t.cache_read + t.cache_creation : t.output + (metric === 'io' ? S.freshInput(t) : 0))
+      const pick = (t: Totals): number => (metric === 'all' ? t.output + t.input + t.cache_read + t.cache_creation : t.output + S.freshInput(t))
       const days = new Map([...a.days].map(([d, t]) => [d, pick(t)]))
-      const label = metric === 'cost' ? 'Оцінка вартості' : metric === 'all' ? 'Усього токенів' : 'Нові вхідні + вихідні'
+      const label = metric === 'all' ? 'Усього токенів' : 'Нові вхідні + вихідні'
       calendarHeatmap($('main-chart'), {
         from, to, days, addDays: S.addDays,
         dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
         tipTitle: dayLong,
-        tipValue: (d, v) => [[label, money ? fmtUsd(v) : fmt(v)], ['Ходів', String(a.days.get(d)?.turns ?? 0)]],
+        tipValue: (d, v) => [[label, fmt(v)], ['Ходів', String(a.days.get(d)?.turns ?? 0)]],
       })
     })
     $('main-legend').replaceChildren(el('span', { style: 'display:flex;gap:6px;align-items:center' }, 'Менше', ...HEAT.map(c => el('i', { style: `background:${c};width:14px;height:14px;border-radius:4px;margin:0` })), 'Більше'))
@@ -212,7 +211,7 @@ function renderMain(agg: S.Aggregate): void {
   const rows = keys.map(k => src.get(k) ?? ZERO)
   const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
   const series: Series[] = defs.map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
-  $('main-title').textContent = money ? 'Оцінка вартості' : 'Токени'
+  $('main-title').textContent = 'Токени'
   $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}`
   $('main-legend').replaceChildren(...series.map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
   const opts = {
@@ -571,7 +570,7 @@ function setTab(tab: Tab): void {
 function syncControls(): void {
   press($('range'), 'r', state.range)
   press($('view'), 'v', state.view)
-  $<HTMLSelectElement>('metric').value = state.metric
+  $<HTMLInputElement>('cache-on').checked = state.metric === 'all'
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
@@ -611,7 +610,7 @@ $('to').onchange = dateChanged
 const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); render() })
 
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
-$('metric').onchange = () => { state.metric = $<HTMLSelectElement>('metric').value as Metric; persist(); render() }
+$('cache-on').onchange = () => { state.metric = $<HTMLInputElement>('cache-on').checked ? 'all' : 'io'; persist(); render() }
 const setDay = (d: string): void => { const today = need().r.today; state.day = d > today ? today : d; void renderDay() }
 $('day').onchange = () => { const v = $<HTMLInputElement>('day').value; if (v) setDay(v) }
 $('day-prev').onclick = () => setDay(S.addDays(state.day || need().r.today, -1))

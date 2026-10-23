@@ -53,11 +53,15 @@
             <button data-v="bars" aria-pressed="false">Стовпці</button>
             <button data-v="cal" aria-pressed="false">Календар</button>
           </div>
-          <select id="metric" aria-label="Що показувати">
-            <option value="io">Вхідні та вихідні</option>
-            <option value="all">З кешем</option>
-            <option value="cost">Вартість, $</option>
-          </select>
+          <span class="mtools">
+            <span class="mi" title="Вихідні (↑) і вхідні (↓) токени" aria-label="Вихідні та вхідні токени">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 20V5M8 5l-4 4M8 5l4 4"/><path d="M16 4v15M16 19l-4-4M16 19l4-4"/></svg>
+            </span>
+            <label class="mi tgl" title="Показати читання з кешу окремою лінією">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+              Кеш <input type="checkbox" id="cache-on" aria-label="Показувати кеш">
+            </label>
+          </span>
         </div>
       </div>
       <div class="legend" id="main-legend" style="margin-bottom:10px"></div>

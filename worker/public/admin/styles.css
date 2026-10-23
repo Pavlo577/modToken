@@ -188,3 +188,12 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .dd-menu button:hover, .dd-menu button:focus-visible { background: rgba(255,255,255,.07); color: var(--text); outline: none; }
 .dd-menu button[aria-selected="true"] { color: var(--text); }
 .dd-menu button[aria-selected="true"]::before { background: var(--out); }
+
+/* main chart: what to show (arrows = output / input, cache on request) */
+.mtools { display: inline-flex; gap: 6px; align-items: center; }
+.mi { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text-2); font-size: 13.5px; }
+.mi svg { flex: none; }
+.mi.tgl { cursor: pointer; user-select: none; }
+.mi.tgl:has(input:checked) { color: var(--text); border-color: rgba(155,123,255,.6); background: rgba(155,123,255,.14); }
+.mi.tgl input { accent-color: #9b7bff; width: 15px; height: 15px; margin: 0; }
+.mi.tgl:has(input:focus-visible) { outline: 2px solid var(--out); outline-offset: 2px; }
