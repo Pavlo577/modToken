@@ -9,36 +9,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
-  color-scheme: light;
-  --bg: #eceae6; --surface: #ffffff; --line: #ece9e3; --grid: #f1efea;
-  --text: #121212; --text-2: #55544f; --muted: #8b8a84;
-  --s1: #4f7cff; --s2: #ff8a4c; --s3: #2fbf8f; --s4: #f2b01e;
-  --accent: #121212; --accent-ink: #fff; --danger: #d5484a;
-  --p-blue: #d9e8fb; --p-green: #d7f0c7; --p-yellow: #fbe7b1; --p-lilac: #e8d7f7; --p-pink: #fbd9e3;
-  --shadow: 0 1px 2px rgba(20,20,20,.04), 0 8px 24px rgba(20,20,20,.06);
-  --dock: #181818;
-}
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --bg: #0e0e0d; --surface: #1a1a18; --line: #2a2a27; --grid: #242421;
-    --text: #f2f1ed; --text-2: #c6c5bb; --muted: #8f8e86;
-    --s1: #6e95ff; --s2: #ff9d68; --s3: #43d3a4; --s4: #f5c04a;
-    --accent: #f2f1ed; --accent-ink: #121212; --danger: #ef7274;
-    --p-blue: #1f2c40; --p-green: #22331c; --p-yellow: #3a3118; --p-lilac: #2f2440; --p-pink: #3c2330;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-    --dock: #2a2a27;
-  }
-}
-:root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0e0e0d; --surface: #1a1a18; --line: #2a2a27; --grid: #242421;
-  --text: #f2f1ed; --text-2: #c6c5bb; --muted: #8f8e86;
-  --s1: #6e95ff; --s2: #ff9d68; --s3: #43d3a4; --s4: #f5c04a;
-  --accent: #f2f1ed; --accent-ink: #121212; --danger: #ef7274;
-  --p-blue: #1f2c40; --p-green: #22331c; --p-yellow: #3a3118; --p-lilac: #2f2440; --p-pink: #3c2330;
-  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
-  --dock: #2a2a27;
+  --bg: #0f0d0c; --surface: #1a1715; --line: #2c2723; --grid: #26211e;
+  --text: #f4efe9; --text-2: #cbc2b8; --muted: #8f857b;
+  --s1: #ff7a1a; --s2: #ffc24a; --s3: #d4502c; --s4: #8f7a68;
+  --accent: #ff7a1a; --accent-ink: #1a0f06; --danger: #ff6b5e;
+  --p-blue: #33231a; --p-green: #3a2616; --p-yellow: #3b2c12; --p-lilac: #2f1f1c; --p-pink: #3a2220;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.4);
+  --dock: #26211e;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14.5px/1.45 "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -48,13 +26,13 @@ main { max-width: 1240px; margin: 0 auto; padding: 16px 16px 110px; }
 .top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; background: var(--surface);
   border-radius: 22px; padding: 10px 14px; box-shadow: var(--shadow); margin-bottom: 18px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; letter-spacing: -.02em; }
-.brand i { width: 6px; height: 6px; border-radius: 50%; background: var(--s3); }
+.brand i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .brand span { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
 nav.pill { display: flex; gap: 4px; background: var(--bg); border-radius: 999px; padding: 4px; }
 .user { display: flex; align-items: center; gap: 10px; }
 .user b { display: block; font-size: 13px; line-height: 1.2; }
 .who { color: var(--muted); font-size: 11.5px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.av { width: 34px; height: 34px; border-radius: 50%; background: var(--p-lilac); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.av { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
 
 button, select, input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; }
 select, input { outline: none; }
@@ -79,9 +57,10 @@ button.danger { color: var(--danger); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .tile { border-radius: 22px; padding: 16px 18px; box-shadow: var(--shadow); transition: transform .2s; }
 .tile:hover { transform: translateY(-4px); }
-.tile .v { font-size: 24px; white-space: nowrap; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tile .v { color: var(--text); font-size: 24px; white-space: nowrap; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .tile .l { color: var(--text-2); font-size: 12px; font-weight: 500; }
-.t0 { background: var(--p-blue); } .t1 { background: var(--p-green); } .t2 { background: var(--surface); }
+.t0 { background: linear-gradient(135deg, #ff7a1a, #e0560a); } .t0 .v, .t0 .l { color: #1a0f06; }
+.t1 { background: var(--p-green); } .t2 { background: var(--surface); }
 .t3 { background: var(--p-yellow); } .t4 { background: var(--p-lilac); }
 
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; font-size: 12px; color: var(--text-2); }
@@ -98,19 +77,19 @@ button.danger { color: var(--danger); }
 .desk h2.big { font-size: 22px; letter-spacing: -.02em; margin: 4px 4px 2px; }
 .desk .lead { color: var(--muted); font-size: 12.5px; margin: 0 4px 14px; }
 .desk .card { box-shadow: none; margin-bottom: 14px; }
-.desk .blue { background: var(--p-blue); } .desk .lilac { background: var(--p-lilac); }
+.desk .blue { background: var(--p-green); } .desk .lilac { background: var(--p-yellow); }
 .rows { display: grid; gap: 10px; }
 .row { display: grid; grid-template-columns: minmax(70px, 130px) 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
 .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-.track { height: 9px; border-radius: 5px; background: color-mix(in srgb, var(--text) 9%, transparent); overflow: hidden; }
-.track b { display: block; height: 100%; background: var(--text); border-radius: 5px; }
+.track { height: 9px; border-radius: 5px; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
+.track b { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
 .row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 th, td { text-align: right; padding: 8px 8px; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--text-2); font-weight: 600; }
-.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--dock); color: #fff; border-radius: 12px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; display: none; max-width: 240px; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--dock); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; display: none; max-width: 240px; }
 .empty { color: var(--muted); padding: 24px 0; text-align: center; }
 .code { font: 700 28px/1 ui-monospace, monospace; letter-spacing: 3px; padding: 12px 0; }
 .dev { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -128,7 +107,7 @@ form input { flex: 1; min-width: 180px; }
   background: var(--dock); border-radius: 999px; padding: 8px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28); }
 .dock button { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: var(--c); color: #121212; font-size: 12px; font-weight: 800; }
 .dock button:hover { transform: translateY(-4px) scale(1.08); }
-.dock button[aria-pressed="true"] { background: var(--c); color: #121212; box-shadow: 0 0 0 3px var(--dock), 0 0 0 5px #fff; }
+.dock button[aria-pressed="true"] { background: var(--c); color: #121212; box-shadow: 0 0 0 3px var(--dock), 0 0 0 5px var(--text); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -220,10 +199,10 @@ form input { flex: 1; min-width: 180px; }
   </section>
 </main>
 <div class="dock" id="dock" role="group" aria-label="Швидкий вибір періоду">
-  <button data-r="7" title="7 днів" style="--c:#d9e8fb">7д</button>
-  <button data-r="30" title="30 днів" style="--c:#d7f0c7">30д</button>
-  <button data-r="90" title="90 днів" style="--c:#fbe7b1">90д</button>
-  <button data-r="day" title="Один день" style="--c:#fbd9e3">1д</button>
+  <button data-r="7" title="7 днів" style="--c:#ff7a1a">7д</button>
+  <button data-r="30" title="30 днів" style="--c:#ff9a4d">30д</button>
+  <button data-r="90" title="90 днів" style="--c:#ffc24a">90д</button>
+  <button data-r="day" title="Один день" style="--c:#ffe0b8">1д</button>
 </div>
 <div class="tip" id="tip"></div>
 
