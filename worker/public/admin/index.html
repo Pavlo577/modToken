@@ -5,124 +5,185 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Token Tracker</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
   color-scheme: light;
-  --bg: #f6f6f4; --surface: #fcfcfb; --line: #e4e3de; --grid: #ecebe7;
-  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
-  --accent: #2a78d6; --danger: #c43d3c;
+  --bg: #eceae6; --surface: #ffffff; --line: #ece9e3; --grid: #f1efea;
+  --text: #121212; --text-2: #55544f; --muted: #8b8a84;
+  --s1: #4f7cff; --s2: #ff8a4c; --s3: #2fbf8f; --s4: #f2b01e;
+  --accent: #121212; --accent-ink: #fff; --danger: #d5484a;
+  --p-blue: #d9e8fb; --p-green: #d7f0c7; --p-yellow: #fbe7b1; --p-lilac: #e8d7f7; --p-pink: #fbd9e3;
+  --shadow: 0 1px 2px rgba(20,20,20,.04), 0 8px 24px rgba(20,20,20,.06);
+  --dock: #181818;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --bg: #111110; --surface: #1a1a19; --line: #2c2c2a; --grid: #242422;
-    --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
-    --accent: #3987e5; --danger: #e66767;
+    --bg: #0e0e0d; --surface: #1a1a18; --line: #2a2a27; --grid: #242421;
+    --text: #f2f1ed; --text-2: #c6c5bb; --muted: #8f8e86;
+    --s1: #6e95ff; --s2: #ff9d68; --s3: #43d3a4; --s4: #f5c04a;
+    --accent: #f2f1ed; --accent-ink: #121212; --danger: #ef7274;
+    --p-blue: #1f2c40; --p-green: #22331c; --p-yellow: #3a3118; --p-lilac: #2f2440; --p-pink: #3c2330;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    --dock: #2a2a27;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #111110; --surface: #1a1a19; --line: #2c2c2a; --grid: #242422;
-  --text: #f0efec; --text-2: #c3c2b7; --muted: #8d8c85;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
-  --accent: #3987e5; --danger: #e66767;
+  --bg: #0e0e0d; --surface: #1a1a18; --line: #2a2a27; --grid: #242421;
+  --text: #f2f1ed; --text-2: #c6c5bb; --muted: #8f8e86;
+  --s1: #6e95ff; --s2: #ff9d68; --s3: #43d3a4; --s4: #f5c04a;
+  --accent: #f2f1ed; --accent-ink: #121212; --danger: #ef7274;
+  --p-blue: #1f2c40; --p-green: #22331c; --p-yellow: #3a3118; --p-lilac: #2f2440; --p-pink: #3c2330;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  --dock: #2a2a27;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 980px; margin: 0 auto; padding: 20px 16px 48px; }
-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-h1 { font-size: 20px; margin: 0; }
-.who { color: var(--muted); font-size: 13px; }
-nav { display: flex; gap: 6px; }
-button, select, input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
-button { cursor: pointer; }
-button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14.5px/1.45 "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1240px; margin: 0 auto; padding: 16px 16px 110px; }
+
+/* top bar */
+.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; background: var(--surface);
+  border-radius: 22px; padding: 10px 14px; box-shadow: var(--shadow); margin-bottom: 18px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; letter-spacing: -.02em; }
+.brand i { width: 6px; height: 6px; border-radius: 50%; background: var(--s3); }
+.brand span { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
+nav.pill { display: flex; gap: 4px; background: var(--bg); border-radius: 999px; padding: 4px; }
+.user { display: flex; align-items: center; gap: 10px; }
+.user b { display: block; font-size: 13px; line-height: 1.2; }
+.who { color: var(--muted); font-size: 11.5px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av { width: 34px; height: 34px; border-radius: 50%; background: var(--p-lilac); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+
+button, select, input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; }
+select, input { outline: none; }
+select:focus, input:focus { border-color: var(--text-2); }
+button { cursor: pointer; transition: transform .15s, background .15s; }
+button:hover { transform: translateY(-1px); }
+nav.pill button { border: 0; background: transparent; font-weight: 600; color: var(--text-2); }
+nav.pill button[aria-pressed="true"], button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.danger { color: var(--danger); }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-.card h2 { font-size: 14px; margin: 0 0 2px; }
+
+/* layout */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+@media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+.head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; margin: 4px 2px 16px; }
+.head h2 { font-size: 26px; letter-spacing: -.02em; margin: 0; }
+.head p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.card { background: var(--surface); border-radius: 24px; padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow); }
+.card h2 { font-size: 15px; margin: 0 0 2px; letter-spacing: -.01em; }
 .card .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
-.tile .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.tile .l { color: var(--text-2); font-size: 12.5px; }
-.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; font-size: 12.5px; color: var(--text-2); }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
-.cols { display: flex; align-items: flex-end; gap: 3px; height: 180px; border-bottom: 1px solid var(--line);
-  background: repeating-linear-gradient(to top, transparent 0, transparent 44px, var(--grid) 44px, var(--grid) 45px); }
-.col { flex: 1; min-width: 2px; display: flex; flex-direction: column-reverse; height: 100%; justify-content: flex-start; position: relative; }
-.col:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tile { border-radius: 22px; padding: 16px 18px; box-shadow: var(--shadow); transition: transform .2s; }
+.tile:hover { transform: translateY(-4px); }
+.tile .v { font-size: 24px; white-space: nowrap; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tile .l { color: var(--text-2); font-size: 12px; font-weight: 500; }
+.t0 { background: var(--p-blue); } .t1 { background: var(--p-green); } .t2 { background: var(--surface); }
+.t3 { background: var(--p-yellow); } .t4 { background: var(--p-lilac); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; font-size: 12px; color: var(--text-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.cols { display: flex; align-items: flex-end; gap: 4px; height: 190px; border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(to top, transparent 0, transparent 46px, var(--grid) 46px, var(--grid) 47px); }
+.col { flex: 1; min-width: 2px; display: flex; flex-direction: column-reverse; height: 100%; justify-content: flex-start; position: relative; border-radius: 8px 8px 0 0; }
+.col:hover { background: color-mix(in srgb, var(--s1) 10%, transparent); }
 .seg { border-top: 2px solid var(--surface); }
-.seg:last-child { border-radius: 4px 4px 0 0; }
-.axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; margin-top: 4px; }
-.rows { display: grid; gap: 8px; }
-.row { display: grid; grid-template-columns: minmax(80px, 160px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.seg:last-child { border-radius: 8px 8px 0 0; }
+.axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+
+/* right desk */
+.desk h2.big { font-size: 22px; letter-spacing: -.02em; margin: 4px 4px 2px; }
+.desk .lead { color: var(--muted); font-size: 12.5px; margin: 0 4px 14px; }
+.desk .card { box-shadow: none; margin-bottom: 14px; }
+.desk .blue { background: var(--p-blue); } .desk .lilac { background: var(--p-lilac); }
+.rows { display: grid; gap: 10px; }
+.row { display: grid; grid-template-columns: minmax(70px, 130px) 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
 .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-.track { height: 10px; border-radius: 5px; background: var(--grid); overflow: hidden; }
-.track b { display: block; height: 100%; background: var(--s1); border-radius: 0 5px 5px 0; }
-.row .val { font-variant-numeric: tabular-nums; color: var(--text); }
-.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.track { height: 9px; border-radius: 5px; background: color-mix(in srgb, var(--text) 9%, transparent); overflow: hidden; }
+.track b { display: block; height: 100%; background: var(--text); border-radius: 5px; }
+.row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+
 table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
-th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th, td { text-align: right; padding: 8px 8px; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--text-2); font-weight: 600; }
-.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--text); color: var(--bg); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.5; display: none; max-width: 240px; }
+.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--dock); color: #fff; border-radius: 12px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; display: none; max-width: 240px; }
 .empty { color: var(--muted); padding: 24px 0; text-align: center; }
-.code { font: 600 28px/1 ui-monospace, monospace; letter-spacing: 3px; padding: 12px 0; }
-.dev { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.code { font: 700 28px/1 ui-monospace, monospace; letter-spacing: 3px; padding: 12px 0; }
+.dev { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .dev:last-child { border-bottom: 0; }
 .dev small { color: var(--muted); display: block; }
-.tag { font-size: 11.5px; color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; padding: 1px 6px; }
+.tag { font-size: 11.5px; color: var(--danger); border: 1px solid var(--danger); border-radius: 999px; padding: 1px 8px; }
 form { display: flex; gap: 8px; flex-wrap: wrap; }
-.snip { margin: 0 0 8px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: 12.5px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
-code { font: 12.5px ui-monospace, monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.snip { margin: 0 0 8px; padding: 12px 14px; background: var(--bg); border-radius: 14px; font: 12.5px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+code { font: 12.5px ui-monospace, monospace; background: var(--bg); padding: 1px 6px; border-radius: 6px; }
 form input { flex: 1; min-width: 180px; }
 .hide { display: none !important; }
+
+/* floating dock */
+.dock { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20; display: flex; gap: 8px; align-items: center;
+  background: var(--dock); border-radius: 999px; padding: 8px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.dock button { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: var(--c); color: #121212; font-size: 12px; font-weight: 800; }
+.dock button:hover { transform: translateY(-4px) scale(1.08); }
+.dock button[aria-pressed="true"] { background: var(--c); color: #121212; box-shadow: 0 0 0 3px var(--dock), 0 0 0 5px #fff; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <div><h1>Token Tracker</h1><div class="who" id="who">…</div></div>
-    <nav>
+  <header class="top">
+    <div class="brand"><span style="font-size:18px;letter-spacing:-.02em;color:var(--text)">Token</span><i></i><span>TRACKER</span></div>
+    <nav class="pill">
       <button id="tab-dash" aria-pressed="true">Статистика</button>
       <button id="tab-dev" aria-pressed="false">Пристрої</button>
     </nav>
+    <div class="user"><span class="av" id="av">··</span><div><b>Адмін</b><div class="who" id="who">…</div></div></div>
   </header>
 
   <section id="dash">
-    <div style="margin-bottom:12px">
-      <select id="range" aria-label="Період">
-        <option value="7">7 днів</option><option value="30" selected>30 днів</option><option value="90">90 днів</option><option value="day">Один день</option>
-      </select>
-      <input id="day" type="date" class="hide" aria-label="День (UTC)">
-      <select id="measure" aria-label="Що показувати на графіку днів">
-        <option value="new" selected>Графік: без кешу</option><option value="all">Графік: з кешем</option>
-      </select>
-    </div>
-    <div class="tiles" id="tiles"></div>
+    <div class="layout">
+      <div class="main">
+        <div class="head">
+          <div><h2>Огляд токенів 📊</h2><p>Усе, що витрачають твої пристрої та хмарні сесії</p></div>
+          <div class="ctl">
+            <select id="range" aria-label="Період">
+              <option value="7">7 днів</option><option value="30" selected>30 днів</option><option value="90">90 днів</option><option value="day">Один день</option>
+            </select>
+            <input id="day" type="date" class="hide" aria-label="День (UTC)">
+            <select id="measure" aria-label="Що показувати на графіку днів">
+              <option value="new" selected>Графік: без кешу</option><option value="all">Графік: з кешем</option>
+            </select>
+          </div>
+        </div>
+        <div class="tiles" id="tiles"></div>
 
-    <div class="card" id="days-card">
-      <h2>Токени по днях</h2>
-      <p class="sub">Дні та години — за UTC. Наведи на стовпець, щоб побачити цифри.</p>
-      <div class="legend" id="legend"></div>
-      <div class="cols" id="days" role="img" aria-label="Токени по днях"></div>
-      <div class="axis" id="days-axis"></div>
-      <p style="margin:12px 0 0"><button id="toggle-table" aria-pressed="false">Показати таблицею</button></p>
-      <div id="table" class="hide"></div>
-    </div>
+        <div class="card" id="days-card">
+          <h2>Токени по днях</h2>
+          <p class="sub">Дні та години — за UTC. Наведи на стовпець, щоб побачити цифри.</p>
+          <div class="legend" id="legend"></div>
+          <div class="cols" id="days" role="img" aria-label="Токени по днях"></div>
+          <div class="axis" id="days-axis"></div>
+          <p style="margin:14px 0 0"><button id="toggle-table" aria-pressed="false">Показати таблицею</button></p>
+          <div id="table" class="hide"></div>
+        </div>
 
-    <div class="card">
-      <h2>Коли використовується</h2>
-      <p class="sub">Вихідні токени по годинах доби (UTC)</p>
-      <div class="cols" id="hours" style="height:120px" role="img" aria-label="Токени по годинах доби"></div>
-      <div class="axis"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
-    </div>
+        <div class="card">
+          <h2>Коли використовується</h2>
+          <p class="sub">Вихідні токени по годинах доби (UTC)</p>
+          <div class="cols" id="hours" style="height:120px" role="img" aria-label="Токени по годинах доби"></div>
+          <div class="axis"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+        </div>
+      </div>
 
-    <div class="two">
-      <div class="card"><h2>За моделями</h2><p class="sub">Вихідні токени</p><div class="rows" id="models"></div></div>
-      <div class="card"><h2>За пристроями</h2><p class="sub">Вихідні токени</p><div class="rows" id="devices-bars"></div></div>
+      <aside class="desk">
+        <h2 class="big">Зведення 🧾</h2>
+        <p class="lead">Хто і на чому спалює токени</p>
+        <div class="card blue"><h2>За моделями</h2><p class="sub">Вихідні токени</p><div class="rows" id="models"></div></div>
+        <div class="card lilac"><h2>За пристроями</h2><p class="sub">Вихідні токени</p><div class="rows" id="devices-bars"></div></div>
+      </aside>
     </div>
   </section>
 
@@ -158,6 +219,12 @@ form input { flex: 1; min-width: 180px; }
     </div>
   </section>
 </main>
+<div class="dock" id="dock" role="group" aria-label="Швидкий вибір періоду">
+  <button data-r="7" title="7 днів" style="--c:#d9e8fb">7д</button>
+  <button data-r="30" title="30 днів" style="--c:#d7f0c7">30д</button>
+  <button data-r="90" title="90 днів" style="--c:#fbe7b1">90д</button>
+  <button data-r="day" title="Один день" style="--c:#fbd9e3">1д</button>
+</div>
 <div class="tip" id="tip"></div>
 
 <script>
@@ -211,7 +278,7 @@ function renderStats(s) {
     ['Вихідні токени', fmt(sum('output'))], ['Вхідні токени', fmt(sum('input'))],
     ['Кеш (читання + запис)', fmt(sum('cache_read') + sum('cache_creation'))],
     ['Ходів', String(turns)], ['Час відповідей', dur(sum('duration_ms'))],
-  ].map(([l, v]) => el('div', { class: 'tile' }, el('div', { class: 'v' }, v), el('div', { class: 'l' }, l))))
+  ].map(([l, v], i) => el('div', { class: 'tile t' + i }, el('div', { class: 'v' }, v), el('div', { class: 'l' }, l))))
 
   $('legend').replaceChildren(...ACTIVE.map(([, name, color]) => el('span', {}, el('i', { style: `background:${color}` }), name)))
 
@@ -248,6 +315,7 @@ function renderStats(s) {
 
 async function loadStats() {
   const one = $('range').value === 'day'
+  document.querySelectorAll('#dock button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === $('range').value))
   $('day').classList.toggle('hide', !one)
   if (one && !$('day').value) $('day').value = new Date().toISOString().slice(0, 10)
   try { renderStats(await api('/stats?' + (one ? 'day=' + $('day').value : 'days=' + $('range').value))) }
@@ -343,12 +411,13 @@ $('new-code').addEventListener('submit', async e => {
 })
 
 function tab(name) {
-  $('dash').classList.toggle('hide', name !== 'dash'); $('dev').classList.toggle('hide', name !== 'dev')
+  $('dash').classList.toggle('hide', name !== 'dash'); $('dock').classList.toggle('hide', name !== 'dash'); $('dev').classList.toggle('hide', name !== 'dev')
   $('tab-dash').setAttribute('aria-pressed', name === 'dash'); $('tab-dev').setAttribute('aria-pressed', name === 'dev')
   name === 'dev' ? loadDevices() : loadStats()
 }
 $('tab-dash').onclick = () => tab('dash'); $('tab-dev').onclick = () => tab('dev')
 $('range').onchange = loadStats
+document.querySelectorAll('#dock button').forEach(b => (b.onclick = () => { $('range').value = b.dataset.r; loadStats() }))
 $('day').onchange = loadStats
 $('measure').onchange = () => lastStats && renderStats(lastStats)
 $('toggle-table').onclick = () => {
@@ -356,7 +425,7 @@ $('toggle-table').onclick = () => {
   $('toggle-table').setAttribute('aria-pressed', on); $('toggle-table').textContent = on ? 'Сховати таблицю' : 'Показати таблицею'
   $('table').classList.toggle('hide', !on)
 }
-api('/me').then(m => { $('who').textContent = m.email }).catch(() => { $('who').textContent = 'не вдалося визначити користувача' })
+api('/me').then(m => { $('who').textContent = m.email; $('av').textContent = m.email.slice(0, 2).toUpperCase() }).catch(() => { $('who').textContent = 'не вдалося визначити користувача' })
 loadStats()
 </script>
 </body>
