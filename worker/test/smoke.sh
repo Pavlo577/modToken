@@ -29,6 +29,16 @@ check "bad timestamp rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-to
 STATS=$(curl -s "$B/api/admin/stats?days=365")
 echo "$STATS" | grep -q '"turns":1' && echo "ok   one turn counted" || { echo "FAIL stats: $STATS"; fail=1; }
 ID=$(curl -s $B/api/admin/devices | sed -E 's/.*"id":"([0-9a-f-]{36})".*/\1/')
+imp() { curl -s -XPOST $B/api/admin/import -d "{\"device_id\":\"$ID\",\"rows\":[$1]}"; }
+YDAY=$(date -u -d "1 day ago" +%Y-%m-%dT%H:%M:%SZ)
+OLD="{\"turn_id\":\"imp:f:1\",\"session_id\":\"s0\",\"ts\":\"$YDAY\",\"model\":\"m\",\"input_tokens\":1,\"output_tokens\":2,\"cache_read_tokens\":3,\"cache_creation_tokens\":4,\"duration_ms\":5}"
+check "import adds history"      "$(imp "$OLD" | grep -c '"inserted":1')" 1
+check "re-import adds nothing"   "$(imp "$OLD" | grep -c '"inserted":0,"duplicates":1')" 1
+NEW='{"turn_id":"imp:f:2","session_id":"s0","ts":"2099-01-01T10:00:00Z","model":"m","output_tokens":9}'
+check "after-link rows skipped"  "$(imp "$NEW" | grep -c '"afterLink":1')" 1
+check "import needs imp: ids"    "$(code_of -XPOST $B/api/admin/import -d "{\"device_id\":\"$ID\",\"rows\":[{\"turn_id\":\"x\",\"ts\":\"2020-01-01T00:00:00Z\"}]}")" 400
+check "import: unknown device"   "$(code_of -XPOST $B/api/admin/import -d '{"device_id":"00000000-0000-0000-0000-000000000000","rows":[{}]}')" 404
+curl -s "$B/api/admin/stats?days=30" | grep -q '"turns":2' && echo "ok   imported turn counted" || { echo "FAIL imported turn missing"; fail=1; }
 check "revoke device"            "$(code_of -XDELETE $B/api/admin/devices/$ID)" 204
 check "revoked token rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$ROW")" 401
 exit $fail

@@ -39,6 +39,22 @@ export async function accessEmail(req: Request, env: Env): Promise<string | null
   }
 }
 
+const EVENT_SQL = `INSERT OR IGNORE INTO token_events
+  (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens,
+   cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+/** One validated row as an INSERT, or null when its timestamp is not a date. */
+function eventStmt(env: Env, email: string, deviceId: string, r: Record<string, unknown>, turnId = str(r.turn_id)) {
+  const ts = new Date(str(r.ts))
+  if (Number.isNaN(ts.getTime())) return null
+  return env.DB.prepare(EVENT_SQL).bind(
+    email, deviceId, str(r.session_id), turnId, ts.toISOString(), str(r.model),
+    int(r.input_tokens), int(r.output_tokens), int(r.cache_read_tokens), int(r.cache_creation_tokens),
+    int(r.duration_ms), r.is_subagent === true ? 1 : 0,
+  )
+}
+
 async function ingest(req: Request, env: Env): Promise<Response> {
   const token = req.headers.get('x-device-token') ?? ''
   const dev = await env.DB.prepare('SELECT id, user_email FROM devices WHERE token_hash = ? AND revoked = 0')
@@ -49,23 +65,11 @@ async function ingest(req: Request, env: Env): Promise<Response> {
   const body = await req.json().catch(() => null)
   if (!Array.isArray(body) || body.length === 0 || body.length > MAX_ROWS) return text('bad request', 400)
 
-  const insert = env.DB.prepare(
-    `INSERT OR IGNORE INTO token_events
-     (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens,
-      cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
   const stmts: D1PreparedStatement[] = []
   for (const r of body as Record<string, unknown>[]) {
-    const ts = new Date(str(r.ts))
-    if (Number.isNaN(ts.getTime())) return text('bad request', 400)
-    stmts.push(
-      insert.bind(
-        dev.user_email, dev.id, str(r.session_id), str(r.turn_id), ts.toISOString(), str(r.model),
-        int(r.input_tokens), int(r.output_tokens), int(r.cache_read_tokens), int(r.cache_creation_tokens),
-        int(r.duration_ms), r.is_subagent === true ? 1 : 0,
-      ),
-    )
+    const stmt = eventStmt(env, dev.user_email, dev.id, r)
+    if (!stmt) return text('bad request', 400)
+    stmts.push(stmt)
   }
   stmts.push(env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(new Date().toISOString(), dev.id))
   await env.DB.batch(stmts)
@@ -127,6 +131,31 @@ async function admin(req: Request, env: Env, url: URL): Promise<Response> {
     await env.DB.prepare('INSERT INTO link_codes (code_hash, user_email, device_name, expires_at) VALUES (?, ?, ?, ?)')
       .bind(await sha256(code), email, name, expires).run()
     return json({ code, expires_at: expires })
+  }
+
+  if (path === '/import' && req.method === 'POST') {
+    const body = (await req.json().catch(() => null)) as { device_id?: unknown; rows?: unknown } | null
+    const dev = await env.DB.prepare('SELECT id, created_at FROM devices WHERE id = ? AND user_email = ? AND revoked = 0')
+      .bind(str(body?.device_id, 40), email).first<{ id: string; created_at: string }>()
+    if (!dev) return text('device not found', 404)
+    const rows = body?.rows
+    if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_ROWS) return text('bad request', 400)
+
+    // Only history from before the device was linked: later turns are collected live by the mod.
+    const cutoff = new Date(dev.created_at).getTime()
+    const stmts: D1PreparedStatement[] = []
+    let afterLink = 0
+    for (const r of rows as Record<string, unknown>[]) {
+      const turnId = str(r.turn_id)
+      if (!turnId.startsWith('imp:')) return text('bad request', 400)
+      const stmt = eventStmt(env, email, dev.id, r, turnId)
+      if (!stmt) return text('bad request', 400)
+      if (new Date(str(r.ts)).getTime() >= cutoff) { afterLink++; continue }
+      stmts.push(stmt)
+    }
+    const results = stmts.length ? await env.DB.batch(stmts) : []
+    const inserted = results.reduce((n, r) => n + (r.meta.changes ?? 0), 0)
+    return json({ inserted, duplicates: stmts.length - inserted, afterLink })
   }
 
   if (path === '/stats' && req.method === 'GET') {

@@ -131,6 +131,16 @@ form input { flex: 1; min-width: 180px; }
       <div id="code-box" class="hide"><div class="code" id="code"></div><div class="sub" id="code-note"></div></div>
     </div>
     <div class="card"><h2>Мої пристрої</h2><div id="dev-list"></div></div>
+    <div class="card">
+      <h2>Імпорт старих даних</h2>
+      <p class="sub">Підтягне історію з локальних логів Claude Code, яка була до прив'язки пристрою. Файли читає твій браузер, на сервер іде лише кількість токенів, час і модель, текст розмов не передається. Повторний імпорт безпечний: дублікатів не буде.</p>
+      <form id="import-form">
+        <select id="import-device" aria-label="Пристрій" required></select>
+        <input id="import-files" type="file" webkitdirectory multiple aria-label="Папка з логами">
+      </form>
+      <p class="sub" style="margin:10px 0 0">Вибери папку <b>~/.claude/projects</b> (на Windows <b>%USERPROFILE%\.claude\projects</b>) і пристрій, якому вона належить. Логи на сервері без браузера спершу скопіюй собі: <code>scp -r user@host:~/.claude/projects ./projects</code></p>
+      <div id="import-status" class="sub" style="margin-top:10px"></div>
+    </div>
   </section>
 </main>
 <div class="tip" id="tip"></div>
@@ -227,6 +237,8 @@ async function loadStats() {
 
 async function loadDevices() {
   const list = await api('/devices')
+  const active = list.filter(d => !d.revoked)
+  $('import-device').replaceChildren(...(active.length ? active.map(d => el('option', { value: d.id }, d.name)) : [el('option', { value: '' }, 'Спершу додай пристрій')]))
   $('dev-list').replaceChildren(...(list.length ? list.map(d => el('div', { class: 'dev' },
     el('div', {}, el('b', {}, d.name), ' ', d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
       el('small', {}, 'Додано ' + d.created_at.slice(0, 10) + (d.last_seen ? ' · остання активність ' + d.last_seen.replace('T', ' ').slice(0, 16) + ' UTC' : ' · ще не надсилав дані'))),
@@ -234,6 +246,45 @@ async function loadDevices() {
       if (confirm(`Відкликати «${d.name}»? Пристрій перестане надсилати дані.`)) { await api('/devices/' + d.id, { method: 'DELETE' }); loadDevices() }
     } }, 'Відкликати'))) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
 }
+
+$('import-files').addEventListener('change', async () => {
+  const input = $('import-files')
+  const status = $('import-status')
+  const deviceId = $('import-device').value
+  const files = [...input.files].filter(f => f.name.endsWith('.jsonl'))
+  if (!deviceId) { status.textContent = 'Спершу додай пристрій.'; input.value = ''; return }
+  if (!files.length) { status.textContent = 'У вибраній папці нема файлів .jsonl. Потрібна папка projects.'; input.value = ''; return }
+  const { createParser } = await import('./parse.mjs')
+  const total = { inserted: 0, duplicates: 0, afterLink: 0, turns: 0 }
+  input.disabled = true
+  try {
+    for (const [i, file] of files.entries()) {
+      status.textContent = `Файл ${i + 1} з ${files.length}: ${file.name}`
+      const parser = createParser((file.webkitRelativePath || file.name).split('/').slice(1).join('/').replace(/\.jsonl$/, '') || file.name)
+      const reader = file.stream().pipeThrough(new TextDecoderStream()).getReader()
+      let buf = ''
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        const parts = (buf + value).split('\n')
+        buf = parts.pop()
+        for (const line of parts) parser.push(line)
+      }
+      if (buf) parser.push(buf)
+      const turns = parser.finish()
+      total.turns += turns.length
+      for (let k = 0; k < turns.length; k += 300) {
+        const r = await api('/import', { method: 'POST', body: JSON.stringify({ device_id: deviceId, rows: turns.slice(k, k + 300) }) })
+        total.inserted += r.inserted; total.duplicates += r.duplicates; total.afterLink += r.afterLink
+      }
+    }
+    status.textContent = `Готово: знайдено ${total.turns} ходів, додано ${total.inserted}, вже були ${total.duplicates}, новіших за прив'язку пропущено ${total.afterLink} (їх збирає мод).`
+  } catch (e) {
+    status.textContent = 'Не вдалося імпортувати: ' + e.message + '. Повтори, вже надіслане не задублюється.'
+  } finally {
+    input.disabled = false; input.value = ''
+  }
+})
 
 let timer
 $('new-code').addEventListener('submit', async e => {
