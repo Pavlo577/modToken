@@ -126,7 +126,7 @@ async function load(): Promise<void> {
   // placeholders only if loading is slow; a quick load goes straight to the charts
   const slow = setTimeout(() => {
     $('kpis').replaceChildren(...Array.from({ length: 6 }, skeletonTile))
-    for (const [id, h] of [['main-chart', 260], ['day-chart', 200], ['hour-grid', 200], ['cache-chart', 200], ['cost-chart', 220], ['limits-chart', 200]] as const) skeleton($(id), h)
+    for (const [id, h] of [['main-chart', mainHeight()], ['day-chart', 200], ['hour-grid', 200], ['cache-chart', 200], ['cost-chart', 220], ['limits-chart', 200]] as const) skeleton($(id), h)
   }, SKELETON_AFTER_MS)
   const r = currentRange()
   const now = Date.now()
@@ -180,8 +180,8 @@ const OUT: Def = ['Вихідні', COLORS.out, t => t.output]
 const IN: Def = ['Вхідні (нові)', COLORS.in, S.freshInput]
 const ioDefs = (): Def[] => (state.io === 'in' ? [IN] : state.io === 'out' ? [OUT] : state.io === 'off' ? [] : [OUT, IN])
 const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
-/** Height of the main chart: grows with the window, at most 70% of it. */
-const mainHeight = (): number => Math.round(Math.max(300, Math.min(window.innerHeight * 0.5, window.innerHeight * 0.7)))
+/** Height of the main chart: about a third of the window, between 240 and 380 px. */
+const mainHeight = (): number => Math.round(Math.min(380, Math.max(240, window.innerHeight * 0.34)))
 const ZERO: Totals = { input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 }
 
 function renderMain(agg: S.Aggregate): void {
