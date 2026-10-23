@@ -128,8 +128,8 @@ async function load(): Promise<void> {
     clearTimeout(slow)
     data = { r, buckets, sessions, limits }
     const names = [...new Set(buckets.map(b => b.device))].sort()
-    $('device').replaceChildren(el('option', { value: '' }, 'Усі пристрої'), ...names.map(n => el('option', { value: n, selected: n === state.device }, n)))
-    if (state.device && !names.includes(state.device)) { state.device = ''; $<HTMLSelectElement>('device').value = '' }
+    if (state.device && !names.includes(state.device)) state.device = ''
+    $('device').replaceChildren(...['', ...names].map(n => el('button', { type: 'button', 'data-d': n, 'aria-pressed': String(n === state.device) }, n || 'Усі пристрої')))
     render()
   } catch (e) {
     clearTimeout(slow)
@@ -545,7 +545,10 @@ $('act-mode').addEventListener('click', e => { const b = clicked(e); if (!b) ret
 const dateChanged = (): void => { state.from = $<HTMLInputElement>('from').value; state.to = $<HTMLInputElement>('to').value; persist(); void load() }
 $('from').onchange = dateChanged
 $('to').onchange = dateChanged
-$('device').onchange = () => { state.device = $<HTMLSelectElement>('device').value; persist(); render() }
+$('device').addEventListener('click', e => {
+  const b = clicked(e); if (!b) return
+  state.device = b.dataset.d ?? ''; persist(); press($('device'), 'd', state.device); render()
+})
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
 $('metric').onchange = () => { state.metric = $<HTMLSelectElement>('metric').value as Metric; persist(); render() }
 const setDay = (d: string): void => { const today = need().r.today; state.day = d > today ? today : d; void renderDay() }

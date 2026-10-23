@@ -168,3 +168,9 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
   .anim .fade { clip-path: none; animation: none; }
   .anim .bar.grow path { transform: none; animation: none; }
 }
+
+/* device filter */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { padding: 6px 13px; font-size: 13.5px; color: var(--text-2); background: var(--card); }
+.chips button:hover { color: var(--text); border-color: rgba(255,255,255,.22); }
+.chips button[aria-pressed="true"] { color: var(--text); background: rgba(255,122,26,.16); border-color: rgba(255,122,26,.6); }
