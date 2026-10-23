@@ -94,15 +94,16 @@ form input { flex: 1; min-width: 180px; }
   <section id="dash">
     <div style="margin-bottom:12px">
       <select id="range" aria-label="Період">
-        <option value="7">7 днів</option><option value="30" selected>30 днів</option><option value="90">90 днів</option>
+        <option value="7">7 днів</option><option value="30" selected>30 днів</option><option value="90">90 днів</option><option value="day">Один день</option>
       </select>
+      <input id="day" type="date" class="hide" aria-label="День (UTC)">
       <select id="measure" aria-label="Що показувати на графіку днів">
         <option value="new" selected>Графік: без кешу</option><option value="all">Графік: з кешем</option>
       </select>
     </div>
     <div class="tiles" id="tiles"></div>
 
-    <div class="card">
+    <div class="card" id="days-card">
       <h2>Токени по днях</h2>
       <p class="sub">Дні та години — за UTC. Наведи на стовпець, щоб побачити цифри.</p>
       <div class="legend" id="legend"></div>
@@ -202,6 +203,7 @@ const activeSeries = () => ($('measure').value === 'all' ? SERIES : SERIES.slice
 
 function renderStats(s) {
   lastStats = s
+  $('days-card').classList.toggle('hide', !!s.day)
   const ACTIVE = activeSeries()
   const sum = k => s.byDay.reduce((a, d) => a + (Number(d[k]) || 0), 0)
   const turns = sum('turns')
@@ -245,7 +247,10 @@ function renderStats(s) {
 }
 
 async function loadStats() {
-  try { renderStats(await api('/stats?days=' + $('range').value)) }
+  const one = $('range').value === 'day'
+  $('day').classList.toggle('hide', !one)
+  if (one && !$('day').value) $('day').value = new Date().toISOString().slice(0, 10)
+  try { renderStats(await api('/stats?' + (one ? 'day=' + $('day').value : 'days=' + $('range').value))) }
   catch (e) { $('tiles').replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) }
 }
 
@@ -344,6 +349,7 @@ function tab(name) {
 }
 $('tab-dash').onclick = () => tab('dash'); $('tab-dev').onclick = () => tab('dev')
 $('range').onchange = loadStats
+$('day').onchange = loadStats
 $('measure').onchange = () => lastStats && renderStats(lastStats)
 $('toggle-table').onclick = () => {
   const on = $('toggle-table').getAttribute('aria-pressed') !== 'true'
