@@ -20,6 +20,20 @@ type Row = {
   is_subagent: boolean
 }
 
+// The last problem shown as a toast, so one failure is announced once, not on every turn.
+let lastProblem = ''
+
+function report($: any, problem: string | null) {
+  if (problem === null) {
+    lastProblem = ''
+    $.ui.status('ok')
+    return
+  }
+  $.ui.status(problem)
+  if (problem !== lastProblem) $.ui.toast(`token-tracker: ${problem}`)
+  lastProblem = problem
+}
+
 async function backend($: any): Promise<string> {
   return (((await $.store.get(URL_KEY)) as string | undefined) || DEFAULT_URL).replace(/\/$/, '')
 }
@@ -28,7 +42,7 @@ async function flush($: any, extra?: Row) {
   const url = await backend($)
   const token = (await $.store.get(TOKEN)) as string | undefined
   if (!token) {
-    $.ui.status('not linked: /tracker-link <code>')
+    report($, 'not linked: run /tracker-link <code>')
     return
   }
   const queued = ((await $.store.get(QUEUE)) as Row[] | undefined) ?? []
@@ -41,16 +55,17 @@ async function flush($: any, extra?: Row) {
       body: JSON.stringify(rows),
     })
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
-    $.ui.status(
+    report(
+      $,
       r.ok
-        ? 'ok'
+        ? null
         : r.status === 401
-          ? 'device revoked: /tracker-link <code>'
-          : `HTTP ${r.status}, ${rows.length} queued`,
+          ? 'device revoked or unknown: run /tracker-link <code>'
+          : `server answered HTTP ${r.status}, ${rows.length} turn(s) queued`,
     )
   } catch {
     await $.store.set(QUEUE, rows.slice(-MAX_QUEUE))
-    $.ui.status(`offline, ${rows.length} queued`)
+    report($, `no connection, ${rows.length} turn(s) queued`)
   }
 }
 
