@@ -201,9 +201,10 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .mi[data-tip]:hover::after, .mi[data-tip]:focus-visible::after { opacity: 1; }
 #io-mode[data-mode="in"] { color: var(--in); border-color: rgba(61,139,255,.55); background: rgba(61,139,255,.14); }
 #io-mode[data-mode="out"] { color: var(--out); border-color: rgba(255,122,26,.55); background: rgba(255,122,26,.14); }
-.legrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 10px; }
-.legrow .legend { margin: 0; }
-.seg.sm button { padding: 4px 11px; font-size: 12.5px; }
+.legrow { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; margin-top: 10px; min-height: 32px; }
+.legrow .legend { margin: 0; min-height: 32px; align-items: center; }
+.seg.sm { height: 32px; box-sizing: border-box; align-items: center; }
+.seg.sm button { padding: 3px 11px; font-size: 12.5px; }
 #io-mode[data-mode="both"] { color: var(--text); border-color: rgba(53,201,140,.6); background: rgba(53,201,140,.14); }
 #io-mode[data-mode="off"] { color: var(--muted); opacity: .75; }
 
