@@ -204,3 +204,5 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .legrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 10px; }
 .legrow .legend { margin: 0; }
 .seg.sm button { padding: 4px 11px; font-size: 12.5px; }
+#io-mode[data-mode="both"] { color: var(--text); border-color: rgba(53,201,140,.6); background: rgba(53,201,140,.14); }
+#io-mode[data-mode="off"] { color: var(--muted); opacity: .75; }

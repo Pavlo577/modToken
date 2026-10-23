@@ -11,9 +11,9 @@ import type { Bucket, LimitRow, Prices, SessionRow, TurnRow, Totals } from './ty
 type Tab = 'overview' | 'analytics' | 'money' | 'sessions' | 'devices'
 type View = 'line' | 'bars' | 'cal'
 type Metric = 'io' | 'all' // 'all' adds the cache reads
-/** Which of the two to draw: both, only input (arrow down) or only output (arrow up). */
-type IoMode = 'both' | 'in' | 'out'
-const IO_NEXT: Record<IoMode, IoMode> = { both: 'in', in: 'out', out: 'both' }
+/** Which of the two to draw: both, only input (arrow down), only output (arrow up) or neither (the cache alone). */
+type IoMode = 'both' | 'in' | 'out' | 'off'
+const IO_NEXT: Record<IoMode, IoMode> = { both: 'in', in: 'out', out: 'off', off: 'both' }
 
 interface State {
   tab: Tab
@@ -178,7 +178,7 @@ function renderKpis(agg: S.Aggregate): void {
 type Def = [label: string, color: string, pick: (t: Totals) => number]
 const OUT: Def = ['Вихідні', COLORS.out, t => t.output]
 const IN: Def = ['Вхідні (нові)', COLORS.in, S.freshInput]
-const ioDefs = (): Def[] => (state.io === 'in' ? [IN] : state.io === 'out' ? [OUT] : [OUT, IN])
+const ioDefs = (): Def[] => (state.io === 'in' ? [IN] : state.io === 'out' ? [OUT] : state.io === 'off' ? [] : [OUT, IN])
 const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
 /** Height of the main chart: grows with the window, at most 70% of it. */
 const mainHeight = (): number => Math.round(Math.max(300, Math.min(window.innerHeight * 0.5, window.innerHeight * 0.7)))
@@ -199,6 +199,7 @@ function renderMain(agg: S.Aggregate): void {
     void get<Bucket[]>('/buckets?' + q(tz.startOfDay(from), tz.startOfDay(S.addDays(to, 1)))).then(buckets => {
       if (state.view !== 'cal') return
       const a = S.aggregate(buckets, tz, { device: state.device || null, prices })
+      if (state.io === 'off') { $('main-chart').replaceChildren(el('div', { class: 'empty' }, 'Увімкни вхідні та/або вихідні токени (кнопка зі стрілками)')); return }
       const picks = ioDefs() // the cache is not shown here
       const days = new Map([...a.days].map(([d, t]) => [d, picks.reduce((sum, [, , pick]) => sum + pick(t), 0)]))
       const label = state.io === 'in' ? 'Нові вхідні' : state.io === 'out' ? 'Вихідні' : 'Нові вхідні + вихідні'
@@ -218,9 +219,15 @@ function renderMain(agg: S.Aggregate): void {
   const src = hourly ? agg.hours : agg.days
   const rows = keys.map(k => src.get(k) ?? ZERO)
   const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
-  const series: Series[] = ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
+  let series: Series[] = ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
   // the cache is far larger than the rest: logarithmic axis, or one linear scale fitted to input/output with the cache clipped at the top
-  const secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
+  let secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
+  if (!series.length && secondary) { series = [secondary]; secondary = undefined } // the cache alone: an ordinary chart
+  if (!series.length) {
+    $('main-chart').replaceChildren(el('div', { class: 'empty' }, 'Нічого не вибрано: увімкни вхідні та вихідні токени (кнопка зі стрілками) або кеш'))
+    $('main-sub').textContent = rangeTitle(r)
+    return
+  }
   $('main-title').textContent = 'Токени'
   $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}`
   $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
@@ -578,7 +585,9 @@ function setTab(tab: Tab): void {
 }
 
 const IO_ICON: Record<IoMode, string> = {
-  both: '<path d="M8 20V5M8 5l-4 4M8 5l4 4"/><path d="M16 4v15M16 19l-4-4M16 19l4-4"/>',
+  // both: the two arrows in their series colours (output up, input down)
+  both: '<path style="stroke:var(--out)" d="M8 20V5M8 5l-4 4M8 5l4 4"/><path style="stroke:var(--in)" d="M16 4v15M16 19l-4-4M16 19l4-4"/>',
+  off: '<path d="M8 20V5M8 5l-4 4M8 5l4 4"/><path d="M16 4v15M16 19l-4-4M16 19l4-4"/><path d="M3 3l18 18"/>',
   in: '<path d="M12 4v15M12 19l-5-5M12 19l5-5"/>',
   out: '<path d="M12 20V5M12 5l-5 5M12 5l5 5"/>',
 }
@@ -589,9 +598,11 @@ function syncControls(): void {
   const io = $('io-mode')
   io.dataset.mode = state.io
   $('io-icon').innerHTML = IO_ICON[state.io]
-  const ioName: Record<IoMode, string> = { both: 'вхідні та вихідні', in: 'лише вхідні', out: 'лише вихідні' }
-  io.dataset.tip = `Показуються ${ioName[state.io]} токени. Натисни, щоб ${IO_NEXT[state.io] === 'in' ? 'лише вхідні' : IO_NEXT[state.io] === 'out' ? 'лише вихідні' : 'вхідні та вихідні'}`
-  $('scale-mode').classList.toggle('hide', !(state.metric === 'all' && state.view !== 'cal'))
+  const ioName: Record<IoMode, string> = { both: 'вхідні та вихідні токени', in: 'лише вхідні токени', out: 'лише вихідні токени', off: 'ні вхідні, ні вихідні токени' }
+  const ioNext: Record<IoMode, string> = { both: 'лише вхідні', in: 'лише вихідні', out: 'сховати обидва', off: 'вхідні та вихідні' }
+  io.dataset.tip = `Показуються ${ioName[state.io]}. Натисни, щоб ${ioNext[state.io]}`
+  // the scale choice matters only when the cache shares the chart with input/output
+  $('scale-mode').classList.toggle('hide', !(state.metric === 'all' && state.view !== 'cal' && state.io !== 'off'))
   press($('scale-mode'), 's', state.scale)
   const cache = $<HTMLButtonElement>('cache-on'), off = state.view === 'cal'
   cache.setAttribute('aria-pressed', String(state.metric === 'all' && !off))
