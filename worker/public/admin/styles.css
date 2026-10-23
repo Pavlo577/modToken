@@ -120,3 +120,18 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
   .wrap { padding: 12px 12px 50px; } .card { padding: 16px; border-radius: 18px; } .kpi .v { font-size: 25px; }
   .top { gap: 10px; } .pills { order: 3; width: 100%; margin: 0; } .who { margin-left: auto; } .who .em { display: none; }
 }
+
+/* month calendars and month tiles (activity card) */
+.mcals { display: flex; flex-wrap: wrap; gap: 22px 28px; }
+.mcal h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: capitalize; }
+.mgrid { display: grid; grid-template-columns: repeat(7, 34px); gap: 3px; }
+.mgrid .mh { font-size: 10px; color: var(--text-3, #6f655c); text-align: center; padding-bottom: 2px; }
+.md { height: 34px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-variant-numeric: tabular-nums; border: 1px solid rgba(255,255,255,.04); }
+.md.off { opacity: .25; }
+.md:hover, .mt:hover { border-color: rgba(255,255,255,.55); }
+.l0 { background: #2b2522; color: #8b8077; } .l1 { background: #5b3418; color: #e3c9b0; } .l2 { background: #8f4c14; color: #fff1e2; }
+.l3 { background: #cc640f; color: #fff; } .l4 { background: #ff7a1a; color: #1c1005; font-weight: 700; }
+.mtiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.mt { border-radius: 12px; padding: 12px 12px 10px; display: flex; flex-direction: column; gap: 4px; border: 1px solid rgba(255,255,255,.04); }
+.mt span { font-size: 12px; opacity: .85; text-transform: capitalize; } .mt b { font-size: 17px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .mgrid { grid-template-columns: repeat(7, 1fr); width: calc((100vw - 96px) / 2.2); min-width: 210px; } .md { height: 30px; } }

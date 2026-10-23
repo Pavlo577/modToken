@@ -131,8 +131,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
     root.append(cross, ...dots)
     const hit = svg('rect', { x: m.l, y: m.t, width: iw, height: ih, fill: 'transparent' })
     root.append(hit)
-    container.querySelector('svg')?.remove()
-    container.prepend(root)
+    place(container, root)
     const tip = tipOf(host)
     const move = (e: Event): void => {
       const pe = e as PointerEvent
@@ -197,8 +196,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
       return [g, cx, acc]
     })
     root.append(...groups.map(([g]) => g))
-    container.querySelector('svg')?.remove()
-    container.prepend(root)
+    place(container, root)
     const tip = tipOf(host)
     groups.forEach(([g, cx, top], i) => {
       const show = (): void => {
@@ -258,8 +256,7 @@ export function calendarHeatmap(container: HTMLElement, opts: CalendarOptions): 
       r.addEventListener('pointerleave', () => tip.hide())
       root.append(r)
     })
-    container.querySelector('svg')?.remove()
-    container.prepend(root)
+    place(container, root)
   })
 }
 
@@ -268,32 +265,130 @@ export interface HeatCell {
   tip: TipRow[]
 }
 
-/** Week x hour grid: cells[dow][hour], Monday first. */
-export function hourGrid(container: HTMLElement, opts: { cells: HeatCell[][]; tipTitle: (dow: number, hour: number) => string }): void {
+export interface HeatGridOptions {
+  cells: HeatCell[][]
+  rowLabel: (row: number) => string
+  /** Label above a column, or null for none. */
+  colLabel: (col: number) => string | null
+  tipTitle: (row: number, col: number) => string
+  maxCell?: number
+  labelW?: number
+  /** Cell height when it should differ from the width. */
+  cellH?: number
+}
+
+/** Rows x columns of heat cells, coloured by value relative to the largest. */
+export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
   const host = container as Host
   const { cells } = opts
-  const max = Math.max(...cells.flat().map(c => c.value))
+  const rows = cells.length, cols = cells[0]?.length ?? 0
+  const max = Math.max(0, ...cells.flat().map(c => c.value))
   if (!(max > 0)) return empty(container)
   responsive(container, W => {
-    const labelW = 28, topH = 18, gap = 2
-    const cell = Math.max(8, Math.floor((W - labelW) / 24) - gap)
-    const width = labelW + 24 * (cell + gap)
-    const height = topH + 7 * (cell + gap)
+    const labelW = opts.labelW ?? 28, topH = 18, gap = 2
+    const cw = Math.max(8, Math.min(opts.maxCell ?? 60, Math.floor((W - labelW) / cols) - gap))
+    const ch = opts.cellH ?? cw
+    const width = labelW + cols * (cw + gap)
+    const height = topH + rows * (ch + gap)
     const root = svg('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'img' })
-    for (let h = 0; h < 24; h += 3) root.append(svg('text', { x: labelW + h * (cell + gap), y: 11, class: 'ax' }, String(h)))
-    DOW.forEach((n, r) => root.append(svg('text', { x: 0, y: topH + r * (cell + gap) + cell - 2, class: 'ax' }, n)))
+    for (let c = 0; c < cols; c++) {
+      const label = opts.colLabel(c)
+      if (label != null) root.append(svg('text', { x: labelW + c * (cw + gap), y: 11, class: 'ax' }, label))
+    }
+    for (let r = 0; r < rows; r++) root.append(svg('text', { x: 0, y: topH + r * (ch + gap) + Math.min(ch, 14) - 3, class: 'ax' }, opts.rowLabel(r)))
     const tip = tipOf(host)
-    cells.forEach((row, r) => row.forEach((c, h) => {
+    cells.forEach((row, r) => row.forEach((c, i) => {
       const lvl = c.value <= 0 ? 0 : Math.max(1, Math.ceil((c.value / max) * 4))
-      const x = labelW + h * (cell + gap), y = topH + r * (cell + gap)
-      const rect = svg('rect', { x, y, width: cell, height: cell, rx: 3, fill: HEAT[lvl], class: 'cell' })
-      rect.addEventListener('pointerenter', () => tip.show(x + cell / 2, y, opts.tipTitle(r, h), c.tip))
+      const x = labelW + i * (cw + gap), y = topH + r * (ch + gap)
+      const rect = svg('rect', { x, y, width: cw, height: ch, rx: 3, fill: HEAT[lvl], class: 'cell' })
+      rect.addEventListener('pointerenter', () => tip.show(x + cw / 2, y, opts.tipTitle(r, i), c.tip))
       rect.addEventListener('pointerleave', () => tip.hide())
       root.append(rect)
     }))
-    container.querySelector('svg')?.remove()
-    container.prepend(root)
+    place(container, root)
   })
+}
+
+/** Week x hour grid: cells[dow][hour], Monday first. */
+export const hourGrid = (container: HTMLElement, opts: { cells: HeatCell[][]; tipTitle: (dow: number, hour: number) => string }): void =>
+  heatGrid(container, { cells: opts.cells, rowLabel: r => DOW[r], colLabel: h => (h % 3 === 0 ? String(h) : null), tipTitle: opts.tipTitle })
+
+/** Puts a freshly drawn chart into its container, replacing the previous drawing but keeping the tooltip. */
+function place(container: HTMLElement, root: Element): void {
+  for (const c of [...container.children]) if (!c.classList.contains('chart-tip')) c.remove()
+  container.prepend(root)
+}
+
+/** Heat level 0-4 for each value: quartiles of the non-zero ones, so a few huge days do not wash out the rest. */
+function levels(values: number[]): (v: number) => number {
+  const nz = values.filter(v => v > 0).sort((a, b) => a - b)
+  const q = (p: number): number => nz[Math.min(nz.length - 1, Math.floor(p * nz.length))]
+  const cuts = nz.length ? [q(0.25), q(0.5), q(0.75)] : [0, 0, 0]
+  return v => (v <= 0 ? 0 : v <= cuts[0] ? 1 : v <= cuts[1] ? 2 : v <= cuts[2] ? 3 : 4)
+}
+
+function showAt(host: Host, target: HTMLElement, title: string, rows: TipRow[]): void {
+  const h = host.getBoundingClientRect(), t = target.getBoundingClientRect()
+  tipOf(host).show(t.left - h.left + t.width / 2, t.top - h.top, title, rows)
+}
+
+export interface MonthCalendarsOptions {
+  from: string
+  to: string
+  days: Map<string, HeatCell>
+  addDays: (day: string, n: number) => string
+  /** 0 = Monday ... 6 = Sunday */
+  dayOfWeek: (day: string) => number
+  monthTitle: (month: string) => string // 'YYYY-MM'
+  tipTitle: (day: string) => string
+}
+
+/** One small calendar per month, every date a heat square with its number. */
+export function monthCalendars(container: HTMLElement, opts: MonthCalendarsOptions): void {
+  const host = container as Host
+  const { from, to, days, addDays, dayOfWeek } = opts
+  const level = levels([...days.values()].map(c => c.value))
+  if (![...days.values()].some(c => c.value > 0)) return empty(container)
+  release(container)
+  const months: string[] = []
+  for (let d = from; d <= to; d = addDays(d, 1)) if (!months.length || months[months.length - 1] !== d.slice(0, 7)) months.push(d.slice(0, 7))
+  const blocks = months.map(m => {
+    const grid = el('div', { class: 'mgrid' }, ...DOW.map(n => el('span', { class: 'mh' }, n)))
+    const first = m + '-01'
+    for (let i = 0; i < dayOfWeek(first); i++) grid.append(el('span', {}))
+    for (let d = first; d.slice(0, 7) === m; d = addDays(d, 1)) {
+      if (d < from || d > to) { grid.append(el('span', { class: 'md off' }, String(+d.slice(8)))); continue }
+      const c = days.get(d)
+      const cell = el('span', { class: `md l${level(c?.value ?? 0)}` }, String(+d.slice(8)))
+      cell.addEventListener('pointerenter', () => showAt(host, cell, opts.tipTitle(d), c?.tip ?? []))
+      cell.addEventListener('pointerleave', () => tipOf(host).hide())
+      grid.append(cell)
+    }
+    return el('div', { class: 'mcal' }, el('h3', {}, opts.monthTitle(m)), grid)
+  })
+  container.replaceChildren(el('div', { class: 'mcals' }, ...blocks))
+}
+
+export interface MonthTile {
+  label: string
+  value: number
+  text: string
+  tipTitle: string
+  tip: TipRow[]
+}
+
+/** One tile per month, coloured by its value, with the figure written on it. */
+export function monthTiles(container: HTMLElement, tiles: MonthTile[]): void {
+  const host = container as Host
+  if (!tiles.some(t => t.value > 0)) return empty(container)
+  release(container)
+  const level = levels(tiles.map(t => t.value))
+  container.replaceChildren(el('div', { class: 'mtiles' }, ...tiles.map(t => {
+    const tile = el('div', { class: `mt l${level(t.value)}` }, el('span', {}, t.label), el('b', {}, t.value > 0 ? t.text : '—'))
+    tile.addEventListener('pointerenter', () => showAt(host, tile, t.tipTitle, t.tip))
+    tile.addEventListener('pointerleave', () => tipOf(host).hide())
+    return tile
+  })))
 }
 
 /** Donut with the total in the middle. */

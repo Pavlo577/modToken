@@ -1,6 +1,7 @@
 // Dashboard: loads the data once per period, regroups it in the viewer's time zone and draws the tabs.
 import { $, el, api, fmt, fmtUsd, fmtPct, fmtAxis, dur, durSec, dayLabel, dayLong, DOW } from './util.ts'
-import { lineChart, barChart, calendarHeatmap, hourGrid, donut, COLORS, HEAT } from './charts.ts'
+import { lineChart, barChart, calendarHeatmap, hourGrid, heatGrid, monthCalendars, monthTiles, donut, COLORS, HEAT } from './charts.ts'
+import type { HeatCell, TipRow } from './charts.ts'
 import type { Series } from './charts.ts'
 import * as S from './stats.ts'
 import { initDevices, loadDevices } from './devices.ts'
@@ -220,11 +221,69 @@ async function renderDay(): Promise<void> {
 }
 
 // ---------- analytics
+const totalsTip = (output: number, freshIn: number, turns: number): TipRow[] =>
+  [['Вихідні', fmt(output), COLORS.out], ['Вхідні (нові)', fmt(freshIn), COLORS.in], ['Ходів', String(turns)]]
+
+let activitySeq = 0
+/** "When do you work": the grid fits the length of the shown period. */
+function renderActivity(agg: S.Aggregate): void {
+  const r = need().r
+  const title = $('act-title'), sub = $('act-sub'), box = $('hour-grid')
+  const seq = ++activitySeq
+  if (r.len === 1) {
+    title.textContent = 'Активність за день'
+    sub.textContent = `${dayLong(r.fromDay)}: вихідні токени по 5 хвилин (рядок: година, клітинка: 5 хвилин)`
+    box.replaceChildren(el('div', { class: 'empty' }, 'Завантаження…'))
+    void get<TurnRow[]>('/turns?' + q(r.from, r.to)).then(all => {
+      if (seq !== activitySeq) return
+      const cells: HeatCell[][] = Array.from({ length: 24 }, () => Array.from({ length: 12 }, () => ({ value: 0, tip: [] as TipRow[] })))
+      const acc = cells.map(row => row.map(() => ({ output: 0, input: 0, turns: 0 })))
+      for (const t of all) {
+        if (state.device && t.device !== state.device) continue
+        const p = tz.parts(Date.parse(t.ts)), a = acc[p.h][Math.floor(p.min / 5)]
+        a.output += t.output; a.input += S.freshInput(t); a.turns++
+      }
+      acc.forEach((row, h) => row.forEach((a, m) => { cells[h][m] = { value: a.output, tip: totalsTip(a.output, a.input, a.turns) } }))
+      heatGrid(box, {
+        cells, rowLabel: h => `${h}:00`, colLabel: m => (m % 3 === 0 ? `:${pad(m * 5)}` : null), maxCell: 56, cellH: 14, labelW: 42,
+        tipTitle: (h, m) => `${pad(h)}:${pad(m * 5)}–${pad(m * 5 + 4)}`,
+      })
+    }).catch((e: Error) => { if (seq === activitySeq) box.replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) })
+  } else if (r.len <= 7) {
+    title.textContent = 'Коли ти працюєш'
+    sub.textContent = 'Вихідні токени за днем тижня й годиною (за твоїм часовим поясом)'
+    hourGrid(box, { cells: agg.matrix.map(row => row.map(c => ({ value: c.output, tip: totalsTip(c.output, c.input, c.turns) }))), tipTitle: (row, h) => `${DOW[row]}, ${h}:00–${h}:59` })
+  } else if (r.len <= 200) {
+    title.textContent = 'Активність по днях'
+    sub.textContent = 'Вихідні токени за кожен день, календар по місяцях'
+    const days = new Map<string, HeatCell>()
+    for (const [d, t] of agg.days) days.set(d, { value: t.output, tip: totalsTip(t.output, S.freshInput(t), t.turns) })
+    monthCalendars(box, {
+      from: r.fromDay, to: r.toDay, days, addDays: S.addDays,
+      dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
+      monthTitle: m => `${new Intl.DateTimeFormat('uk-UA', { month: 'long', timeZone: 'UTC' }).format(Date.parse(m + '-15T12:00:00Z'))} ${m.slice(0, 4)}`,
+      tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
+    })
+  } else {
+    title.textContent = 'Активність по місяцях'
+    sub.textContent = 'Вихідні токени за кожен місяць'
+    const months = new Map<string, Totals>()
+    for (const [d, t] of agg.days) {
+      const m = months.get(d.slice(0, 7)) ?? { input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 }
+      for (const k of Object.keys(m) as (keyof Totals)[]) m[k] += t[k]
+      months.set(d.slice(0, 7), m)
+    }
+    const list: string[] = []
+    for (let d = r.fromDay; d <= r.toDay; d = S.addDays(d, 1)) if (!list.length || list[list.length - 1] !== d.slice(0, 7)) list.push(d.slice(0, 7))
+    monthTiles(box, list.map(m => {
+      const t = months.get(m)
+      const name = `${new Intl.DateTimeFormat('uk-UA', { month: 'short', timeZone: 'UTC' }).format(Date.parse(m + '-15T12:00:00Z')).replace('.', '')} ${m.slice(0, 4)}`
+      return { label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), tipTitle: name, tip: t ? [...totalsTip(t.output, S.freshInput(t), t.turns), ['Вартість', fmtUsd(t.cost)] as TipRow] : [] }
+    }))
+  }
+}
 function renderAnalytics(agg: S.Aggregate): void {
-  hourGrid($('hour-grid'), {
-    cells: agg.matrix.map(row => row.map(c => ({ value: c.output, tip: [['Вихідні', fmt(c.output), COLORS.out], ['Вхідні (нові)', fmt(c.input), COLORS.in], ['Ходів', String(c.turns)]] as [string, string, string?][] }))),
-    tipTitle: (r, h) => `${DOW[r]}, ${h}:00–${h}:59`,
-  })
+  renderActivity(agg)
   const active = [...agg.days].filter(([, t]) => S.cacheHit(t) != null).sort(([a], [b]) => (a < b ? -1 : 1))
   $('cache-sub').textContent = `У середньому ${fmtPct(S.cacheHit(agg.total))} вхідних даних береться з кешу замість повної обробки`
   const hits = active.map(([, t]) => (S.cacheHit(t) ?? 0) * 100)
