@@ -5,6 +5,7 @@ import type { HeatCell, TipRow } from './charts.ts'
 import type { Series } from './charts.ts'
 import * as S from './stats.ts'
 import { initDevices, loadDevices } from './devices.ts'
+import { dropdown } from './dropdown.ts'
 import type { Bucket, LimitRow, Prices, SessionRow, TurnRow, Totals } from './types.ts'
 
 type Tab = 'overview' | 'analytics' | 'money' | 'sessions' | 'devices'
@@ -129,7 +130,7 @@ async function load(): Promise<void> {
     data = { r, buckets, sessions, limits }
     const names = [...new Set(buckets.map(b => b.device))].sort()
     if (state.device && !names.includes(state.device)) state.device = ''
-    $('device').replaceChildren(...['', ...names].map(n => el('button', { type: 'button', 'data-d': n, 'aria-pressed': String(n === state.device) }, n || 'Усі пристрої')))
+    deviceMenu.set([{ value: '', label: 'Усі пристрої' }, ...names.map(n => ({ value: n, label: n }))], state.device)
     render()
   } catch (e) {
     clearTimeout(slow)
@@ -503,9 +504,10 @@ function setTab(tab: Tab): void {
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('hide', s.id !== 'tab-' + tab))
   $('controls').classList.toggle('hide', tab === 'devices')
   // the date pager lives in the activity card on Analytics and in the controls bar elsewhere
+  // (and the time zone chip: in the card's corner on Analytics, at the end of the controls elsewhere)
   const pager = $('pager')
-  if (tab === 'analytics') $('act-pager').append(pager)
-  else $('range').after(pager)
+  if (tab === 'analytics') { $('act-pager').append(pager); $('act-tz').append($('tzchip')) }
+  else { $('range').after(pager); $('controls').append($('tzchip')); $('act-mode').classList.add('hide') }
   if (tab === 'devices') void loadDevices().catch(() => {})
   else render()
 }
@@ -549,10 +551,8 @@ $('act-mode').addEventListener('click', e => { const b = clicked(e); if (!b) ret
 const dateChanged = (): void => { state.from = $<HTMLInputElement>('from').value; state.to = $<HTMLInputElement>('to').value; persist(); void load() }
 $('from').onchange = dateChanged
 $('to').onchange = dateChanged
-$('device').addEventListener('click', e => {
-  const b = clicked(e); if (!b) return
-  state.device = b.dataset.d ?? ''; persist(); press($('device'), 'd', state.device); render()
-})
+const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); render() })
+
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
 $('metric').onchange = () => { state.metric = $<HTMLSelectElement>('metric').value as Metric; persist(); render() }
 const setDay = (d: string): void => { const today = need().r.today; state.day = d > today ? today : d; void renderDay() }

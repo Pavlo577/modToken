@@ -31,9 +31,13 @@
       <button data-r="custom" aria-pressed="false">Свій</button>
     </div>
     <span id="pager" class="pager hide"><button class="sq" id="pg-prev" aria-label="Назад">‹</button><span id="pg-label"></span><button class="sq" id="pg-next" aria-label="Вперед">›</button></span>
+    <div class="seg hide" id="act-mode" role="group" aria-label="Вигляд карти активності"><button data-m="min" aria-pressed="true">Мінімальний</button><button data-m="detail" aria-pressed="false">Детальний</button></div>
     <span id="custom" class="dtools hide"><input type="date" id="from" aria-label="Від"> <span>—</span> <input type="date" id="to" aria-label="До"></span>
-    <div class="chips" id="device" role="group" aria-label="Пристрій"><button type="button" data-d="" aria-pressed="true">Усі пристрої</button></div>
     <span class="spacer"></span>
+    <div class="dd" id="device">
+      <button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Пристрій"><span class="dd-label">Усі пристрої</span><i aria-hidden="true">▾</i></button>
+      <div class="dd-menu hide" role="listbox" aria-label="Пристрій"></div>
+    </div>
     <span class="chip" id="tzchip" title="Усі дні й години показані за цим часовим поясом"></span>
   </div>
 
@@ -79,7 +83,7 @@
     <div class="card">
       <div class="card-head act-head"><div><h2 id="act-title">Коли ти працюєш</h2><p class="sub" id="act-sub"></p></div>
         <div id="act-pager"></div>
-        <div class="seg hide" id="act-mode" role="group" aria-label="Вигляд"><button data-m="min" aria-pressed="true">Мінімальний</button><button data-m="detail" aria-pressed="false">Детальний</button></div></div>
+        <div id="act-tz"></div></div>
       <div id="hour-grid"></div>
     </div>
     <div class="card">
