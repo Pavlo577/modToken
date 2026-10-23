@@ -3,409 +3,149 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Token Tracker</title>
 <link rel="icon" href="data:,">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-:root {
-  color-scheme: dark;
-  --bg: #0f0d0c; --surface: #1a1715; --line: #2c2723; --grid: #26211e;
-  --text: #f4efe9; --text-2: #cbc2b8; --muted: #8f857b;
-  --s1: #ff7a1a; --s2: #ffc24a; --s3: #d4502c; --s4: #8f7a68;
-  --accent: #ff7a1a; --accent-ink: #1a0f06; --danger: #ff6b5e;
-  --p-blue: #33231a; --p-green: #3a2616; --p-yellow: #3b2c12; --p-lilac: #2f1f1c; --p-pink: #3a2220;
-  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.4);
-  --dock: #26211e;
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 14.5px/1.45 "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 1240px; margin: 0 auto; padding: 16px 16px 110px; }
-
-/* top bar */
-.top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; background: var(--surface);
-  border-radius: 22px; padding: 10px 14px; box-shadow: var(--shadow); margin-bottom: 18px; }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; letter-spacing: -.02em; }
-.brand i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.brand span { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
-nav.pill { display: flex; gap: 4px; background: var(--bg); border-radius: 999px; padding: 4px; }
-.user { display: flex; align-items: center; gap: 10px; }
-.user b { display: block; font-size: 13px; line-height: 1.2; }
-.who { color: var(--muted); font-size: 11.5px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.av { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
-
-button, select, input { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; }
-select, input { outline: none; }
-select:focus, input:focus { border-color: var(--text-2); }
-button { cursor: pointer; transition: transform .15s, background .15s; }
-button:hover { transform: translateY(-1px); }
-nav.pill button { border: 0; background: transparent; font-weight: 600; color: var(--text-2); }
-nav.pill button[aria-pressed="true"], button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-button.danger { color: var(--danger); }
-
-/* layout */
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
-@media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
-.head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; margin: 4px 2px 16px; }
-.head h2 { font-size: 26px; letter-spacing: -.02em; margin: 0; }
-.head p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
-.ctl { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.card { background: var(--surface); border-radius: 24px; padding: 20px; margin-bottom: 18px; box-shadow: var(--shadow); }
-.card h2 { font-size: 15px; margin: 0 0 2px; letter-spacing: -.01em; }
-.card .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
-.tile { border-radius: 22px; padding: 16px 18px; box-shadow: var(--shadow); transition: transform .2s; }
-.tile:hover { transform: translateY(-4px); }
-.tile .v { color: var(--text); font-size: 24px; white-space: nowrap; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.tile .l { color: var(--text-2); font-size: 12px; font-weight: 500; }
-.t0 { background: linear-gradient(135deg, #ff7a1a, #e0560a); } .t0 .v, .t0 .l { color: #1a0f06; }
-.t1 { background: var(--p-green); } .t2 { background: var(--surface); }
-.t3 { background: var(--p-yellow); } .t4 { background: var(--p-lilac); }
-
-.legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 10px; font-size: 12px; color: var(--text-2); }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
-.cols { display: flex; align-items: flex-end; gap: 4px; height: 190px; border-bottom: 1px solid var(--line);
-  background: repeating-linear-gradient(to top, transparent 0, transparent 46px, var(--grid) 46px, var(--grid) 47px); }
-.col { flex: 1; min-width: 2px; display: flex; flex-direction: column-reverse; height: 100%; justify-content: flex-start; position: relative; border-radius: 8px 8px 0 0; }
-.col:hover { background: color-mix(in srgb, var(--s1) 10%, transparent); }
-.seg { border-top: 2px solid var(--surface); }
-.seg:last-child { border-radius: 8px 8px 0 0; }
-.axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; margin-top: 6px; }
-
-/* right desk */
-.desk h2.big { font-size: 22px; letter-spacing: -.02em; margin: 4px 4px 2px; }
-.desk .lead { color: var(--muted); font-size: 12.5px; margin: 0 4px 14px; }
-.desk .card { box-shadow: none; margin-bottom: 14px; }
-.desk .blue { background: var(--p-green); } .desk .lilac { background: var(--p-yellow); }
-.rows { display: grid; gap: 10px; }
-.row { display: grid; grid-template-columns: minmax(70px, 130px) 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
-.row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
-.track { height: 9px; border-radius: 5px; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
-.track b { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
-.row .val { font-variant-numeric: tabular-nums; font-weight: 600; }
-
-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
-th, td { text-align: right; padding: 8px 8px; border-bottom: 1px solid var(--line); }
-th:first-child, td:first-child { text-align: left; }
-th { color: var(--text-2); font-weight: 600; }
-.tip { position: fixed; pointer-events: none; z-index: 10; background: var(--dock); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 12.5px; line-height: 1.5; display: none; max-width: 240px; }
-.empty { color: var(--muted); padding: 24px 0; text-align: center; }
-.code { font: 700 28px/1 ui-monospace, monospace; letter-spacing: 3px; padding: 12px 0; }
-.dev { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.dev:last-child { border-bottom: 0; }
-.dev small { color: var(--muted); display: block; }
-.tag { font-size: 11.5px; color: var(--danger); border: 1px solid var(--danger); border-radius: 999px; padding: 1px 8px; }
-form { display: flex; gap: 8px; flex-wrap: wrap; }
-.snip { margin: 0 0 8px; padding: 12px 14px; background: var(--bg); border-radius: 14px; font: 12.5px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
-code { font: 12.5px ui-monospace, monospace; background: var(--bg); padding: 1px 6px; border-radius: 6px; }
-form input { flex: 1; min-width: 180px; }
-.hide { display: none !important; }
-
-/* floating dock */
-.dock { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20; display: flex; gap: 8px; align-items: center;
-  background: var(--dock); border-radius: 999px; padding: 8px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.28); }
-.dock button { width: 38px; height: 38px; padding: 0; border: 0; border-radius: 50%; background: var(--c); color: #121212; font-size: 12px; font-weight: 800; }
-.dock button:hover { transform: translateY(-4px) scale(1.08); }
-.dock button[aria-pressed="true"] { background: var(--c); color: #121212; box-shadow: 0 0 0 3px var(--dock), 0 0 0 5px var(--text); }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<main>
+<div class="wrap">
   <header class="top">
-    <div class="brand"><span style="font-size:18px;letter-spacing:-.02em;color:var(--text)">Token</span><i></i><span>TRACKER</span></div>
-    <nav class="pill">
-      <button id="tab-dash" aria-pressed="true">Статистика</button>
-      <button id="tab-dev" aria-pressed="false">Пристрої</button>
+    <div class="brand"><i></i>Token Tracker</div>
+    <nav class="pills" id="nav" aria-label="Розділи">
+      <button data-tab="overview" aria-pressed="true">Огляд</button>
+      <button data-tab="analytics" aria-pressed="false">Аналітика</button>
+      <button data-tab="money" aria-pressed="false">Вартість<span class="wide"> і ліміти</span></button>
+      <button data-tab="sessions" aria-pressed="false">Сесії</button>
+      <button data-tab="devices" aria-pressed="false">Пристрої</button>
     </nav>
-    <div class="user"><span class="av" id="av">··</span><div><b>Адмін</b><div class="who" id="who">…</div></div></div>
+    <div class="who"><span class="em" id="who">…</span><span class="av" id="av">··</span></div>
   </header>
 
-  <section id="dash">
-    <div class="layout">
-      <div class="main">
-        <div class="head">
-          <div><h2>Огляд токенів 📊</h2><p>Усе, що витрачають твої пристрої та хмарні сесії</p></div>
-          <div class="ctl">
-            <select id="range" aria-label="Період">
-              <option value="7">7 днів</option><option value="30" selected>30 днів</option><option value="90">90 днів</option><option value="day">Один день</option>
-            </select>
-            <input id="day" type="date" class="hide" aria-label="День (UTC)">
-            <select id="measure" aria-label="Що показувати на графіку днів">
-              <option value="new" selected>Графік: без кешу</option><option value="all">Графік: з кешем</option>
-            </select>
+  <div class="controls" id="controls">
+    <div class="seg" id="range" role="group" aria-label="Період">
+      <button data-r="today" aria-pressed="false">Сьогодні</button>
+      <button data-r="7" aria-pressed="false">7 днів</button>
+      <button data-r="30" aria-pressed="true">30 днів</button>
+      <button data-r="90" aria-pressed="false">90 днів</button>
+      <button data-r="365" aria-pressed="false">Рік</button>
+      <button data-r="custom" aria-pressed="false">Свій</button>
+    </div>
+    <span id="custom" class="dtools hide"><input type="date" id="from" aria-label="Від"> <span>—</span> <input type="date" id="to" aria-label="До"></span>
+    <select id="device" aria-label="Пристрій"><option value="">Усі пристрої</option></select>
+    <span class="spacer"></span>
+    <span class="chip" id="tzchip" title="Усі дні й години показані за цим часовим поясом"></span>
+  </div>
+
+  <section id="tab-overview" class="tab">
+    <div class="grid kpis" id="kpis"></div>
+    <div class="card">
+      <div class="card-head">
+        <div><h2 id="main-title">Токени</h2><p class="sub" id="main-sub"></p></div>
+        <div class="tools">
+          <div class="seg" id="view" role="group" aria-label="Вигляд">
+            <button data-v="line" aria-pressed="true">Лінії</button>
+            <button data-v="bars" aria-pressed="false">Стовпці</button>
+            <button data-v="cal" aria-pressed="false">Календар</button>
           </div>
-        </div>
-        <div class="tiles" id="tiles"></div>
-
-        <div class="card" id="days-card">
-          <h2>Токени по днях</h2>
-          <p class="sub">Дні та години — за UTC. Наведи на стовпець, щоб побачити цифри.</p>
-          <div class="legend" id="legend"></div>
-          <div class="cols" id="days" role="img" aria-label="Токени по днях"></div>
-          <div class="axis" id="days-axis"></div>
-          <p style="margin:14px 0 0"><button id="toggle-table" aria-pressed="false">Показати таблицею</button></p>
-          <div id="table" class="hide"></div>
-        </div>
-
-        <div class="card">
-          <h2>Коли використовується</h2>
-          <p class="sub">Вихідні токени по годинах доби (UTC)</p>
-          <div class="cols" id="hours" style="height:120px" role="img" aria-label="Токени по годинах доби"></div>
-          <div class="axis"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+          <select id="metric" aria-label="Що показувати">
+            <option value="io">Вхідні та вихідні</option>
+            <option value="all">З кешем</option>
+            <option value="cost">Вартість, $</option>
+          </select>
         </div>
       </div>
-
-      <aside class="desk">
-        <h2 class="big">Зведення 🧾</h2>
-        <p class="lead">Хто і на чому спалює токени</p>
-        <div class="card blue"><h2>За моделями</h2><p class="sub">Вихідні токени</p><div class="rows" id="models"></div></div>
-        <div class="card lilac"><h2>За пристроями</h2><p class="sub">Вихідні токени</p><div class="rows" id="devices-bars"></div></div>
-      </aside>
+      <div class="legend" id="main-legend" style="margin-bottom:10px"></div>
+      <div id="main-chart"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div><h2>Один день</h2><p class="sub" id="day-sub"></p></div>
+        <div class="dtools">
+          <button class="sq" id="day-prev" aria-label="Попередній день">‹</button>
+          <input type="date" id="day" aria-label="День">
+          <button class="sq" id="day-next" aria-label="Наступний день">›</button>
+          <button id="day-today">Сьогодні</button>
+        </div>
+      </div>
+      <div class="summary" id="day-summary"></div>
+      <div class="legend" style="margin-bottom:10px"><span><i style="background:var(--out)"></i>Вихідні</span><span><i style="background:var(--in)"></i>Вхідні (нові)</span></div>
+      <div id="day-chart"></div>
+      <div class="scroll" id="day-turns" style="margin-top:14px"></div>
     </div>
   </section>
 
-  <section id="dev" class="hide">
+  <section id="tab-analytics" class="tab hide">
+    <div class="card">
+      <div class="card-head"><div><h2>Коли ти працюєш</h2><p class="sub">Вихідні токени за днем тижня й годиною (за твоїм часовим поясом)</p></div></div>
+      <div id="hour-grid"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><h2>Ефективність кешу</h2><p class="sub" id="cache-sub">Частка вхідних даних, що береться з кешу, а не обробляється заново</p></div></div>
+      <div id="cache-chart"></div>
+    </div>
+    <div class="grid cols2">
+      <div class="card"><div class="card-head"><div><h2>За моделями</h2><p class="sub">Вихідні токени</p></div></div><div class="donut-wrap"><div id="model-donut"></div><div class="mlist" id="model-list"></div></div></div>
+      <div class="card"><div class="card-head"><div><h2>За пристроями</h2><p class="sub">Вихідні токени</p></div></div><div class="rows" id="device-bars"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-money" class="tab hide">
+    <div class="card">
+      <div class="card-head"><div><h2>Ліміти підписки</h2><p class="sub" id="limits-sub">Дані з останньої відповіді API на пристроях із підпискою</p></div></div>
+      <div id="limits"></div>
+    </div>
+    <div class="grid cols2">
+      <div class="card"><div class="card-head"><div><h2>Використання ліміту</h2><p class="sub">Найвищий відсоток за день</p></div><div class="legend"><span><i style="background:var(--out)"></i>7 днів</span><span><i style="background:var(--in)"></i>5 годин</span></div></div><div id="limits-chart"></div></div>
+      <div class="card"><div class="card-head"><div><h2>Ефективність підписки</h2><p class="sub">Скільки токенів і доларів API-вартості припадає на 1% тижневого ліміту</p></div></div><div id="efficiency"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><h2>Оцінка вартості</h2><p class="sub" id="cost-sub"></p></div></div>
+      <div class="summary" id="cost-summary"></div>
+      <div class="legend" id="cost-legend" style="margin-bottom:10px"></div>
+      <div id="cost-chart"></div>
+      <div class="scroll" id="cost-table" style="margin-top:14px"></div>
+      <p class="note" id="cost-note"></p>
+    </div>
+  </section>
+
+  <section id="tab-sessions" class="tab hide">
+    <div class="grid recs" id="records"></div>
+    <div class="card">
+      <div class="card-head"><div><h2>Найбільші сесії</h2><p class="sub">За вихідними токенами в обраному періоді</p></div></div>
+      <div class="scroll" id="sessions"></div>
+    </div>
+  </section>
+
+  <section id="tab-devices" class="tab hide">
     <div class="card">
       <h2>Додати пристрій</h2>
-      <p class="sub">Створи код, потім на пристрої виконай <b>/tracker-link КОД</b>. Код діє 10 хвилин і прив'язує лише один пристрій.</p>
-      <form id="new-code"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button type="submit">Створити код</button></form>
+      <p class="sub" style="margin-bottom:14px">Створи код, потім на пристрої виконай <b>/tracker-link КОД</b>. Код діє 10 хвилин і прив'язує лише один пристрій.</p>
+      <form id="new-code"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button class="primary" type="submit">Створити код</button></form>
       <div id="code-box" class="hide"><div class="code" id="code"></div><div class="sub" id="code-note"></div></div>
     </div>
     <div class="card">
       <h2>Хмарні сесії (claude.ai/code)</h2>
-      <p class="sub">Один раз на хмарне середовище: плагіни там не працюють, тому токени збирає хук, який ставить Setup script. Потім нічого робити не треба.</p>
-      <form id="cloud-form"><input id="cloud-name" value="cloud" maxlength="60" required aria-label="Назва пристрою"><button type="submit">Створити токен для хмари</button></form>
+      <p class="sub" style="margin-bottom:14px">Один раз на хмарне середовище: плагіни там не працюють, тому токени збирає хук, який ставить Setup script. Потім нічого робити не треба.</p>
+      <form id="cloud-form"><input id="cloud-name" value="cloud" maxlength="60" required aria-label="Назва пристрою"><button class="primary" type="submit">Створити токен для хмари</button></form>
       <div id="cloud-box" class="hide">
-        <p class="sub" style="margin:14px 0 6px"><b>1.</b> У claude.ai/code → меню середовища → Edit → <b>Setup script</b> встав:</p>
+        <p class="sub" style="margin:16px 0 6px"><b>1.</b> У claude.ai/code → меню середовища → Edit → <b>Setup script</b> встав:</p>
         <pre class="snip" id="cloud-script"></pre><button type="button" id="copy-script">Копіювати</button>
-        <p class="sub" style="margin:14px 0 6px"><b>2.</b> Там само, <b>Network secrets → Add secret</b>: Allowed website <code id="cloud-host"></code>, Custom headers: Name <code>x-device-token</code>, Prefix порожній, Value:</p>
+        <p class="sub" style="margin:16px 0 6px"><b>2.</b> Там само, <b>Network secrets → Add secret</b>: Allowed website <code id="cloud-host"></code>, Custom headers: Name <code>x-device-token</code>, Prefix порожній, Value:</p>
         <pre class="snip" id="cloud-token"></pre><button type="button" id="copy-token">Копіювати токен</button>
-        <p class="sub" style="margin:10px 0 0">Токен показується один раз. Втратиш: створи новий і відклич старий пристрій нижче.</p>
+        <p class="note">Токен показується один раз. Втратиш: створи новий і відклич старий пристрій нижче.</p>
       </div>
     </div>
-    <div class="card"><h2>Мої пристрої</h2><div id="dev-list"></div></div>
+    <div class="card"><h2 style="margin-bottom:6px">Мої пристрої</h2><div id="dev-list"></div></div>
     <div class="card">
       <h2>Імпорт старих даних</h2>
-      <p class="sub">Підтягне історію з локальних логів Claude Code, яка була до прив'язки пристрою. Файли читає твій браузер, на сервер іде лише кількість токенів, час і модель, текст розмов не передається. Повторний імпорт безпечний: дублікатів не буде.</p>
-      <form id="import-form">
-        <select id="import-device" aria-label="Пристрій" required></select>
-        <input id="import-files" type="file" webkitdirectory multiple aria-label="Папка з логами">
-      </form>
-      <p class="sub" style="margin:10px 0 0">Вибери папку <b>~/.claude/projects</b> (на Windows <b>%USERPROFILE%\.claude\projects</b>) і пристрій, якому вона належить. Логи на сервері без браузера спершу скопіюй собі: <code>scp -r user@host:~/.claude/projects ./projects</code></p>
+      <p class="sub" style="margin:3px 0 14px">Підтягне історію з локальних логів Claude Code, яка була до прив'язки пристрою. Файли читає твій браузер, на сервер іде лише кількість токенів, час і модель, текст розмов не передається. Повторний імпорт безпечний: дублікатів не буде.</p>
+      <form id="import-form"><select id="import-device" aria-label="Пристрій" required></select><input id="import-files" type="file" webkitdirectory multiple aria-label="Папка з логами"></form>
+      <p class="note">Вибери папку <b>~/.claude/projects</b> (на Windows <b>%USERPROFILE%\.claude\projects</b>) і пристрій, якому вона належить. Для сервера без браузера на самому сервері виконай <code>/tracker-import</code>.</p>
       <div id="import-status" class="sub" style="margin-top:10px"></div>
     </div>
   </section>
-</main>
-<div class="dock" id="dock" role="group" aria-label="Швидкий вибір періоду">
-  <button data-r="7" title="7 днів" style="--c:#ff7a1a">7д</button>
-  <button data-r="30" title="30 днів" style="--c:#ff9a4d">30д</button>
-  <button data-r="90" title="90 днів" style="--c:#ffc24a">90д</button>
-  <button data-r="day" title="Один день" style="--c:#ffe0b8">1д</button>
 </div>
-<div class="tip" id="tip"></div>
-
-<script>
-const $ = id => document.getElementById(id)
-const el = (tag, props = {}, ...kids) => {
-  const n = document.createElement(tag)
-  for (const [k, v] of Object.entries(props)) k === 'style' ? (n.style.cssText = v) : k.startsWith('on') ? n.addEventListener(k.slice(2), v) : n.setAttribute(k, v)
-  for (const c of kids) n.append(c)
-  return n
-}
-const fmt = n => { n = Number(n) || 0; return n >= 1e9 ? (n / 1e9).toFixed(2) + ' млрд' : n >= 1e6 ? (n / 1e6).toFixed(2) + ' млн' : n >= 1e3 ? (n / 1e3).toFixed(1) + ' тис' : String(n) }
-const dur = ms => { const m = Math.round((Number(ms) || 0) / 60000); return m >= 60 ? Math.floor(m / 60) + ' год ' + (m % 60) + ' хв' : m + ' хв' }
-const api = async (path, opts) => {
-  const r = await fetch('/api/admin' + path, opts)
-  if (!r.ok) throw new Error(await r.text() || r.status)
-  return r.status === 204 ? null : r.json()
-}
-const SERIES = [
-  ['output', 'Вихідні', 'var(--s1)'], ['input', 'Вхідні', 'var(--s2)'],
-  ['cache_read', 'Кеш (читання)', 'var(--s3)'], ['cache_creation', 'Кеш (запис)', 'var(--s4)'],
-]
-
-const tip = $('tip')
-function showTip(e, lines) {
-  tip.replaceChildren(...lines.flatMap((l, i) => [i ? el('br') : '', document.createTextNode(l)]))
-  tip.style.display = 'block'
-  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8)
-  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = (e.clientY + 14) + 'px'
-}
-const hideTip = () => { tip.style.display = 'none' }
-const hover = (node, lines) => { node.addEventListener('mousemove', e => showTip(e, lines)); node.addEventListener('mouseleave', hideTip) }
-
-function bars(container, rows, key) {
-  const max = Math.max(1, ...rows.map(r => r[key]))
-  container.replaceChildren(...(rows.length ? rows : [null]).map(r => r
-    ? el('div', { class: 'row' }, el('span', { class: 'name', title: r.label }, r.label),
-        el('div', { class: 'track' }, el('b', { style: `width:${(r[key] / max) * 100}%` })), el('span', { class: 'val' }, fmt(r[key])))
-    : el('div', { class: 'empty' }, 'Поки немає даних')))
-}
-
-let lastStats = null
-const activeSeries = () => ($('measure').value === 'all' ? SERIES : SERIES.slice(0, 2))
-
-function renderStats(s) {
-  lastStats = s
-  $('days-card').classList.toggle('hide', !!s.day)
-  const ACTIVE = activeSeries()
-  const sum = k => s.byDay.reduce((a, d) => a + (Number(d[k]) || 0), 0)
-  const turns = sum('turns')
-  $('tiles').replaceChildren(...[
-    ['Вихідні токени', fmt(sum('output'))], ['Вхідні токени', fmt(sum('input'))],
-    ['Кеш (читання + запис)', fmt(sum('cache_read') + sum('cache_creation'))],
-    ['Ходів', String(turns)], ['Час відповідей', dur(sum('duration_ms'))],
-  ].map(([l, v], i) => el('div', { class: 'tile t' + i }, el('div', { class: 'v' }, v), el('div', { class: 'l' }, l))))
-
-  $('legend').replaceChildren(...ACTIVE.map(([, name, color]) => el('span', {}, el('i', { style: `background:${color}` }), name)))
-
-  // one column per calendar day, empty days kept so gaps are visible
-  const byDay = new Map(s.byDay.map(d => [d.day, d]))
-  const days = []
-  for (let i = s.days - 1; i >= 0; i--) days.push(new Date(Date.now() - i * 864e5).toISOString().slice(0, 10))
-  const total = d => ACTIVE.reduce((a, [k]) => a + (Number(d?.[k]) || 0), 0)
-  const max = Math.max(1, ...days.map(d => total(byDay.get(d))))
-  $('days').replaceChildren(...days.map(day => {
-    const d = byDay.get(day)
-    const col = el('div', { class: 'col' }, ...ACTIVE.map(([k, , color]) =>
-      el('div', { class: 'seg', style: `height:${((Number(d?.[k]) || 0) / max) * 100}%;background:${color}` })))
-    hover(col, [day, ...SERIES.map(([k, name]) => `${name}: ${fmt(d?.[k])}`), `Ходів: ${d?.turns ?? 0}`])
-    return col
-  }))
-  $('days-axis').replaceChildren(...[days[0], days[Math.floor(days.length / 2)], days[days.length - 1]].map(t => el('span', {}, t)))
-
-  const table = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'День'), ...SERIES.map(([, n]) => el('th', {}, n)), el('th', {}, 'Ходів'))),
-    el('tbody', {}, ...s.byDay.slice().reverse().map(d => el('tr', {}, el('td', {}, d.day), ...SERIES.map(([k]) => el('td', {}, fmt(d[k]))), el('td', {}, String(d.turns))))))
-  $('table').replaceChildren(table)
-
-  const hours = Array.from({ length: 24 }, (_, h) => ({ h, v: Number(s.byHour.find(x => x.hour === h)?.output) || 0 }))
-  const hmax = Math.max(1, ...hours.map(x => x.v))
-  $('hours').replaceChildren(...hours.map(({ h, v }) => {
-    const col = el('div', { class: 'col' }, el('div', { class: 'seg', style: `height:${(v / hmax) * 100}%;background:var(--s1)` }))
-    hover(col, [`${h}:00–${h}:59`, `Вихідні: ${fmt(v)}`])
-    return col
-  }))
-
-  bars($('models'), s.byModel.map(m => ({ label: m.model, output: Number(m.output) || 0 })), 'output')
-  bars($('devices-bars'), s.byDevice.map(m => ({ label: m.device, output: Number(m.output) || 0 })), 'output')
-}
-
-async function loadStats() {
-  const one = $('range').value === 'day'
-  document.querySelectorAll('#dock button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === $('range').value))
-  $('day').classList.toggle('hide', !one)
-  if (one && !$('day').value) $('day').value = new Date().toISOString().slice(0, 10)
-  try { renderStats(await api('/stats?' + (one ? 'day=' + $('day').value : 'days=' + $('range').value))) }
-  catch (e) { $('tiles').replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + e.message)) }
-}
-
-async function loadDevices() {
-  const list = await api('/devices')
-  const active = list.filter(d => !d.revoked)
-  $('import-device').replaceChildren(...(active.length ? active.map(d => el('option', { value: d.id }, d.name)) : [el('option', { value: '' }, 'Спершу додай пристрій')]))
-  $('dev-list').replaceChildren(...(list.length ? list.map(d => el('div', { class: 'dev' },
-    el('div', {}, el('b', {}, d.name), ' ', d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
-      el('small', {}, 'Додано ' + d.created_at.slice(0, 10) + (d.last_seen ? ' · остання активність ' + d.last_seen.replace('T', ' ').slice(0, 16) + ' UTC' : ' · ще не надсилав дані'))),
-    d.revoked ? '' : el('button', { class: 'danger', onclick: async () => {
-      if (confirm(`Відкликати «${d.name}»? Пристрій перестане надсилати дані.`)) { await api('/devices/' + d.id, { method: 'DELETE' }); loadDevices() }
-    } }, 'Відкликати'))) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
-}
-
-$('import-files').addEventListener('change', async () => {
-  const input = $('import-files')
-  const status = $('import-status')
-  const deviceId = $('import-device').value
-  const files = [...input.files].filter(f => f.name.endsWith('.jsonl')).sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name))
-  const seen = new Set()
-  if (!deviceId) { status.textContent = 'Спершу додай пристрій.'; input.value = ''; return }
-  if (!files.length) { status.textContent = 'У вибраній папці нема файлів .jsonl. Потрібна папка projects.'; input.value = ''; return }
-  const { createParser } = await import('./parse.mjs')
-  const total = { inserted: 0, duplicates: 0, afterLink: 0, turns: 0 }
-  input.disabled = true
-  try {
-    for (const [i, file] of files.entries()) {
-      status.textContent = `Файл ${i + 1} з ${files.length}: ${file.name}`
-      const parser = createParser((file.webkitRelativePath || file.name).split('/').slice(1).join('/').replace(/\.jsonl$/, '') || file.name, seen)
-      const reader = file.stream().pipeThrough(new TextDecoderStream()).getReader()
-      let buf = ''
-      for (;;) {
-        const { value, done } = await reader.read()
-        if (done) break
-        const parts = (buf + value).split('\n')
-        buf = parts.pop()
-        for (const line of parts) parser.push(line)
-      }
-      if (buf) parser.push(buf)
-      const turns = parser.finish()
-      total.turns += turns.length
-      for (let k = 0; k < turns.length; k += 300) {
-        const r = await api('/import', { method: 'POST', body: JSON.stringify({ device_id: deviceId, rows: turns.slice(k, k + 300) }) })
-        total.inserted += r.inserted; total.duplicates += r.duplicates; total.afterLink += r.afterLink
-      }
-    }
-    status.textContent = `Готово: знайдено ${total.turns} ходів, додано ${total.inserted}, вже були ${total.duplicates}, новіших за прив'язку пропущено ${total.afterLink} (їх збирає мод).`
-  } catch (e) {
-    status.textContent = 'Не вдалося імпортувати: ' + e.message + '. Повтори, вже надіслане не задублюється.'
-  } finally {
-    input.disabled = false; input.value = ''
-  }
-})
-
-$('cloud-form').addEventListener('submit', async e => {
-  e.preventDefault()
-  try {
-    const { token } = await api('/cloud-device', { method: 'POST', body: JSON.stringify({ name: $('cloud-name').value }) })
-    $('cloud-script').textContent = `curl -fsSL https://raw.githubusercontent.com/Pavlo577/modToken/main/cloud/setup.sh | bash -s -- ${location.origin}`
-    $('cloud-host').textContent = location.hostname
-    $('cloud-token').textContent = token
-    $('cloud-box').classList.remove('hide')
-    loadDevices()
-  } catch (err) { alert('Не вдалося створити токен: ' + err.message) }
-})
-const copy = (id, btn) => async () => {
-  try { await navigator.clipboard.writeText($(id).textContent); const t = btn.textContent; btn.textContent = 'Скопійовано'; setTimeout(() => (btn.textContent = t), 1500) }
-  catch { alert('Не вдалося скопіювати, виділи текст вручну.') }
-}
-$('copy-script').onclick = copy('cloud-script', $('copy-script'))
-$('copy-token').onclick = copy('cloud-token', $('copy-token'))
-
-let timer
-$('new-code').addEventListener('submit', async e => {
-  e.preventDefault()
-  try {
-    const { code, expires_at } = await api('/codes', { method: 'POST', body: JSON.stringify({ name: $('dev-name').value }) })
-    $('code').textContent = code
-    $('code-box').classList.remove('hide')
-    clearInterval(timer)
-    const tick = () => {
-      const left = Math.max(0, Math.round((new Date(expires_at) - Date.now()) / 1000))
-      $('code-note').textContent = left ? `На пристрої: /tracker-link ${code} · діє ще ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'Код прострочено. Створи новий.'
-      if (!left) clearInterval(timer)
-    }
-    tick(); timer = setInterval(tick, 1000)
-    $('dev-name').value = ''
-  } catch (err) { alert(err.message === 'too many open codes' ? 'Забагато відкритих кодів, зачекай або використай наявні.' : 'Не вдалося створити код: ' + err.message) }
-})
-
-function tab(name) {
-  $('dash').classList.toggle('hide', name !== 'dash'); $('dock').classList.toggle('hide', name !== 'dash'); $('dev').classList.toggle('hide', name !== 'dev')
-  $('tab-dash').setAttribute('aria-pressed', name === 'dash'); $('tab-dev').setAttribute('aria-pressed', name === 'dev')
-  name === 'dev' ? loadDevices() : loadStats()
-}
-$('tab-dash').onclick = () => tab('dash'); $('tab-dev').onclick = () => tab('dev')
-$('range').onchange = loadStats
-document.querySelectorAll('#dock button').forEach(b => (b.onclick = () => { $('range').value = b.dataset.r; loadStats() }))
-$('day').onchange = loadStats
-$('measure').onchange = () => lastStats && renderStats(lastStats)
-$('toggle-table').onclick = () => {
-  const on = $('toggle-table').getAttribute('aria-pressed') !== 'true'
-  $('toggle-table').setAttribute('aria-pressed', on); $('toggle-table').textContent = on ? 'Сховати таблицю' : 'Показати таблицею'
-  $('table').classList.toggle('hide', !on)
-}
-api('/me').then(m => { $('who').textContent = m.email; $('av').textContent = m.email.slice(0, 2).toUpperCase() }).catch(() => { $('who').textContent = 'не вдалося визначити користувача' })
-loadStats()
-</script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

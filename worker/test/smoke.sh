@@ -55,6 +55,19 @@ check "cloud device needs a name"  "$(code_of -XPOST $B/api/admin/cloud-device -
 code_of -XPOST $B/api/ingest -H "x-device-token: $CT" -d "[{\"turn_id\":\"cc:s:1\",\"session_id\":\"s\",\"ts\":\"$YDAY\",\"model\":\"m\",\"output_tokens\":50}]" >/dev/null
 code_of -XPOST $B/api/ingest -H "x-device-token: $CT" -d "[{\"turn_id\":\"cc:s:1\",\"session_id\":\"s\",\"ts\":\"$YDAY\",\"model\":\"m\",\"output_tokens\":7}]" >/dev/null
 curl -s "$B/api/admin/stats?days=30" | python3 -c "import sys,json; d=json.load(sys.stdin); c=[x for x in d['byDevice'] if x['device']=='cloud'][0]; sys.exit(0 if (c['output'],c['turns'])==(50,1) else 1)" && echo "ok   later report completes a turn, never shrinks it" || { echo "FAIL turn merge"; fail=1; }
+# Plan limits arrive with the turns ({rows, limits}); an unchanged reading is not stored twice
+LIM='{"rows":[],"limits":[{"kind":"seven_day","percentUsed":12.5,"resetsAt":"2099-01-01T00:00:00Z"},{"kind":"five_hour","percentUsed":3,"resetsAt":"2099-01-01T05:00:00Z"}]}'
+check "limits-only ingest"         "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$LIM")" 204
+check "same limits again"          "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$LIM")" 204
+check "empty ingest is rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d '{"rows":[]}')" 400
+check "limits stored once"         "$(curl -s "$B/api/admin/limits" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')" 2
+code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d '{"limits":[{"kind":"seven_day","percentUsed":14,"resetsAt":"2099-01-01T00:00:00Z"}]}' >/dev/null
+check "changed limit is added"     "$(curl -s "$B/api/admin/limits" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')" 3
+check "bad limit kind ignored"     "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d '{"limits":[{"kind":"x; drop","percentUsed":1}]}')" 204
+check "buckets: hourly sums"       "$(curl -s "$B/api/admin/buckets" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(int(len(d)>0 and all(len(r["h"])==13 and r["device"] for r in d)))')" 1
+check "turns: raw rows"            "$(curl -s "$B/api/admin/turns" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(int(len(d)>0 and "session_id" in d[0]))')" 1
+check "sessions: per session"      "$(curl -s "$B/api/admin/sessions" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(int(len(d)>0 and "first_ts" in d[0] and d[0]["model"]!=None))')" 1
+check "range can be narrowed"      "$(curl -s "$B/api/admin/buckets?from=2001-01-01T00:00:00Z&to=2001-01-02T00:00:00Z")" "[]"
 check "revoke device"            "$(code_of -XDELETE $B/api/admin/devices/$ID)" 204
 check "revoked token rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$ROW")" 401
 exit $fail

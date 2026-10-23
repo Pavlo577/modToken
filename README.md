@@ -42,5 +42,14 @@ Without Node.js, or for logs copied from another machine, use the site instead: 
 
 Only history from before the device was linked is imported (later turns are collected live), and a repeat import adds nothing. Imported turns are grouped by prompt; their duration is the time from the prompt to the last reply, so it includes waiting for approvals and can look longer than live-tracked turns.
 
+## Dashboard (worker/web)
+The admin page is TypeScript, bundled with [bun](https://bun.sh) (`bun install`, then `bun run build` in `worker/`; Cloudflare runs the same build on deploy). Layout:
+- `worker/web/*.ts`: code (`app.ts` page logic, `charts.ts` SVG charts, `stats.ts` aggregation by the viewer's time zone, cost and limits maths, `devices.ts` the Devices tab).
+- `worker/public/admin/styles.css`: all styles and colour variables, edit freely.
+- `worker/public/admin/index.html`: page shell. `prices.json`: USD per million tokens used for the cost estimate (update when prices change).
+`bun run dev` serves it locally; `bun run typecheck` checks both Worker and page code; `node worker/test/seed.mjs` fills a local dev server with demo data.
+
+Subscription limits (5-hour and weekly percent used) are sent by the mod on devices with a subscription; cloud sessions do not report them.
+
 ## Tests
-`npm test` (in `worker/`) checks the log parser, including against real logs in `~/.claude/projects` when present. `worker/test/smoke.sh` runs against `wrangler dev` (put `DEV_EMAIL=me@example.com` in `worker/.dev.vars` first); `smoke.sh --gate` runs against a dev server started without it and checks that the admin API refuses unauthenticated and forged requests.
+`bun run test` (in `worker/`) checks the log parser, including against real logs in `~/.claude/projects` when present. `worker/test/smoke.sh` runs against `wrangler dev` (put `DEV_EMAIL=me@example.com` in `worker/.dev.vars` first); `smoke.sh --gate` runs against a dev server started without it and checks that the admin API refuses unauthenticated and forged requests.

@@ -2,6 +2,7 @@
   "name": "modtoken",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
+  "build": { "command": "bun run build", "watch_dir": "web" },
   "assets": { "directory": "./public", "binding": "ASSETS" },
   "d1_databases": [
     { "binding": "DB", "database_name": "modtoken", "database_id": "ecefe683-56d6-4e79-bc16-a62c6c5591e4" }

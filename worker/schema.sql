@@ -34,3 +34,16 @@ CREATE TABLE IF NOT EXISTS token_events (
   UNIQUE (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS events_user_ts_idx ON token_events (user_email, ts);
+
+-- Snapshots of the subscription's rate-limit windows (five_hour, seven_day), sent by the mod on devices
+-- signed in with a subscription. Only a changed reading is stored.
+CREATE TABLE IF NOT EXISTS plan_limits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email TEXT NOT NULL,
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  ts TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  percent_used REAL NOT NULL,
+  resets_at TEXT
+);
+CREATE INDEX IF NOT EXISTS limits_user_ts_idx ON plan_limits (user_email, ts);

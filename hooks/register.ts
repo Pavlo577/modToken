@@ -34,6 +34,22 @@ function report($: any, problem: string | null) {
   lastProblem = problem
 }
 
+// The subscription's rate-limit windows from the last API response (empty off a subscription). Sent only when changed.
+let lastLimits = ''
+
+async function readLimits($: any): Promise<{ limits: unknown[]; key: string } | undefined> {
+  try {
+    const u = await $.session.usage()
+    const limits = ((u.rateLimits ?? []) as { kind: string; percentUsed: number; resetsAt?: string }[])
+      .filter(l => l.kind === 'five_hour' || l.kind === 'seven_day')
+      .map(l => ({ kind: l.kind, percentUsed: l.percentUsed, resetsAt: l.resetsAt }))
+    const key = JSON.stringify(limits)
+    return limits.length > 0 && key !== lastLimits ? { limits, key } : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function backend($: any): Promise<string> {
   return (((await $.store.get(URL_KEY)) as string | undefined) || DEFAULT_URL).replace(/\/$/, '')
 }
@@ -47,14 +63,16 @@ async function flush($: any, extra?: Row) {
   }
   const queued = ((await $.store.get(QUEUE)) as Row[] | undefined) ?? []
   const rows = extra ? [...queued, extra] : queued
-  if (rows.length === 0) return
+  const lim = extra ? await readLimits($) : undefined
+  if (rows.length === 0 && !lim) return
   try {
     const r = await $.http.fetch(`${url}/api/ingest`, {
       method: 'POST',
       headers: { 'x-device-token': token, 'content-type': 'application/json' },
-      body: JSON.stringify(rows),
+      body: JSON.stringify(lim ? { rows, limits: lim.limits } : rows),
     })
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
+    if (r.ok && lim) lastLimits = lim.key
     report(
       $,
       r.ok

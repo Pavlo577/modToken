@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "build": "bun build web/app.ts --outdir public/admin --target browser --format esm --sourcemap=linked",
     "deploy": "wrangler deploy",
-    "test": "node --test test/parse.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "test": "node --test test/parse.test.mjs test/stats.test.mjs"
   },
   "dependencies": {
     "jose": "^6.0.0"

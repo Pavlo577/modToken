@@ -99,16 +99,37 @@ async function ingest(req: Request, env: Env): Promise<Response> {
     .first<{ id: string; user_email: string }>()
   if (!dev) return text('unauthorized', 401)
 
-  const body = await req.json().catch(() => null)
-  if (!Array.isArray(body) || body.length === 0 || body.length > MAX_ROWS) return text('bad request', 400)
+  const raw = await req.json().catch(() => null)
+  // An array of turns (the cloud hook, older mods) or { rows, limits } (mod 0.9+).
+  const rows = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? (raw as { rows?: unknown }).rows ?? [] : null
+  const limits = raw && !Array.isArray(raw) && typeof raw === 'object' ? (raw as { limits?: unknown }).limits : undefined
+  if (!Array.isArray(rows) || rows.length > MAX_ROWS) return text('bad request', 400)
+  if (rows.length === 0 && !Array.isArray(limits)) return text('bad request', 400)
 
   const stmts: D1PreparedStatement[] = []
-  for (const r of body as Record<string, unknown>[]) {
+  for (const r of rows as Record<string, unknown>[]) {
     const stmt = eventStmt(env, dev.user_email, dev.id, r, str(r.turn_id), INGEST_SQL)
     if (!stmt) return text('bad request', 400)
     stmts.push(stmt)
   }
-  stmts.push(env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(new Date().toISOString(), dev.id))
+  const now = new Date().toISOString()
+  for (const l of (Array.isArray(limits) ? limits : []).slice(0, 8) as Record<string, unknown>[]) {
+    const kind = str(l.kind, 30)
+    const pct = Number(l.percentUsed)
+    if (!/^[a-z_]+$/.test(kind) || !Number.isFinite(pct)) continue
+    const resets = l.resetsAt ? new Date(str(l.resetsAt)) : null
+    const resetsAt = resets && !Number.isNaN(resets.getTime()) ? resets.toISOString() : ''
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO plan_limits (user_email, device_id, ts, kind, percent_used, resets_at)
+         SELECT ?1, ?2, ?3, ?4, ?5, NULLIF(?6, '')
+         WHERE NOT EXISTS (
+           SELECT 1 FROM plan_limits WHERE id = (SELECT MAX(id) FROM plan_limits WHERE device_id = ?2 AND kind = ?4)
+             AND percent_used = ?5 AND IFNULL(resets_at, '') = ?6)`,
+      ).bind(dev.user_email, dev.id, now, kind, Math.min(1000, Math.max(0, pct)), resetsAt),
+    )
+  }
+  stmts.push(env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(now, dev.id))
   await env.DB.batch(stmts)
   return new Response(null, { status: 204 })
 }
@@ -189,6 +210,43 @@ async function admin(req: Request, env: Env, url: URL): Promise<Response> {
       .bind(str(body?.device_id, 40), email).first<{ id: string; created_at: string }>()
     if (!dev) return text('device not found', 404)
     return importRows(env, email, dev, body?.rows)
+  }
+
+  if (['/buckets', '/turns', '/sessions', '/limits'].includes(path) && req.method === 'GET') {
+    // [from, to) in UTC; the page groups by the viewer's own time zone, so the server only slices by time.
+    const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000
+    const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 30 * 86_400_000, to - 400 * 86_400_000)
+    const a = new Date(from).toISOString()
+    const b = new Date(to).toISOString()
+    const sums = `SUM(e.input_tokens) AS input, SUM(e.output_tokens) AS output, SUM(e.cache_read_tokens) AS cache_read,
+                  SUM(e.cache_creation_tokens) AS cache_creation, SUM(e.duration_ms) AS duration_ms, COUNT(*) AS turns`
+    const all = <T>(sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args).all<T>().then(r => r.results)
+    if (path === '/buckets') {
+      return json(await all(
+        `SELECT substr(e.ts, 1, 13) AS h, d.name AS device, e.model AS model, ${sums}, SUM(e.is_subagent) AS sub
+         FROM token_events e JOIN devices d ON d.id = e.device_id
+         WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? GROUP BY h, e.device_id, e.model LIMIT 60000`, email, a, b))
+    }
+    if (path === '/turns') {
+      return json(await all(
+        `SELECT e.ts, d.name AS device, e.model, e.session_id, e.input_tokens AS input, e.output_tokens AS output,
+                e.cache_read_tokens AS cache_read, e.cache_creation_tokens AS cache_creation, e.duration_ms, e.is_subagent AS sub
+         FROM token_events e JOIN devices d ON d.id = e.device_id
+         WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? ORDER BY e.ts LIMIT 5000`, email, a, b))
+    }
+    if (path === '/sessions') {
+      return json(await all(
+        `SELECT e.session_id, d.name AS device, MIN(e.ts) AS first_ts, MAX(e.ts) AS last_ts, ${sums},
+                (SELECT x.model FROM token_events x WHERE x.device_id = e.device_id AND x.session_id = e.session_id
+                 GROUP BY x.model ORDER BY SUM(x.output_tokens) DESC LIMIT 1) AS model
+         FROM token_events e JOIN devices d ON d.id = e.device_id
+         WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? GROUP BY e.device_id, e.session_id
+         ORDER BY output DESC LIMIT 300`, email, a, b))
+    }
+    return json(await all(
+      `SELECT l.ts, d.name AS device, l.kind, l.percent_used AS percent, l.resets_at
+       FROM plan_limits l JOIN devices d ON d.id = l.device_id
+       WHERE l.user_email = ? AND l.ts >= ? AND l.ts < ? ORDER BY l.ts LIMIT 20000`, email, a, b))
   }
 
   if (path === '/stats' && req.method === 'GET') {
