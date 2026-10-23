@@ -349,6 +349,8 @@ export interface MonthCalendarsOptions {
   /** 0 = Monday ... 6 = Sunday */
   dayOfWeek: (day: string) => number
   monthTitle: (month: string) => string // 'YYYY-MM'
+  /** false when the month is named elsewhere (the pager). */
+  showTitle?: boolean
   tipTitle: (day: string) => string
 }
 
@@ -374,7 +376,7 @@ export function monthCalendars(container: HTMLElement, opts: MonthCalendarsOptio
       cell.addEventListener('pointerleave', () => tipOf(host).hide())
       grid.append(cell)
     }
-    return el('div', { class: months.length === 1 ? 'mcal big' : 'mcal' }, el('h3', {}, opts.monthTitle(m)), grid)
+    return el('div', { class: months.length === 1 ? 'mcal big' : 'mcal' }, ...(opts.showTitle === false ? [] : [el('h3', {}, opts.monthTitle(m))]), grid)
   })
   container.replaceChildren(el('div', { class: 'mcals' }, ...blocks))
 }

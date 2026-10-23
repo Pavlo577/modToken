@@ -270,8 +270,9 @@ function renderActivity(agg: S.Aggregate): void {
   const title = $('act-title'), sub = $('act-sub'), box = $('hour-grid')
   const seq = ++activitySeq
   const long = r.len > 31 // a year, or your own span longer than a month: tiles or calendars
-  const mode = state.actMode || (state.range === 'year' || r.len > 366 ? 'min' : 'detail')
-  $('act-mode').classList.toggle('hide', !long)
+  // up to a month: minimal = calendar, detailed = day x hour grid; longer: minimal = month tiles, detailed = calendars
+  const mode = state.actMode || (long && !(state.range === 'year' || r.len > 366) ? 'detail' : 'min')
+  $('act-mode').classList.toggle('hide', r.len <= 7)
   press($('act-mode'), 'm', mode)
   const dayCells = (): Map<string, HeatCell> => {
     const m = new Map<string, HeatCell>()
@@ -282,6 +283,7 @@ function renderActivity(agg: S.Aggregate): void {
     from: r.fromDay, to: r.toDay, days: dayCells(), addDays: S.addDays,
     dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
     monthTitle: m => `${monthName(m)} ${m.slice(0, 4)}`,
+    showTitle: state.range !== 'month', // the pager already names the month
     tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
   })
   if (r.len === 1) {
@@ -308,10 +310,23 @@ function renderActivity(agg: S.Aggregate): void {
     title.textContent = 'Коли ти працюєш'
     sub.textContent = 'Вихідні токени за днем тижня й годиною (за твоїм часовим поясом)'
     hourGrid(box, { cells: agg.matrix.map(row => row.map(c => ({ value: c.output, tip: totalsTip(c.output, c.input, c.turns) }))), tipTitle: (row, h) => `${DOW[row]}, ${h}:00–${h}:59` })
-  } else if (!long) {
+  } else if (!long && mode === 'min') {
     title.textContent = 'Активність по днях'
     sub.textContent = 'Вихідні токени за кожен день'
     calendars()
+  } else if (!long) {
+    title.textContent = 'Активність по днях і годинах'
+    sub.textContent = 'Вихідні токени: рядок це день, клітинка це година (за твоїм часовим поясом)'
+    const days = S.dayList(r.fromDay, r.toDay)
+    heatGrid(box, {
+      cells: days.map(d => Array.from({ length: 24 }, (_, h) => {
+        const t = agg.hours.get(`${d}T${pad(h)}`)
+        return { value: t?.output ?? 0, tip: t ? totalsTip(t.output, S.freshInput(t), t.turns) : [] }
+      })),
+      rowLabel: i => `${DOW[tz.parts(tz.startOfDay(days[i]) + 12 * 3_600_000).dow]} ${+days[i].slice(8)}`,
+      colLabel: h => String(h), labelW: 52, maxCell: 60, cellH: 18,
+      tipTitle: (i, h) => `${weekday(days[i])}, ${dayLong(days[i])}, ${h}:00–${h}:59`,
+    })
   } else if (mode === 'detail') {
     title.textContent = 'Активність по днях'
     sub.textContent = 'Вихідні токени за кожен день, календарі по місяцях'
@@ -506,8 +521,8 @@ function setTab(tab: Tab): void {
   // the date pager lives in the activity card on Analytics and in the controls bar elsewhere
   // (and the time zone chip: in the card's corner on Analytics, at the end of the controls elsewhere)
   const pager = $('pager')
-  if (tab === 'analytics') { $('act-pager').append(pager); $('act-tz').append($('tzchip')) }
-  else { $('range').after(pager); $('controls').append($('tzchip')); $('act-mode').classList.add('hide') }
+  if (tab === 'analytics') { $('act-pager').append(pager, $('custom')); $('act-tz').append($('tzchip')) }
+  else { $('range').after(pager); $('act-mode').after($('custom')); $('controls').append($('tzchip')); $('act-mode').classList.add('hide') }
   if (tab === 'devices') void loadDevices().catch(() => {})
   else render()
 }
