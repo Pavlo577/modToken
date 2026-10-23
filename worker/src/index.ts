@@ -170,9 +170,10 @@ async function admin(req: Request, env: Env, url: URL): Promise<Response> {
 
   if (path === '/devices' && req.method === 'GET') {
     const { results } = await env.DB.prepare(
-      'SELECT id, name, revoked, created_at, last_seen FROM devices WHERE user_email = ? ORDER BY created_at DESC',
+      'SELECT id, name, revoked, created_at, last_seen, EXISTS(SELECT 1 FROM plan_limits p WHERE p.device_id = devices.id) AS has_limits FROM devices WHERE user_email = ? ORDER BY created_at DESC',
     ).bind(email).all()
-    return json(results)
+    // Billing is told apart only by whether the device ever reported subscription limits.
+    return json(results.map(({ has_limits, ...d }) => ({ ...d, billing: has_limits ? 'subscription' : 'unknown' })))
   }
 
   const dev = path.match(/^\/devices\/([0-9a-f-]{36})$/)

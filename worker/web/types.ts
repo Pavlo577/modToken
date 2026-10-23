@@ -69,6 +69,8 @@ export interface DeviceRow {
   revoked: number
   created_at: string
   last_seen: string | null
+  /** 'subscription' if the device ever reported plan limits, else we cannot tell. */
+  billing: 'subscription' | 'unknown'
 }
 
 /** Sums plus the estimated cost, per day / hour / model / device. */

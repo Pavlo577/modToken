@@ -190,6 +190,56 @@ export function records(daysAgg: Map<string, Totals>, sessions: SessionRow[], tz
 // ---- subscription limits
 export interface LimitNow extends LimitRow {
   isStale: boolean
+  /** When the current window really began, if it began with a manual limit reset (not the usual rollover). */
+  resetAt?: number
+}
+
+const SPAN: Record<string, number> = { five_hour: 5 * 3_600_000, seven_day: 7 * DAY }
+const SAME_MS = 60_000 // resets_at readings this close are the same window
+const RESET_DROP = 3 // a fall of more than this many percent inside one window means it was reset by hand
+const EARLY_MS = 30 * 60_000 // a window whose successor shows up this much before its resets_at was cut short
+
+export interface Window {
+  start: number
+  end: number
+  peak: number
+  /** Ended early: the limit was reset by hand (or exhausted and then reset). */
+  reset: boolean
+  /** Began right after such a reset. */
+  afterReset: boolean
+}
+
+/**
+ * Windows of one kind in the snapshots. A new one starts when resets_at moves on, or when the percent falls
+ * inside the same resets_at (the "reset limits" button). A window that was cut short ends where its successor
+ * was first seen, and the successor starts there instead of resets_at minus the full span.
+ */
+function windowsOf(rows: LimitRow[], kind: string): Window[] {
+  const span = SPAN[kind] ?? 7 * DAY
+  const list = rows.filter(r => r.kind === kind && r.resets_at).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+  const segs: { resets: number; firstTs: number; peak: number; last: number }[] = []
+  for (const r of list) {
+    const resets = Date.parse(r.resets_at as string), ts = Date.parse(r.ts)
+    const cur = segs[segs.length - 1]
+    if (cur && resets < cur.resets - SAME_MS) continue // a device that lagged behind and still reports the old window
+    if (cur && Math.abs(resets - cur.resets) < SAME_MS && r.percent >= cur.last - RESET_DROP) {
+      cur.peak = Math.max(cur.peak, r.percent)
+      cur.last = r.percent
+      continue
+    }
+    segs.push({ resets, firstTs: ts, peak: r.percent, last: r.percent })
+  }
+  const out: Window[] = []
+  segs.forEach((sg, i) => {
+    const next = segs[i + 1], prev = out[i - 1]
+    const reset = !!next && next.firstTs < sg.resets - EARLY_MS
+    out.push({
+      start: prev?.reset ? prev.end : sg.resets - span,
+      end: reset ? next.firstTs : sg.resets,
+      peak: sg.peak, reset, afterReset: !!prev?.reset,
+    })
+  })
+  return out
 }
 
 /** Latest reading per window kind; a window that has already reset counts as 0. */
@@ -199,28 +249,14 @@ export function latestLimits(rows: LimitRow[], now = Date.now()): Record<string,
   const out: Record<string, LimitNow> = {}
   for (const [k, r] of Object.entries(latest)) {
     const stale = !!r.resets_at && Date.parse(r.resets_at) <= now
-    out[k] = { ...r, isStale: stale, percent: stale ? 0 : r.percent }
+    const win = windowsOf(rows, k).at(-1)
+    out[k] = { ...r, isStale: stale, percent: stale ? 0 : r.percent, resetAt: win?.afterReset && !stale ? win.start : undefined }
   }
   return out
 }
 
-export interface Window {
-  start: number
-  end: number
-  peak: number
-}
-
 /** The seven-day windows seen in the snapshots: peak percent, when each started and ended. */
-export function weeklyWindows(rows: LimitRow[]): Window[] {
-  const by = new Map<string, { end: number; peak: number }>()
-  for (const r of rows) {
-    if (r.kind !== 'seven_day' || !r.resets_at) continue
-    const w = by.get(r.resets_at) ?? { end: Date.parse(r.resets_at), peak: 0 }
-    w.peak = Math.max(w.peak, r.percent)
-    by.set(r.resets_at, w)
-  }
-  return [...by.values()].map(w => ({ ...w, start: w.end - 7 * DAY })).sort((a, b) => a.end - b.end)
-}
+export const weeklyWindows = (rows: LimitRow[]): Window[] => windowsOf(rows, 'seven_day')
 
 export interface Forecast {
   fullAt: number
@@ -228,13 +264,13 @@ export interface Forecast {
 }
 
 /** At the current pace: when the window fills up, and whether that is before it resets. */
-export function forecast(limit: Pick<LimitNow, 'kind' | 'percent' | 'resets_at'> & { isStale?: boolean } | undefined, now = Date.now()): Forecast | null {
+export function forecast(limit: Pick<LimitNow, 'kind' | 'percent' | 'resets_at'> & { isStale?: boolean; resetAt?: number } | undefined, now = Date.now()): Forecast | null {
   if (!limit || !limit.resets_at || limit.isStale || limit.percent <= 0) return null
   const end = Date.parse(limit.resets_at)
-  const span = limit.kind === 'five_hour' ? 5 * 3_600_000 : 7 * DAY
-  const elapsed = now - (end - span)
+  const start = Math.max(end - (SPAN[limit.kind] ?? 7 * DAY), limit.resetAt ?? 0)
+  const elapsed = now - start
   if (elapsed <= 0) return null
-  const fullAt = end - span + (elapsed * 100) / limit.percent
+  const fullAt = start + (elapsed * 100) / limit.percent
   return { fullAt, willFill: fullAt < end }
 }
 

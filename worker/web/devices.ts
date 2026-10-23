@@ -22,6 +22,7 @@ export async function loadDevices(): Promise<DeviceRow[]> {
   $('import-device').replaceChildren(...(active.length ? active.map(d => el('option', { value: d.id }, d.name)) : [el('option', { value: '' }, 'Спершу додай пристрій')]))
   $('dev-list').replaceChildren(...(list.length ? list.map(d => el('div', { class: 'dev' },
     el('div', {}, el('b', {}, d.name), d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
+      el('span', { class: 'tag', title: d.billing === 'subscription' ? 'Пристрій надсилає ліміти підписки' : 'Пристрій не надсилав ліміти підписки: оплата (підписка, кредити чи API) невідома' }, d.billing === 'subscription' ? 'підписка' : 'тип оплати невизначений'),
       el('small', {}, 'Додано ' + d.created_at.slice(0, 10) + (d.last_seen ? ' · остання активність ' + new Date(d.last_seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
     d.revoked ? '' : el('button', { class: 'danger', onclick: async () => {
       if (confirm(`Відкликати «${d.name}»? Пристрій перестане надсилати дані.`)) { await api('/devices/' + d.id, { method: 'DELETE' }); void loadDevices() }

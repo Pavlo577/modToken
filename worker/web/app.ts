@@ -273,7 +273,7 @@ function renderLimits(): void {
       return el('div', { class: 'limit' },
         el('div', { class: 'row1' }, el('b', {}, `${title} · ${span}`), el('span', {}, when)),
         el('div', { class: 'meter' }, el('b', { style: `width:${pct}%;background:${color}` }, pct >= 12 ? `${pct.toFixed(pct < 10 ? 1 : 0)}%` : ''), el('span', { class: 'rest hatch' })),
-        el('p', { class: 'note', style: 'margin:8px 0 0' }, `${pct < 12 ? `Використано ${pct.toFixed(1)}%. ` : ''}${fc} Виміряно: ${l.device}, ${agoText(Date.parse(l.ts))}.`))
+        el('p', { class: 'note', style: 'margin:8px 0 0' }, `${pct < 12 ? `Використано ${pct.toFixed(1)}%. ` : ''}${l.resetAt ? `Ліміт скинуто достроково близько ${timeOf(l.resetAt)}, ${dayLabel(tz.parts(l.resetAt).day)}. ` : ''}${fc} Виміряно: ${l.device}, ${agoText(Date.parse(l.ts))}.`))
     }))
   }
 
@@ -296,13 +296,15 @@ function renderLimits(): void {
     tipTitle: i => dayLong(days[i]),
   })
 
-  // efficiency: what each past week cost per 1% of the limit (account-wide, so all devices)
-  const wins = S.efficiency(S.weeklyWindows(d.limits).filter(w => w.peak > 0).slice(-8), d.buckets, prices)
+  // efficiency: what each past week cost per 1% of the limit (account-wide)
+  // only devices that reported limits count: others (cloud credits, API key) do not draw on the subscription
+  const subDevices = new Set(d.limits.map(l => l.device))
+  const wins = S.efficiency(S.weeklyWindows(d.limits).filter(w => w.peak > 0).slice(-8), d.buckets.filter(b => subDevices.has(b.device)), prices)
   const maxTok = Math.max(1, ...wins.map(w => w.tokensPerPct ?? 0))
   $('efficiency').replaceChildren(...(wins.length ? wins.reverse().map(w => el('div', { class: 'hrow', style: 'grid-template-columns:minmax(90px,130px) 1fr auto;margin-bottom:12px;--c:var(--in)' },
-    el('span', { class: 'name' }, `${dayLabel(tz.parts(w.start + 3_600_000).day)} – ${dayLabel(tz.parts(w.end - 3_600_000).day)}`),
+    el('span', { class: 'name', title: w.reset ? 'Ліміт скинуто вручну до кінця тижня' : '' }, `${dayLabel(tz.parts(w.start + 3_600_000).day)} – ${dayLabel(tz.parts(w.end - 3_600_000).day)}${w.reset ? ' · скинуто' : ''}`),
     el('div', { class: 'track' }, el('b', { style: `width:${((w.tokensPerPct ?? 0) / maxTok) * 100}%` }), el('span', { class: 'hatch' })),
-    el('span', { class: 'val', title: `Використано ${w.peak.toFixed(0)}% ліміту за тиждень` }, `${fmt(w.tokensPerPct)} / 1% · ${fmtUsd(w.costPerPct ?? 0)}`))) : [el('div', { class: 'empty' }, 'З\'явиться, коли накопичаться виміри хоча б за один тиждень')]))
+    el('span', { class: 'val', title: `Використано ${w.peak.toFixed(0)}% ліміту${w.peak >= 99.5 ? ' (вичерпано)' : ''} за цей період` }, `${fmt(w.tokensPerPct)} / 1% · ${fmtUsd(w.costPerPct ?? 0)}`))) : [el('div', { class: 'empty' }, 'З\'явиться, коли накопичаться виміри хоча б за один тиждень')]))
 }
 
 function renderCost(agg: S.Aggregate): void {

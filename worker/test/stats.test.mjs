@@ -121,3 +121,31 @@ test('new input is plain input plus cache writes, never cache reads', () => {
   const k = aggregate([bk('2026-10-26T07', { input: 10, cache_creation: 50, cache_read: 1000 })], utc)
   assert.equal(k.matrix[0][7].input, 60)
 })
+
+test('limit reset by hand: window ends early, the next starts at the reset, forecast uses it', () => {
+  const lr = (ts, percent, resets_at, kind = 'seven_day') => ({ ts, device: 'a', kind, percent, resets_at })
+  const end = '2026-10-28T00:00:00Z'
+  // same resets_at: percent drops 100 -> 2 on the 22nd
+  let w = weeklyWindows([lr('2026-10-21T10:00:00Z', 60, end), lr('2026-10-22T08:00:00Z', 100, end), lr('2026-10-22T12:00:00Z', 2, end), lr('2026-10-23T08:00:00Z', 10, end)])
+  assert.equal(w.length, 2)
+  assert.equal(w[0].reset, true)
+  assert.equal(w[0].peak, 100)
+  assert.equal(w[0].end, Date.parse('2026-10-22T12:00:00Z'))
+  assert.equal(w[1].start, Date.parse('2026-10-22T12:00:00Z'))
+  assert.equal(w[1].peak, 10)
+  // resets_at moved a week ahead early: same result
+  w = weeklyWindows([lr('2026-10-22T08:00:00Z', 100, end), lr('2026-10-22T12:00:00Z', 1, '2026-10-29T12:00:00Z')])
+  assert.equal(w[0].reset, true)
+  assert.equal(w[1].afterReset, true)
+  // an ordinary rollover is not a reset
+  w = weeklyWindows([lr('2026-10-27T23:00:00Z', 70, end), lr('2026-10-28T01:00:00Z', 1, '2026-11-04T00:00:00Z')])
+  assert.equal(w[0].reset, false)
+  assert.equal(w[1].start, Date.parse('2026-10-28T00:00:00Z'))
+  // latest + forecast count from the reset, not from resets_at minus 7 days
+  const rows = [lr('2026-10-22T08:00:00Z', 100, end), lr('2026-10-22T12:00:00Z', 2, end), lr('2026-10-22T20:00:00Z', 4, end)]
+  const now = Date.parse('2026-10-23T12:00:00Z')
+  const l = latestLimits(rows, now).seven_day
+  assert.equal(l.resetAt, Date.parse('2026-10-22T12:00:00Z'))
+  const f = forecast(l, now)
+  assert.equal(Math.round((f.fullAt - Date.parse('2026-10-22T12:00:00Z')) / 3_600_000), 600)
+})
