@@ -74,9 +74,10 @@ const evenLabels = (n: number, width: number, minGap = 64): number[] => {
   return idx
 }
 
-function empty(container: HTMLElement, text = 'Немає даних за цей період'): void {
+/** Nothing to draw: a message. With a height it keeps the chart's footprint (faint grid), so the page does not jump. */
+export function empty(container: HTMLElement, text = 'Немає даних за цей період', height?: number): void {
   release(container)
-  container.replaceChildren(el('div', { class: 'empty' }, text))
+  container.replaceChildren(height ? el('div', { class: 'empty-box', style: `height:${height}px` }, el('span', {}, text)) : el('div', { class: 'empty' }, text))
 }
 
 /** Largest "nice" number (1, 2, 2.5, 5 times a power of ten) that does not exceed v. */
@@ -139,7 +140,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
   const host = container as Host
   const { labels, series, height = 230, yFmt = fmtAxis, area = true, secondary: sec } = opts
   const all = series.flatMap(s => s.values)
-  if (!labels.length || !all.some(v => v > 0)) return empty(container)
+  if (!labels.length || !all.some(v => v > 0)) return empty(container, undefined, height)
   let first = true // draw the lines in only the first time, not on every resize
   responsive(container, W => {
     const animate = first
@@ -212,7 +213,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
   const host = container as Host
   const { labels, series, height = 230, yFmt = fmtAxis, secondary: sec } = opts
   const totals = labels.map((_, i) => series.reduce((a, s) => a + s.values[i], 0))
-  if (!labels.length || !totals.some(v => v > 0)) return empty(container)
+  if (!labels.length || !totals.some(v => v > 0)) return empty(container, undefined, height)
   let first = true
   responsive(container, W => {
     const animate = first
@@ -358,7 +359,7 @@ export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
   const { cells } = opts
   const rows = cells.length, cols = cells[0]?.length ?? 0
   const max = Math.max(0, ...cells.flat().map(c => c.value))
-  if (!(max > 0)) return empty(container)
+  if (!(max > 0)) return empty(container, undefined, 18 + rows * ((opts.cellH ?? 22) + 2))
   responsive(container, W => {
     const labelW = opts.labelW ?? 28, topH = 18, gap = 2
     const rightW = opts.rightLabel ? 30 : 0

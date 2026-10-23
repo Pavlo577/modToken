@@ -1,6 +1,6 @@
 // Dashboard: loads the data once per period, regroups it in the viewer's time zone and draws the tabs.
 import { $, el, api, skeleton, skeletonTile, fmt, fmtUsd, fmtPct, fmtAxis, dur, durSec, dayLabel, dayLong, DOW } from './util.ts'
-import { lineChart, barChart, calendarHeatmap, hourGrid, heatGrid, monthCalendars, monthTiles, donut, COLORS, HEAT } from './charts.ts'
+import { lineChart, barChart, calendarHeatmap, hourGrid, heatGrid, monthCalendars, monthTiles, donut, empty, COLORS, HEAT } from './charts.ts'
 import type { HeatCell, TipRow } from './charts.ts'
 import type { Series } from './charts.ts'
 import * as S from './stats.ts'
@@ -199,7 +199,7 @@ function renderMain(agg: S.Aggregate): void {
     void get<Bucket[]>('/buckets?' + q(tz.startOfDay(from), tz.startOfDay(S.addDays(to, 1)))).then(buckets => {
       if (state.view !== 'cal') return
       const a = S.aggregate(buckets, tz, { device: state.device || null, prices })
-      if (state.io === 'off') { $('main-chart').replaceChildren(el('div', { class: 'empty' }, 'Увімкни вхідні та/або вихідні токени (кнопка зі стрілками)')); return }
+      if (state.io === 'off') { empty($('main-chart'), 'Увімкни вхідні та/або вихідні токени (кнопка зі стрілками)', 190); return }
       const picks = ioDefs() // the cache is not shown here
       const days = new Map([...a.days].map(([d, t]) => [d, picks.reduce((sum, [, , pick]) => sum + pick(t), 0)]))
       const label = state.io === 'in' ? 'Нові вхідні' : state.io === 'out' ? 'Вихідні' : 'Нові вхідні + вихідні'
@@ -224,7 +224,7 @@ function renderMain(agg: S.Aggregate): void {
   let secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
   if (!series.length && secondary) { series = [secondary]; secondary = undefined } // the cache alone: an ordinary chart
   if (!series.length) {
-    $('main-chart').replaceChildren(el('div', { class: 'empty' }, 'Нічого не вибрано: увімкни вхідні та вихідні токени (кнопка зі стрілками) або кеш'))
+    empty($('main-chart'), 'Нічого не вибрано: увімкни вхідні та вихідні токени (кнопка зі стрілками) або кеш', mainHeight())
     $('main-sub').textContent = rangeTitle(r)
     return
   }
@@ -251,7 +251,7 @@ async function renderDay(): Promise<void> {
   const from = tz.startOfDay(day), to = tz.startOfDay(S.addDays(day, 1))
   let turns: TurnRow[]
   try { turns = await get<TurnRow[]>('/turns?' + q(from, to)) } catch (e) {
-    $('day-chart').replaceChildren(el('div', { class: 'empty' }, 'Не вдалося завантажити: ' + (e as Error).message))
+    empty($('day-chart'), 'Не вдалося завантажити: ' + (e as Error).message, 200)
     return
   }
   if ((state.day || need().r.today) !== day) return
