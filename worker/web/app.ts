@@ -1,5 +1,5 @@
 // Dashboard: loads the data once per period, regroups it in the viewer's time zone and draws the tabs.
-import { $, el, api, fmt, fmtUsd, fmtPct, fmtAxis, dur, durSec, dayLabel, dayLong, DOW } from './util.ts'
+import { $, el, api, skeleton, skeletonTile, fmt, fmtUsd, fmtPct, fmtAxis, dur, durSec, dayLabel, dayLong, DOW } from './util.ts'
 import { lineChart, barChart, calendarHeatmap, hourGrid, heatGrid, monthCalendars, monthTiles, donut, COLORS, HEAT } from './charts.ts'
 import type { HeatCell, TipRow } from './charts.ts'
 import type { Series } from './charts.ts'
@@ -108,7 +108,8 @@ function currentRange(): Range {
 }
 
 async function load(): Promise<void> {
-  $('kpis').replaceChildren(el('div', { class: 'empty', style: 'grid-column:1/-1' }, 'Завантаження…'))
+  $('kpis').replaceChildren(...Array.from({ length: 6 }, skeletonTile))
+  for (const [id, h] of [['main-chart', 260], ['day-chart', 200], ['hour-grid', 200], ['cache-chart', 200], ['cost-chart', 220], ['limits-chart', 200]] as const) skeleton($(id), h)
   const r = currentRange()
   const now = Date.now()
   const histFrom = r.prevFrom
@@ -277,7 +278,7 @@ function renderActivity(agg: S.Aggregate): void {
   if (r.len === 1) {
     title.textContent = 'Активність за день'
     sub.textContent = `${dayLong(r.fromDay)}: вихідні токени по 5 хвилин (стовпець: година, рядок: 5 хвилин)`
-    box.replaceChildren(el('div', { class: 'empty' }, 'Завантаження…'))
+    skeleton(box, 300)
     void get<TurnRow[]>('/turns?' + q(r.from, r.to)).then(all => {
       if (seq !== activitySeq) return
       // cells[five-minute slot][hour]

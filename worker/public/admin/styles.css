@@ -147,3 +147,24 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .mcal.big .mgrid { grid-template-columns: repeat(7, minmax(0, 1fr)); width: 100%; gap: 6px; }
 .mcal.big .md { height: 62px; flex-direction: column; gap: 2px; border-radius: 10px; font-size: 14px; }
 .mcal.big .md small { font-size: 11px; opacity: .85; font-weight: 500; }
+
+/* loading placeholders and the line drawing in */
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes pulse { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes reveal { to { clip-path: inset(0 0 0 0); } }
+@keyframes grow { to { transform: scaleY(1); } }
+.skel { border-radius: 8px; background: linear-gradient(90deg, rgba(255,255,255,.05) 30%, rgba(255,255,255,.12) 50%, rgba(255,255,255,.05) 70%) 200% 0 / 200% 100%; animation: shimmer 1.5s linear infinite; }
+.skel-chart { position: relative; overflow: hidden; }
+.skel-chart .skel-grid { position: absolute; left: 44px; right: 8px; height: 2px; border-radius: 1px; }
+.skel-chart svg { position: absolute; inset: 8% 0 12% 44px; width: calc(100% - 52px); height: 80%; }
+.skel-chart svg path { stroke: rgba(255,255,255,.25); stroke-width: 2.4; stroke-linecap: round; animation: pulse 1.5s ease-in-out infinite; }
+.anim .draw { stroke-dasharray: 1 1; stroke-dashoffset: 1; animation: draw 1s cubic-bezier(.4,0,.2,1) forwards; }
+.anim .fade { clip-path: inset(0 100% 0 0); animation: reveal 1s cubic-bezier(.4,0,.2,1) forwards; }
+.anim .bar.grow path { transform-box: fill-box; transform-origin: bottom; transform: scaleY(0); animation: grow .55s var(--d, 0ms) cubic-bezier(.3,.7,.3,1) forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .skel, .skel-chart svg path { animation: none; }
+  .anim .draw { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; }
+  .anim .fade { clip-path: none; animation: none; }
+  .anim .bar.grow path { transform: none; animation: none; }
+}

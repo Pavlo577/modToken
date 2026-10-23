@@ -102,7 +102,10 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
   const { labels, series, height = 230, yFmt = fmtAxis, area = true } = opts
   const all = series.flatMap(s => s.values)
   if (!labels.length || !all.some(v => v > 0)) return empty(container)
+  let first = true // draw the lines in only the first time, not on every resize
   responsive(container, W => {
+    const animate = first
+    first = false
     const m = { l: 44, r: 14, t: 14, b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const lo = opts.yMin ?? 0
@@ -110,7 +113,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
     const x = (i: number): number => m.l + (labels.length === 1 ? iw / 2 : (iw * i) / (labels.length - 1))
     const y = (v: number): number => m.t + ih - ((v - lo) / (max - lo || 1)) * ih
     const uid = `g${container.id}`
-    const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img' })
+    const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
     const defs = svg('defs')
     series.forEach((s, k) => defs.append(svg('linearGradient', { id: `${uid}${k}`, x1: 0, x2: 0, y1: 0, y2: 1 },
       svg('stop', { offset: '0%', 'stop-color': s.color, 'stop-opacity': 0.28 }), svg('stop', { offset: '100%', 'stop-color': s.color, 'stop-opacity': 0 }))))
@@ -122,8 +125,8 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
     for (const i of evenLabels(labels.length, iw)) root.append(svg('text', { x: x(i), y: height - 6, class: 'ax', 'text-anchor': i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle' }, labels[i]))
     series.forEach((s, k) => {
       const pts = s.values.map((v, i): [number, number] => [x(i), y(v)])
-      if (area && k < 2 && pts.length > 1) root.append(svg('path', { d: `${smooth(pts)}L${pts[pts.length - 1][0]},${m.t + ih}L${pts[0][0]},${m.t + ih}Z`, fill: `url(#${uid}${k})` }))
-      root.append(svg('path', { d: smooth(pts), fill: 'none', stroke: s.color, 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }))
+      if (area && k < 2 && pts.length > 1) root.append(svg('path', { d: `${smooth(pts)}L${pts[pts.length - 1][0]},${m.t + ih}L${pts[0][0]},${m.t + ih}Z`, fill: `url(#${uid}${k})`, class: 'fade' }))
+      root.append(svg('path', { d: smooth(pts), fill: 'none', stroke: s.color, 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw' }))
       if (pts.length === 1) root.append(svg('circle', { cx: pts[0][0], cy: pts[0][1], r: 4, fill: s.color }))
     })
     const cross = svg('line', { y1: m.t, y2: m.t + ih, class: 'cross', style: 'display:none' })
@@ -161,14 +164,17 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
   const { labels, series, height = 230, yFmt = fmtAxis } = opts
   const totals = labels.map((_, i) => series.reduce((a, s) => a + s.values[i], 0))
   if (!labels.length || !totals.some(v => v > 0)) return empty(container)
+  let first = true
   responsive(container, W => {
+    const animate = first
+    first = false
     const m = { l: 44, r: 8, t: 14, b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const max = niceMax(Math.max(...totals))
     const slotW = iw / labels.length
     const bw = Math.max(2, Math.min(34, slotW * 0.68))
     const y = (v: number): number => m.t + ih - (v / max) * ih
-    const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img' })
+    const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
     for (const t of ticks(max)) {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
@@ -176,7 +182,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
     for (const i of evenLabels(labels.length, iw, 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
     const groups = labels.map((_, i): [SVGElement, number, number] => {
       const cx = m.l + slotW * (i + 0.5)
-      const g = svg('g', { class: 'bar' })
+      const g = svg('g', { class: 'bar grow', style: `--d:${Math.min(600, i * 14)}ms` })
       g.append(svg('rect', { x: m.l + slotW * i, y: m.t, width: slotW, height: ih, class: 'bar-hit' }))
       let acc = 0
       const live = series.filter(s => s.values[i] > 0)

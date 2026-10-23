@@ -89,3 +89,15 @@ export function responsive(container: HTMLElement, draw: (width: number) => void
   ro.observe(container)
   run()
 }
+
+/** Grey shimmering placeholder in the shape of a chart, shown while its data loads. */
+export function skeleton(container: HTMLElement, height = 220): void {
+  release(container)
+  const wave = 'M0,28 C6,22 10,30 16,24 S26,12 32,20 S42,32 50,22 S60,8 68,16 S80,30 88,20 S96,14 100,18'
+  container.replaceChildren(el('div', { class: 'skel-chart', style: `height:${height}px` },
+    ...[0, 1, 2, 3].map(i => el('i', { class: 'skel-grid skel', style: `top:${12 + i * 24}%` })),
+    svg('svg', { viewBox: '0 0 100 40', preserveAspectRatio: 'none', 'aria-hidden': 'true' }, svg('path', { d: wave, fill: 'none', 'vector-effect': 'non-scaling-stroke' }))))
+}
+
+/** A KPI tile placeholder. */
+export const skeletonTile = (): HTMLElement => el('div', { class: 'kpi' }, el('div', { class: 'skel', style: 'height:12px;width:60%' }), el('div', { class: 'skel', style: 'height:26px;width:75%;margin:12px 0 10px' }), el('div', { class: 'skel', style: 'height:10px;width:45%' }))
