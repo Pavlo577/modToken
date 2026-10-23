@@ -169,16 +169,15 @@ function renderKpis(agg: S.Aggregate): void {
 }
 
 type Def = [label: string, color: string, pick: (t: Totals) => number]
-const METRICS: Record<Metric, Def[]> = {
-  io: [['Вихідні', COLORS.out, t => t.output], ['Вхідні (нові)', COLORS.in, S.freshInput]],
-  all: [['Вихідні', COLORS.out, t => t.output], ['Вхідні (нові)', COLORS.in, S.freshInput], ['З кешу', COLORS.cache, t => t.cache_read]],
-}
+const IO: Def[] = [['Вихідні', COLORS.out, t => t.output], ['Вхідні (нові)', COLORS.in, S.freshInput]]
+const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
+/** Height of the main chart: grows with the window, at most 70% of it. */
+const mainHeight = (): number => Math.round(Math.max(300, Math.min(window.innerHeight * 0.5, window.innerHeight * 0.7)))
 const ZERO: Totals = { input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 }
 
 function renderMain(agg: S.Aggregate): void {
   const r = need().r
-  const { view, metric } = state
-  const defs = METRICS[metric]
+  const { view } = state
   const yFmt = fmtAxis
   const valFmt = fmt
   $('main-chart').replaceChildren()
@@ -191,9 +190,8 @@ function renderMain(agg: S.Aggregate): void {
     void get<Bucket[]>('/buckets?' + q(tz.startOfDay(from), tz.startOfDay(S.addDays(to, 1)))).then(buckets => {
       if (state.view !== 'cal') return
       const a = S.aggregate(buckets, tz, { device: state.device || null, prices })
-      const pick = (t: Totals): number => (metric === 'all' ? t.output + t.input + t.cache_read + t.cache_creation : t.output + S.freshInput(t))
-      const days = new Map([...a.days].map(([d, t]) => [d, pick(t)]))
-      const label = metric === 'all' ? 'Усього токенів' : 'Нові вхідні + вихідні'
+      const days = new Map([...a.days].map(([d, t]) => [d, t.output + S.freshInput(t)])) // the cache is not shown here
+      const label = 'Нові вхідні + вихідні'
       calendarHeatmap($('main-chart'), {
         from, to, days, addDays: S.addDays,
         dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
@@ -210,12 +208,14 @@ function renderMain(agg: S.Aggregate): void {
   const src = hourly ? agg.hours : agg.days
   const rows = keys.map(k => src.get(k) ?? ZERO)
   const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
-  const series: Series[] = defs.map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
+  const series: Series[] = IO.map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
+  // the cache is far larger than the rest, so it gets its own scale on the right
+  const secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
   $('main-title').textContent = 'Токени'
   $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}`
-  $('main-legend').replaceChildren(...series.map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
+  $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label + ' (права вісь)' }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
   const opts = {
-    labels, series, yFmt,
+    labels, series, secondary, yFmt, height: mainHeight(),
     tipTitle: (i: number): string => (hourly ? `${dayLong(r.fromDay)}, ${keys[i].slice(11)}:00` : dayLong(keys[i])),
     extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)]],
   }
@@ -570,7 +570,10 @@ function setTab(tab: Tab): void {
 function syncControls(): void {
   press($('range'), 'r', state.range)
   press($('view'), 'v', state.view)
-  $<HTMLInputElement>('cache-on').checked = state.metric === 'all'
+  const cache = $<HTMLButtonElement>('cache-on'), off = state.view === 'cal'
+  cache.setAttribute('aria-pressed', String(state.metric === 'all' && !off))
+  cache.setAttribute('aria-disabled', String(off))
+  cache.dataset.tip = off ? 'У режимі «Календар» кеш не відображається' : state.metric === 'all' ? 'Кеш показується на правій осі. Натисни, щоб сховати' : 'Показати кеш на правій осі'
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
@@ -610,7 +613,10 @@ $('to').onchange = dateChanged
 const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); render() })
 
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
-$('cache-on').onchange = () => { state.metric = $<HTMLInputElement>('cache-on').checked ? 'all' : 'io'; persist(); render() }
+$('cache-on').onclick = () => {
+  if (state.view === 'cal') return
+  state.metric = state.metric === 'all' ? 'io' : 'all'; persist(); syncControls(); render()
+}
 const setDay = (d: string): void => { const today = need().r.today; state.day = d > today ? today : d; void renderDay() }
 $('day').onchange = () => { const v = $<HTMLInputElement>('day').value; if (v) setDay(v) }
 $('day-prev').onclick = () => setDay(S.addDays(state.day || need().r.today, -1))

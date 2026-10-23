@@ -194,6 +194,8 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .mi { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--text-2); font-size: 13.5px; }
 .mi svg { flex: none; }
 .mi.tgl { cursor: pointer; user-select: none; }
-.mi.tgl:has(input:checked) { color: var(--text); border-color: rgba(155,123,255,.6); background: rgba(155,123,255,.14); }
-.mi.tgl input { accent-color: #9b7bff; width: 15px; height: 15px; margin: 0; }
-.mi.tgl:has(input:focus-visible) { outline: 2px solid var(--out); outline-offset: 2px; }
+.mi.tgl[aria-pressed="true"] { color: var(--text); border-color: rgba(155,123,255,.65); background: rgba(155,123,255,.18); }
+.mi.tgl[aria-disabled="true"] { opacity: .45; cursor: not-allowed; border-color: var(--line); background: var(--card); color: var(--muted); }
+.mi[data-tip] { position: relative; }
+.mi[data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: max-content; max-width: 230px; padding: 7px 11px; border-radius: 10px; background: rgba(24,20,17,.97); border: 1px solid rgba(255,255,255,.14); box-shadow: 0 12px 30px rgba(0,0,0,.5); color: var(--text-2); font-size: 12.5px; line-height: 1.4; white-space: normal; text-align: left; opacity: 0; pointer-events: none; transition: opacity .12s; }
+.mi[data-tip]:hover::after, .mi[data-tip]:focus-visible::after { opacity: 1; }

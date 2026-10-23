@@ -79,6 +79,11 @@ function empty(container: HTMLElement, text = 'Немає даних за цей
   container.replaceChildren(el('div', { class: 'empty' }, text))
 }
 
+/** Right-hand value axis for a series with its own scale: labels in the series colour at the shared grid lines. */
+function rightAxis(root: SVGElement, sec: Series, secMax: number, W: number, right: number, yAt: (frac: number) => number): void {
+  ticks(secMax).forEach((v, k) => root.append(svg('text', { x: W - right + 8, y: yAt(k / 4) + 4, class: 'ax', style: `fill:${sec.color}` }, fmtAxis(v))))
+}
+
 export interface Series {
   label: string
   color: string
@@ -96,24 +101,29 @@ export interface LineOptions {
   /** lower end of the value axis (default 0) */
   yMin?: number
   area?: boolean
+  /** A series on its own scale (right axis), for values far larger than the rest, e.g. cache reads. */
+  secondary?: Series
 }
 
 /** Lines over evenly spaced categories (days or hours), with a crosshair and a tooltip. */
 export function lineChart(container: HTMLElement, opts: LineOptions): void {
   const host = container as Host
-  const { labels, series, height = 230, yFmt = fmtAxis, area = true } = opts
+  const { labels, series, height = 230, yFmt = fmtAxis, area = true, secondary: sec } = opts
   const all = series.flatMap(s => s.values)
   if (!labels.length || !all.some(v => v > 0)) return empty(container)
   let first = true // draw the lines in only the first time, not on every resize
   responsive(container, W => {
     const animate = first
     first = false
-    const m = { l: 44, r: 14, t: 14, b: 26 }
+    const m = { l: 44, r: sec ? 50 : 14, t: 14, b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const lo = opts.yMin ?? 0
     const max = opts.yMax ?? niceMax(Math.max(...all))
     const x = (i: number): number => m.l + (labels.length === 1 ? iw / 2 : (iw * i) / (labels.length - 1))
     const y = (v: number): number => m.t + ih - ((v - lo) / (max - lo || 1)) * ih
+    const secMax = sec ? niceMax(Math.max(...sec.values)) : 1
+    const ys = (v: number): number => m.t + ih - (v / secMax) * ih
+    const plot: { s: Series; y: (v: number) => number }[] = [...series.map(s => ({ s, y })), ...(sec ? [{ s: sec, y: ys }] : [])]
     const uid = `g${container.id}`
     const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
     const defs = svg('defs')
@@ -124,15 +134,16 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
+    if (sec) rightAxis(root, sec, secMax, W, m.r, f => m.t + ih - f * ih)
     for (const i of evenLabels(labels.length, iw)) root.append(svg('text', { x: x(i), y: height - 6, class: 'ax', 'text-anchor': i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle' }, labels[i]))
-    series.forEach((s, k) => {
-      const pts = s.values.map((v, i): [number, number] => [x(i), y(v)])
+    plot.forEach(({ s, y: yf }, k) => {
+      const pts = s.values.map((v, i): [number, number] => [x(i), yf(v)])
       if (area && k < 2 && pts.length > 1) root.append(svg('path', { d: `${smooth(pts)}L${pts[pts.length - 1][0]},${m.t + ih}L${pts[0][0]},${m.t + ih}Z`, fill: `url(#${uid}${k})`, class: 'fade' }))
       root.append(svg('path', { d: smooth(pts), fill: 'none', stroke: s.color, 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw' }))
       if (pts.length === 1) root.append(svg('circle', { cx: pts[0][0], cy: pts[0][1], r: 4, fill: s.color }))
     })
     const cross = svg('line', { y1: m.t, y2: m.t + ih, class: 'cross', style: 'display:none' })
-    const dots = series.map(s => svg('circle', { r: 5, fill: '#14110f', stroke: s.color, 'stroke-width': 2.5, style: 'display:none' }))
+    const dots = plot.map(({ s }) => svg('circle', { r: 5, fill: '#14110f', stroke: s.color, 'stroke-width': 2.5, style: 'display:none' }))
     root.append(cross, ...dots)
     const hit = svg('rect', { x: m.l, y: m.t, width: iw, height: ih, fill: 'transparent' })
     root.append(hit)
@@ -143,8 +154,8 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
       const r = hit.getBoundingClientRect()
       const i = Math.max(0, Math.min(labels.length - 1, Math.round(((pe.clientX - r.left) / r.width) * (labels.length - 1))))
       cross.setAttribute('x1', String(x(i))); cross.setAttribute('x2', String(x(i))); cross.style.display = ''
-      dots.forEach((d, k) => { d.setAttribute('cx', String(x(i))); d.setAttribute('cy', String(y(series[k].values[i]))); d.style.display = '' })
-      tip.show(x(i), Math.min(...series.map(s => y(s.values[i]))), opts.tipTitle(i), series.map((s): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]))
+      dots.forEach((d, k) => { d.setAttribute('cx', String(x(i))); d.setAttribute('cy', String(plot[k].y(plot[k].s.values[i]))); d.style.display = '' })
+      tip.show(x(i), Math.min(...plot.map(p => p.y(p.s.values[i]))), opts.tipTitle(i), plot.map(({ s }): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]))
     }
     const leave = (): void => { cross.style.display = 'none'; dots.forEach(d => (d.style.display = 'none')); tip.hide() }
     hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move); hit.addEventListener('pointerleave', leave)
@@ -158,21 +169,25 @@ export interface BarOptions {
   height?: number
   yFmt?: (v: number) => string
   extraTip?: (i: number) => TipRow[]
+  /** Drawn as a line over the bars, on its own scale (right axis). */
+  secondary?: Series
 }
 
 /** Stacked bars over categories, rounded on top, with a tooltip. */
 export function barChart(container: HTMLElement, opts: BarOptions): void {
   const host = container as Host
-  const { labels, series, height = 230, yFmt = fmtAxis } = opts
+  const { labels, series, height = 230, yFmt = fmtAxis, secondary: sec } = opts
   const totals = labels.map((_, i) => series.reduce((a, s) => a + s.values[i], 0))
   if (!labels.length || !totals.some(v => v > 0)) return empty(container)
   let first = true
   responsive(container, W => {
     const animate = first
     first = false
-    const m = { l: 44, r: 8, t: 14, b: 26 }
+    const m = { l: 44, r: sec ? 50 : 8, t: 14, b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const max = niceMax(Math.max(...totals))
+    const secMax = sec ? niceMax(Math.max(...sec.values)) : 1
+    const ys = (v: number): number => m.t + ih - (v / secMax) * ih
     const slotW = iw / labels.length
     const bw = Math.max(2, Math.min(34, slotW * 0.68))
     const y = (v: number): number => m.t + ih - (v / max) * ih
@@ -181,6 +196,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
+    if (sec) rightAxis(root, sec, secMax, W, m.r, f => m.t + ih - f * ih)
     for (const i of evenLabels(labels.length, iw, 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
     const groups = labels.map((_, i): [SVGElement, number, number] => {
       const cx = m.l + slotW * (i + 0.5)
@@ -204,12 +220,13 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
       return [g, cx, acc]
     })
     root.append(...groups.map(([g]) => g))
+    if (sec && labels.length > 1) root.append(svg('path', { d: smooth(sec.values.map((v, i): [number, number] => [m.l + slotW * (i + 0.5), ys(v)])), fill: 'none', stroke: sec.color, 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw', style: 'pointer-events:none' }))
     place(container, root)
     const tip = tipOf(host)
     groups.forEach(([g, cx, top], i) => {
       const show = (): void => {
         g.classList.add('on')
-        tip.show(cx, y(top), opts.tipTitle(i), [...series.map((s): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]), ...(opts.extraTip?.(i) ?? [])])
+        tip.show(cx, Math.min(y(top), sec ? ys(sec.values[i]) : Infinity), opts.tipTitle(i), [...series.map((s): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]), ...(sec ? [[sec.label, (sec.fmt ?? yFmt)(sec.values[i]), sec.color] as TipRow] : []), ...(opts.extraTip?.(i) ?? [])])
       }
       g.addEventListener('pointerenter', show); g.addEventListener('pointerdown', show)
       g.addEventListener('pointerleave', () => { g.classList.remove('on'); tip.hide() })
