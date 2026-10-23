@@ -47,7 +47,7 @@ The admin page is TypeScript, bundled with [bun](https://bun.sh) (`bun install`,
 - `worker/web/*.ts`: code (`app.ts` page logic, `charts.ts` SVG charts, `stats.ts` aggregation by the viewer's time zone, cost and limits maths, `devices.ts` the Devices tab).
 - `worker/public/admin/styles.css`: all styles and colour variables, edit freely.
 - `worker/public/admin/index.html`: page shell. `prices.json`: USD per million tokens used for the cost estimate (update when prices change).
-`bun run dev` serves it locally; `bun run typecheck` checks both Worker and page code; `node worker/test/seed.mjs` fills a local dev server with demo data.
+First time locally (in `worker/`): `bun install`, put `DEV_EMAIL=me@example.com` in `.dev.vars`, `bun run db:local` (creates the tables in the local database), `bun run build`. Then `bun run dev` serves it locally; `bun run typecheck` checks both Worker and page code; `node worker/test/seed.mjs` fills a local dev server with demo data.
 
 Subscription limits (5-hour and weekly percent used) are sent by the mod on devices with a subscription; cloud sessions do not report them.
 
