@@ -25,7 +25,7 @@ Then protect the admin in Cloudflare Zero Trust → Access → Applications → 
 3. On the site: Devices → create a code (valid 10 minutes, links one device only).
 4. On the device: `/tracker-link <code>`.
 
-The status line shows `tracker: ok` after an upload. Failed uploads are queued and retried at the next session start. A device can be revoked on the site at any time.
+The status line shows `token-tracker: ok` after an upload. Failed uploads are queued and retried at the next session start. A device can be revoked on the site at any time.
 
 ## Tests
 `worker/test/smoke.sh` runs against `wrangler dev` (put `DEV_EMAIL=me@example.com` in `worker/.dev.vars` first); `smoke.sh --gate` runs against a dev server started without it and checks that the admin API refuses unauthenticated and forged requests.

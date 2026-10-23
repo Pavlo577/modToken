@@ -28,7 +28,7 @@ async function flush($: any, extra?: Row) {
   const url = await backend($)
   const token = (await $.store.get(TOKEN)) as string | undefined
   if (!token) {
-    $.ui.status('tracker: not linked, run /tracker-link <code>')
+    $.ui.status('not linked: /tracker-link <code>')
     return
   }
   const queued = ((await $.store.get(QUEUE)) as Row[] | undefined) ?? []
@@ -43,14 +43,14 @@ async function flush($: any, extra?: Row) {
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
     $.ui.status(
       r.ok
-        ? 'tracker: ok'
+        ? 'ok'
         : r.status === 401
-          ? 'tracker: device revoked or unknown, run /tracker-link <code>'
-          : `tracker: HTTP ${r.status}, ${rows.length} queued`,
+          ? 'device revoked: /tracker-link <code>'
+          : `HTTP ${r.status}, ${rows.length} queued`,
     )
   } catch {
     await $.store.set(QUEUE, rows.slice(-MAX_QUEUE))
-    $.ui.status(`tracker: offline, ${rows.length} queued`)
+    $.ui.status(`offline, ${rows.length} queued`)
   }
 }
 
@@ -93,7 +93,7 @@ export const register: Register = on => {
       const out = JSON.parse(r.text) as { token?: string; device?: string }
       if (!out.token) return { text: 'token-tracker: linking failed (unexpected answer).' }
       await $.store.set(TOKEN, out.token)
-      $.ui.status('tracker: linked')
+      $.ui.status('linked')
       return { text: `token-tracker: linked as "${out.device}". Usage will be sent after each turn.` }
     } catch {
       return { text: 'token-tracker: could not reach the backend. Check the URL and your connection.' }
