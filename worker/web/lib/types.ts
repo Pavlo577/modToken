@@ -60,6 +60,10 @@ export interface PriceEntry {
   output: number
   cache_read: number
   cache_write: number
+  /** only the model itself and its dated copies, not other ids that start with the same text */
+  exact?: boolean
+  /** written by scripts/update-prices.mjs */
+  auto?: boolean
 }
 export interface Prices {
   updated: string

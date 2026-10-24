@@ -72,8 +72,14 @@ export const rangeMs = (tz: Tz, fromDay: string, toDay: string): { from: number;
 export function priceFor(model: string, prices: Prices | null): PriceEntry | null {
   let best: PriceEntry | null = null
   const id = String(model)
-  // a prefix must end at the end of the id or at a "-" / "_": "gpt-5" is not the price of "gpt-5.6-sol" or "gpt-50"
-  for (const p of prices?.models ?? []) if (id.startsWith(p.match) && !/^[.\w]/.test(id.slice(p.match.length).replace(/^[-_].*/, '')) && (!best || p.match.length > best.match.length)) best = p
+  for (const p of prices?.models ?? []) {
+    if (!id.startsWith(p.match) || (best && p.match.length <= best.match.length)) continue
+    const rest = id.slice(p.match.length)
+    // exact entries (generated from the community list) cover the model and its dated copies only: "gpt-5.6" is not "gpt-5.6-pro"
+    // other entries are prefixes that end at the end of the id or at a "-" / "_": "gpt-5" is not "gpt-5.6-sol" or "gpt-50"
+    const ok = p.exact ? rest === '' || /^-\d{4}-\d{2}-\d{2}$/.test(rest) : rest === '' || /^[-_]/.test(rest)
+    if (ok) best = p
+  }
   return best
 }
 

@@ -7,8 +7,9 @@
     "db:local": "wrangler d1 execute modtoken --local --file=schema.sql",
     "build": "bun build web/app.ts --outdir public/admin --target browser --format esm --sourcemap=linked",
     "deploy": "wrangler deploy",
+    "prices": "node scripts/update-prices.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web",
-    "test": "node --test test/parse.test.mjs test/codex.test.mjs test/stats.test.mjs"
+    "test": "node --test test/parse.test.mjs test/codex.test.mjs test/prices.test.mjs test/stats.test.mjs"
   },
   "dependencies": {
     "jose": "^6.0.0"
