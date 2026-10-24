@@ -54,8 +54,8 @@ function limitsOf(rl) {
 
 /**
  * `fileKey`: a name for the file, used for the ids when the rollout has no thread id.
- * finish() returns { turns, limits }: `turns` are rows for /api/ingest (provider "codex"), `limits` the newest
- * subscription reading in the file (empty if there was none).
+ * finish() returns { turns, limits, limitsAt }: `turns` are rows for /api/ingest (provider "codex"), `limits` the newest
+ * subscription reading in the file (empty if there was none), and `limitsAt` its event timestamp in milliseconds.
  */
 export function createCodexParser(fileKey) {
   let thread = ''
@@ -150,7 +150,7 @@ export function createCodexParser(fileKey) {
           is_subagent: sub,
         })
       }
-      return { turns: rows, limits }
+      return { turns: rows, limits, limitsAt: limitsAt || null }
     },
   }
 }
