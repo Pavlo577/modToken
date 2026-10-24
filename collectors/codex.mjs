@@ -147,6 +147,23 @@ function setup() {
    Or run "sync" from cron / a systemd timer / Windows Task Scheduler every few minutes.`)
 }
 
+async function usage(cmd) {
+  console.log(`token-tracker: sends Codex token usage (numbers only, never your prompts or answers) to your tracker site.
+
+usage: ${command(shown)} link <CODE> | sync [--full] | notify | status | setup
+
+This is a command-line program: open a terminal (Windows: PowerShell or cmd) in the folder where it is and run, in order:
+  ${command(shown)} link <CODE>     (the code is made on the site: Devices tab)
+  ${command(shown)} sync
+  ${command(shown)} setup           (prints the line that keeps it up to date after every Codex turn)`)
+  process.exitCode = cmd ? 2 : 0
+  // Started by a double click on Windows the window would vanish before it can be read.
+  if (!cmd && process.platform === 'win32' && process.stdin.isTTY) {
+    process.stdout.write('\nPress Enter to close...')
+    await new Promise(done => { process.stdin.once('data', done); process.stdin.resume() })
+  }
+}
+
 const [cmd, a1] = process.argv.slice(2)
 try {
   if (cmd === 'link') await link(a1)
@@ -154,7 +171,7 @@ try {
   else if (cmd === 'notify') notify()
   else if (cmd === 'status') status()
   else if (cmd === 'setup') setup()
-  else { console.log('usage: codex.mjs link <CODE> | sync [--full] | notify | status | setup'); process.exitCode = cmd ? 2 : 0 }
+  else await usage(cmd)
 } catch (e) {
   console.error('Error: ' + (e instanceof Error ? e.message : e))
   process.exitCode = 1
