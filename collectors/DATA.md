@@ -125,7 +125,7 @@ type ModelCall = {
 | `ts` | `timeUnixNano` (or `event.timestamp`) | the same |
 | tokens | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Gemini counts cached inside input: subtract it; Codex `input` includes cached too |
 | `duration_ms` | `duration_ms` | the agent's duration attribute |
-| `is_subagent` | false until the attribute is verified (**assumption**: `agent.name`) | from the agent's metadata, never from text |
+| `is_subagent` | `agent_id` is present (sub-agent events only; verified in the docs) | from the agent's metadata, never from text |
 
 **How calls become the turn row of section 2.** The Worker groups calls by `(device, provider, session_id, turn_key)`; the row has `turn_id = otlp:<provider>:<session_id>:<turn_key>`, `ts` = the last call's time, `model` = the model of the last call that had output, and the four token counters are **sums** of the calls (additive, unlike section 2 where a resend keeps the maximum). A call is added once: a table `otlp_calls (device_id, call_id)` (kept 14 days) records what was counted, and a call that is already there changes nothing. `duration_ms` is the sum of the calls' durations, so it is shorter than a log-based turn (which is prompt to last reply, waiting included): a device uses one source per agent, never both.
 

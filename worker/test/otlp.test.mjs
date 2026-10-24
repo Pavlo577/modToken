@@ -62,3 +62,9 @@ test('otlp: a payload with more records than the limit is refused as a whole', (
   assert.equal(parseOtlpLogs(payload(Array.from({ length: MAX_RECORDS + 1 }, () => record()))), null)
   assert.notEqual(parseOtlpLogs(payload(Array.from({ length: MAX_RECORDS }, () => record()))), null)
 })
+
+test('otlp: a call with agent_id is a sub-agent call, one without is the main session', () => {
+  const [main] = parseOtlpLogs(payload([record()])).calls
+  const [sub] = parseOtlpLogs(payload([record([s('agent_id', 'agent-1'), s('parent_agent_id', 'main')])])).calls
+  assert.equal(main.is_subagent, false); assert.equal(sub.is_subagent, true)
+})

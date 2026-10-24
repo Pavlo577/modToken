@@ -81,8 +81,8 @@ function claudeCall(a: Attrs, rec: LogRecord): ModelCall | null {
     provider: 'claude', call_id: str(call), session_id: session, turn_key: text(a, 'prompt.id') || str(call), ts,
     model: text(a, 'model') || 'unknown', input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write,
     duration_ms: count(a, 'duration_ms'),
-    // Not told apart yet: which attribute marks a sub-agent's request is not verified, so none is guessed (a wrong guess would flag every turn).
-    is_subagent: false,
+    // `agent_id` is set on the events of sub-agents only (Claude Code 2.1.310+, monitoring docs); the main session has none.
+    is_subagent: text(a, 'agent_id') !== '',
   }
 }
 

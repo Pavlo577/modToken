@@ -56,15 +56,13 @@ The programs are built by `.github/workflows/collector-release.yml` (`bun build 
 Codex's file format is internal and changes between versions; the parser (`worker/public/admin/parse-codex.mjs`) reads only the few fields it needs. Input is stored without the cached part (like Claude's "new input"), reasoning counts as output. Prices for GPT-5 models are in `prices.json`; models missing there are shown without a price. Existing databases need `worker/migrations/0002_provider.sql` once (a fresh one gets the column from `schema.sql`).
 
 ## OTLP (optional second way in)
-The Worker also accepts OpenTelemetry logs (`POST /v1/logs`, OTLP/HTTP **JSON**, header `x-device-token` or `Authorization: Bearer <device token>`). For Claude Code set, on a device that does not use the log collector:
+The Worker accepts OpenTelemetry logs (`POST /v1/logs`, OTLP/HTTP **JSON**, header `x-device-token` or `Authorization: Bearer <device token>`). For Claude Code the program sets it up (no log reading, no Stop hook):
 ```
-CLAUDE_CODE_ENABLE_TELEMETRY=1
-OTEL_LOGS_EXPORTER=otlp
-OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-OTEL_EXPORTER_OTLP_ENDPOINT=https://track.brolafkodev.pp.ua
-OTEL_EXPORTER_OTLP_HEADERS=x-device-token=<device token>
+token-tracker otlp enable      # writes the exporter into ~/.claude/settings.json, then restart Claude Code
+token-tracker otlp status
+token-tracker otlp disable     # removes it; "setup" brings the log collector back
 ```
-Only token counts, model, ids and times are kept; emails and prompt text are dropped on arrival. Use one source per device and agent (logs or OTLP). Details: `collectors/DATA.md` section 5. Apply `worker/migrations/0003_otlp.sql` before deploying.
+The device token is **not** copied into `settings.json`: Claude Code runs `token-tracker otlp-headers` (setting `otelHeadersHelper`) to get it. If `settings.json` already has OpenTelemetry settings of its own they are left alone and `enable` stops. Claude Code attaches `user.email` and account ids to its events; the Worker drops them on arrival (they do cross the network, over HTTPS). One source per device and agent: `enable` removes our Stop hook and the log collector skips Claude. Sub-agent requests are told apart by `agent_id`. Details: `collectors/DATA.md` section 5. Apply `worker/migrations/0003_otlp.sql` before deploying.
 
 ## Import old history
 The program does it for Claude Code by itself the first time (and `token-tracker import` repeats it): it reads `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) and sends only token counts, timestamps and model names, as turns older than the device (the Worker keeps only those and ignores repeats, so running it again or on an old device is safe). The older way still works too: `/tracker-import` in the old mod (0.9) or `node import-logs.mjs`.

@@ -79,7 +79,7 @@ export default {
    * Claude Code is collected only when the user chose it: its Stop hook is ours, or the guide enabled it. (A user who set the program up
    * for Codex alone must not start sending Claude turns without having said so.)
    */
-  enabled() { return this.hookState() === 'ours' || readJson(stateFile, {}).enabled === true },
+  enabled() { return readJson(configFile, {}).sources?.claude !== 'otlp' && this.hookState() === 'ours' || readJson(stateFile, {}).enabled === true },
   enable() { const st = readJson(stateFile, { files: {}, sent: {} }); st.enabled = true; writeJson(stateFile, st) },
 
   /**
@@ -89,6 +89,7 @@ export default {
   async sync({ full = false, onFile, only } = {}) {
     const cfg = readJson(configFile, null)
     if (!cfg?.token) throw new Error('not linked yet: run the program without arguments, or: link <CODE>')
+    if (cfg.sources?.claude === 'otlp') return { files: 0, scanned: 0, rows: 0, limits: false, otlp: true } // OTLP is the source: reading the logs too would count twice
     if (!existsSync(projectsDir)) return { files: 0, scanned: 0, rows: 0, limits: false, missing: true }
     const unlock = lock('claude')
     if (!unlock) return { files: 0, scanned: 0, rows: 0, limits: false, busy: true }
