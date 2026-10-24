@@ -91,6 +91,9 @@ const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) 
   'claude-code': claudeCall,
 }
 
+/** `claude-code` (terminal), `claude-code-desktop` (the Claude app) and the like: one adapter, matched by the start of the name. */
+const adapterFor = (service: string) => ADAPTERS[service] ?? (service.startsWith('claude-code') ? ADAPTERS['claude-code'] : undefined)
+
 export const MAX_RECORDS = 5000
 
 /** The calls in an OTLP logs payload and how many records were not one (other events, other services, empty requests). */
@@ -108,7 +111,7 @@ export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: 
   let seen = 0
   for (const rl of doc.resourceLogs) {
     const service = text(attrs(rl?.resource?.attributes), 'service.name')
-    const adapter = ADAPTERS[service]
+    const adapter = adapterFor(service)
     for (const scope of Array.isArray(rl?.scopeLogs) ? rl.scopeLogs : []) {
       for (const rec of Array.isArray(scope?.logRecords) ? scope.logRecords : []) {
         if (++seen > MAX_RECORDS) return null

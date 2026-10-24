@@ -76,3 +76,12 @@ test('otlp: what was not recognised is reported by NAMES only, never by value', 
   for (const bad of ['SECRET', 'me@example.com']) assert.equal(JSON.stringify(seen).includes(bad), false, bad)
   assert.ok(seen[0].keys.includes('prompt_length') && seen[0].keys.includes('user.email'), 'attribute names are listed')
 })
+
+test('otlp: the Claude app (service claude-code-desktop) is Claude Code too; the extra attributes it sends are not kept', () => {
+  const extra = [s('claude.deployment_mode', 'desktop'), i('cache_creation_1h_tokens', 5), i('cache_creation_5m_tokens', 7), s('response', 'SECRET ANSWER'), s('prompt_text', 'SECRET PROMPT'), s('terminal.type', 'x')]
+  const { calls } = parseOtlpLogs(payload([record(extra)], 'claude-code-desktop'))
+  assert.equal(calls.length, 1); assert.equal(calls[0].provider, 'claude'); assert.equal(calls[0].input_tokens, 86013)
+  assert.equal(JSON.stringify(calls).includes('SECRET'), false)
+  assert.equal(parseOtlpLogs(payload([record()], 'claude-codex-fake')).calls.length, 1, 'any claude-code* name')
+  assert.equal(parseOtlpLogs(payload([record()], 'codex')).calls.length, 0)
+})
