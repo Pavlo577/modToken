@@ -1,5 +1,6 @@
 # Builds the Codex collector into single-file programs (no Node needed on the user's computer) and attaches them to a release.
-# Release: git tag collector-v1.0.0 && git push origin collector-v1.0.0   (a manual run only builds and keeps the files as artifacts).
+# Release: git tag collector-v1.0.0 && git push origin collector-v1.0.0, or publish a release with such a tag on GitHub
+# (the files are then attached to it). A manual run only builds and keeps the files as artifacts.
 name: Collector release
 
 on:
@@ -62,6 +63,8 @@ jobs:
           cd dist
           chmod +x token-tracker-linux-* token-tracker-macos-*
           sha256sum token-tracker-* > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Collector ${GITHUB_REF_NAME#collector-v}" \
-            --notes "Single-file collector for Codex: no Node needed. See the README section 'Other agents (Codex)'." \
-            token-tracker-* SHA256SUMS
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Collector ${GITHUB_REF_NAME#collector-v}" \
+              --notes "Single-file collector for Codex: no Node needed. See the README section 'Other agents (Codex)'."
+          fi
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber token-tracker-* SHA256SUMS
