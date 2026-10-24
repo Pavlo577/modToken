@@ -32,6 +32,9 @@ Rules (for every agent, Claude included):
 - Shared file: `worker/public/admin/parse-codex.mjs` is Codex's session parser, also used by the dashboard's browser import. Codex owns it; a change needs `worker/test/codex.test.mjs` green and a pull request that says what changed in the counting.
 - Never commit secrets, device tokens, real session files or anything with prompt text. Test fixtures are synthetic.
 
+### Standing instruction for Claude Code (given by the user)
+After reviewing another agent's code (a pull request into `claude`), Claude merges it into `claude`, runs the tests, and **pushes to `dev` straight away, without asking again**. Pushing to `main` is still only on the user's explicit command. Claude cannot create or delete tags and branches on GitHub from its sandbox (the proxy blocks it); releases are started by the user from the Actions page.
+
 ### What Claude checks in a pull request
 Only its own area was touched (plus the one line in `agents/index.mjs`); the data contract is respected and no new field leaves the machine; the privacy tests are there and green (`npm test`, `bun test`, `bun run typecheck`, the end-to-end `codex-collector.sh`-style test for the agent); the requests are written in `requests/<agent>.md` and in the description; no secrets or real session files.
 
