@@ -43,6 +43,21 @@ function group(list: DeviceRow[]): DeviceGroup[] {
   return [...out.values()]
 }
 
+const COPY_ICON = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H4A2.5 2.5 0 0 0 1.5 4v5A1.5 1.5 0 0 0 3 10.5h.5"/></svg>'
+const DONE_ICON = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>'
+
+/** Turns a button into "copy this text": the icon becomes a tick for a moment. */
+function copyAction(btn: HTMLElement, text: () => string): void {
+  btn.innerHTML = COPY_ICON
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(text())
+      btn.innerHTML = DONE_ICON
+      setTimeout(() => (btn.innerHTML = COPY_ICON), 1500)
+    } catch { alert('Не вдалося скопіювати, виділи код вручну.') }
+  })
+}
+
 let panelTimer: ReturnType<typeof setInterval> | undefined
 
 /** The code for one more agent of an existing device, shown under its row. */
@@ -64,7 +79,7 @@ async function showCode(panel: HTMLElement, name: string, provider: string): Pro
     panel.replaceChildren(
       el('button', { type: 'button', class: 'dev-x', 'aria-label': 'Закрити й скасувати код', title: 'Закрити й зробити код недійсним', onclick: () => void cancel() }, cross),
       el('div', { class: 'sub' }, `${providerLabel(provider)} для «${name}»:`),
-      el('div', { class: 'code' }, code), note,
+      el('div', { class: 'code-row' }, el('div', { class: 'code' }, code), copyButton(code)), note,
       el('p', { class: 'note', style: 'margin:6px 0 0' }, ...how(code)),
     )
     const tick = (): void => {
@@ -77,6 +92,12 @@ async function showCode(panel: HTMLElement, name: string, provider: string): Pro
     const msg = (err as Error).message
     panel.replaceChildren(el('div', { class: 'sub' }, msg === 'too many open codes' ? 'Забагато відкритих кодів, зачекай або використай наявні.' : 'Не вдалося створити код: ' + msg))
   }
+}
+
+function copyButton(text: string): HTMLElement {
+  const btn = el('button', { type: 'button', class: 'copy-btn', 'aria-label': 'Копіювати код', title: 'Копіювати код' })
+  copyAction(btn, () => text)
+  return btn
 }
 
 function deviceRow(g: DeviceGroup): HTMLElement {
@@ -166,6 +187,7 @@ async function importFolder(): Promise<void> {
 }
 
 export function initDevices(): void {
+  copyAction($('copy-code'), () => $('code').textContent ?? '')
   $('import-files').addEventListener('change', () => void importFolder())
 
   $('cloud-form').addEventListener('submit', async e => {
