@@ -1,5 +1,13 @@
-## Make shared subprocess tests portable to Windows
+## Make the Stop hook the only default setup path
 Status: open
+Needs: collectors/token-tracker.mjs (`setup()` output) and shared setup documentation/tests
+What: Present installation of `hooks.json` Stop hook as the default automatic-update setup. Keep `notify` supported, but show it only as an explicit fallback for older Codex versions or installations where the Stop hook is unavailable or declined. Never install both by default.
+Why: The interactive wizard already installs only the Stop hook first and offers notify only when the hook is not active, but the non-interactive `setup` command still instructs users to add `notify` as its primary step 3.
+Patch: Change `setup()` to print the Stop-hook command/configuration first. Move the current `config.toml notify` instructions under a clearly labelled fallback section. Add a shared test asserting that the default setup output leads with `hook-stop`/`hooks.json` and labels notify as fallback.
+Blocks: consistent default setup behavior across interactive and script-oriented flows
+
+## Make shared subprocess tests portable to Windows
+Status: done
 Needs: worker/test/shared.test.mjs
 What: Build dynamic-import specifiers for spawned `node -e` scripts with `pathToFileURL(...).href` instead of replacing backslashes with slashes.
 Why: On Windows, `import('C:/...')` is rejected as an unsupported URL scheme. The HTTP-timeout child prints nothing and all rotation writers exit before logging, so the official `npm test` fails even though the underlying shared behavior is not exercised.

@@ -16,6 +16,9 @@ const configToml = join(codexHome, 'config.toml')
 const hooksJson = join(codexHome, 'hooks.json')
 const stateFile = join(home, 'codex-state.json')
 const originalFile = join(home, 'notify-original.json') // the notify Codex had before ours took its place
+const stateMaxFiles = Math.max(1, Number(process.env.TOKEN_TRACKER_STATE_MAX_FILES) || 2_000)
+const stateMaxTurns = Math.max(1, Number(process.env.TOKEN_TRACKER_STATE_MAX_TURNS) || 10_000)
+const stateTurnRetentionMs = Math.max(1, Number(process.env.TOKEN_TRACKER_STATE_RETENTION_DAYS) || 90) * 86_400_000
 
 function rollouts() {
   const out = []
@@ -33,7 +36,7 @@ function rollouts() {
   return out.sort((a, b) => (a.split(sep).pop() < b.split(sep).pop() ? -1 : 1)) // the names start with the start time
 }
 
-async function parseFile(path) {
+export async function parseFile(path) {
   const key = relative(codexHome, path).split(sep).join('/').replace(/\.jsonl$/, '')
   const parser = createCodexParser(key)
   for await (const line of createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity })) parser.push(line)
@@ -45,6 +48,28 @@ export const rowSignature = t => JSON.stringify([
   t.input_tokens, t.output_tokens, t.cache_read_tokens, t.cache_creation_tokens,
   t.duration_ms, t.is_subagent,
 ])
+
+const savedSignature = value => (typeof value === 'string' ? value : value?.sig)
+
+/** Keep the state bounded. Forgotten signatures can only cause a safe idempotent resend if an old rollout changes. */
+export function compactState(state, files, now = Date.now(), { maxFiles = stateMaxFiles, maxTurns = stateMaxTurns, retentionMs = stateTurnRetentionMs } = {}) {
+  state.files ??= {}
+  state.sent ??= {}
+  const present = new Set(files.map(f => f.path))
+  for (const path of Object.keys(state.files)) if (!present.has(path)) delete state.files[path]
+
+  const tracked = files.filter(f => state.files[f.path]).sort((a, b) => b.mtimeMs - a.mtimeMs)
+  for (const f of tracked.slice(maxFiles)) {
+    delete state.files[f.path]
+    state.prunedBeforeMs = Math.max(Number(state.prunedBeforeMs) || 0, f.mtimeMs)
+  }
+
+  const cutoff = now - retentionMs
+  const sent = Object.entries(state.sent).map(([id, value]) => ({ id, value, at: Date.parse(value?.at ?? '') || 0 }))
+  const keep = sent.filter(x => !x.at || x.at >= cutoff).sort((a, b) => b.at - a.at).slice(0, maxTurns)
+  state.sent = Object.fromEntries(keep.map(x => [x.id, x.value]))
+  return state
+}
 
 /** A hook may name only a real rollout below Codex's sessions directories; symlink escapes are rejected. */
 export function allowedRollout(file) {
@@ -94,7 +119,11 @@ export default {
     try {
       let limits = [], limitsAt = 0
       // `only`: the one rollout a hook named (it must look like a rollout file and exist); else every rollout
-      const paths = only ? [allowedRollout(only)].filter(Boolean) : rollouts()
+      const allPaths = rollouts()
+      const allFiles = allPaths.map(path => ({ path, mtimeMs: statSync(path).mtimeMs }))
+      const paths = only
+        ? [allowedRollout(only)].filter(Boolean)
+        : allFiles.filter(f => full || state.files[f.path] || f.mtimeMs > (Number(state.prunedBeforeMs) || 0)).map(f => f.path)
       for (const [n, path] of paths.entries()) {
         onFile?.(n + 1, paths.length)
         stats.files++
@@ -104,9 +133,9 @@ export default {
         stats.scanned++
         const { turns, limits: l, limitsAt: fileLimitsAt } = await parseFile(path)
         if (l.length && fileLimitsAt !== null && fileLimitsAt >= limitsAt) { limits = l; limitsAt = fileLimitsAt }
-        const fresh = turns.filter(t => full || state.sent[t.turn_id] !== rowSignature(t))
+        const fresh = turns.filter(t => full || savedSignature(state.sent[t.turn_id]) !== rowSignature(t))
         for (let i = 0; i < fresh.length; i += BATCH) await post(cfg, { rows: fresh.slice(i, i + BATCH) })
-        for (const t of fresh) state.sent[t.turn_id] = rowSignature(t)
+        for (const t of fresh) state.sent[t.turn_id] = { sig: rowSignature(t), at: t.ts }
         stats.rows += fresh.length
         state.files[path] = fileSig // only after the rows of this file were accepted
         writeJson(stateFile, state)
@@ -117,6 +146,7 @@ export default {
         state.limits = limitsSig
         stats.limits = true
       }
+      if (!only) compactState(state, allFiles)
       state.lastSync = new Date().toISOString()
       delete state.lastError
       writeJson(stateFile, state)

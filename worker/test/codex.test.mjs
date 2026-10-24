@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createCodexParser } from '../public/admin/parse-codex.mjs'
-import { dir } from './codex-home.mjs'
+import { codex, dir } from './codex-home.mjs'
 
-const { allowedRollout, rowSignature } = await import('../../collectors/agents/codex.mjs')
+const { allowedRollout, compactState, rowSignature } = await import('../../collectors/agents/codex.mjs')
 
 const meta = (ts, extra = {}) => JSON.stringify({ timestamp: ts, type: 'session_meta', payload: { id: 'th1', timestamp: ts, cwd: '/p', ...extra } })
 const ctx = (ts, turn, model = 'gpt-5-codex') => JSON.stringify({ timestamp: ts, type: 'turn_context', payload: { turn_id: turn, model, cwd: '/p' } })
@@ -165,6 +165,68 @@ test('hook rollout path is contained in sessions and rejects external files and 
   } catch (e) {
     if (process.platform !== 'win32') throw e
   }
+})
+
+test('state cleanup drops missing and old file signatures and bounds remembered turns', () => {
+  const now = Date.parse('2026-10-24T12:00:00Z')
+  const state = {
+    files: { gone: 'x', old: 'y', middle: 'z', fresh: 'q' },
+    sent: {
+      ancient: { sig: 'a', at: '2026-01-01T00:00:00Z' },
+      older: { sig: 'b', at: '2026-10-24T10:00:00Z' },
+      newest: { sig: 'c', at: '2026-10-24T11:00:00Z' },
+    },
+  }
+  compactState(state, [
+    { path: 'old', mtimeMs: 1 }, { path: 'middle', mtimeMs: 2 }, { path: 'fresh', mtimeMs: 3 },
+  ], now, { maxFiles: 2, maxTurns: 1, retentionMs: 24 * 3600_000 })
+  assert.deepEqual(Object.keys(state.files).sort(), ['fresh', 'middle'])
+  assert.equal(state.prunedBeforeMs, 1)
+  assert.deepEqual(Object.keys(state.sent), ['newest'])
+})
+
+test('a rollout appended during sync is scanned again and the final metadata is not lost', async () => {
+  const sessions = join(dir, 'codex', 'sessions')
+  const file = join(sessions, 'rollout-growing.jsonl')
+  mkdirSync(join(dir, 'tt'), { recursive: true })
+  writeFileSync(join(dir, 'tt', 'config.json'), JSON.stringify({ url: 'https://unit.invalid', token: 't' }))
+  writeFileSync(file, [
+    meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 'grow'),
+    count('2026-10-24T10:00:05Z', u(10, 0, 1), u(10, 0, 1)),
+    ...Array(50_000).fill('{}'),
+  ].join('\n') + '\n')
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(null, { status: 204 })
+  try {
+    const first = codex.sync({ only: file })
+    await new Promise(resolve => setImmediate(resolve))
+    appendFileSync(file, JSON.stringify({ timestamp: '2026-10-24T10:00:06Z', type: 'event_msg', payload: { type: 'task_complete', turn_id: 'grow', duration_ms: 12345 } }) + '\n')
+    await first
+    const second = await codex.sync({ only: file })
+    assert.equal(second.scanned, 1)
+    const state = JSON.parse(readFileSync(join(dir, 'tt', 'codex-state.json'), 'utf8'))
+    assert.match(state.sent['codex:th1:grow'].sig, /12345/)
+  } finally { globalThis.fetch = oldFetch }
+})
+
+test('parallel sync attempts are serialized by the Codex lock', async () => {
+  const sessions = join(dir, 'codex', 'sessions')
+  const file = join(sessions, 'rollout-parallel.jsonl')
+  writeFileSync(file, [meta('2026-10-24T11:00:00Z'), ctx('2026-10-24T11:00:01Z', 'parallel'), count('2026-10-24T11:00:05Z', u(10, 0, 1), u(10, 0, 1))].join('\n') + '\n')
+  const oldFetch = globalThis.fetch
+  let release
+  const blocked = new Promise(resolve => { release = resolve })
+  let requested
+  const reachedPost = new Promise(resolve => { requested = resolve })
+  globalThis.fetch = async () => { requested(); await blocked; return new Response(null, { status: 204 }) }
+  try {
+    const first = codex.sync({ full: true })
+    await reachedPost
+    const second = await codex.sync({ full: true })
+    assert.equal(second.busy, true)
+    release()
+    assert.equal((await first).busy, undefined)
+  } finally { release(); globalThis.fetch = oldFetch }
 })
 
 test('sub-agent threads are marked', () => {
