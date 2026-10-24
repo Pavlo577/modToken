@@ -1,6 +1,6 @@
 // Pure functions behind the dashboard: time zones, grouping, cost, subscription limits.
 // No DOM here, so all of it is tested in Node (test/stats.test.mjs).
-import type { Bucket, Counts, LimitRow, Prices, PriceEntry, SessionRow, Totals } from './types.ts'
+import type { Bucket, Counts, LimitRow, PriceEntry, Prices, SessionRow, Totals } from './types.ts'
 
 const DAY = 86_400_000
 const pad = (n: number): string => String(n).padStart(2, '0')

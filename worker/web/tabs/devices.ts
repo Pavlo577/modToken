@@ -1,6 +1,7 @@
 // The Devices tab: link codes, cloud token, device list and the old-history import.
-import { $, el, api } from './util.ts'
-import type { DeviceRow } from './types.ts'
+import { api } from '../lib/api.ts'
+import { $, el } from '../lib/dom.ts'
+import type { DeviceRow } from '../lib/types.ts'
 
 interface Turn {
   turn_id: string

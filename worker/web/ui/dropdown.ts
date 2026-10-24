@@ -1,5 +1,5 @@
 // A dropdown that looks like the rest of the page (a native <select> cannot be styled): button, popup list, keyboard and outside click.
-import { el } from './util.ts'
+import { el } from '../lib/dom.ts'
 
 export interface Option {
   value: string

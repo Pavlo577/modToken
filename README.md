@@ -42,12 +42,19 @@ Without Node.js, or for logs copied from another machine, use the site instead: 
 
 Only history from before the device was linked is imported (later turns are collected live), and a repeat import adds nothing. Imported turns are grouped by prompt; their duration is the time from the prompt to the last reply, so it includes waiting for approvals and can look longer than live-tracked turns.
 
-## Dashboard (worker/web)
-The admin page is TypeScript, bundled with [bun](https://bun.sh) (`bun install`, then `bun run build` in `worker/`; Cloudflare runs the same build on deploy). Layout:
-- `worker/web/*.ts`: code (`app.ts` page logic, `charts.ts` SVG charts, `stats.ts` aggregation by the viewer's time zone, cost and limits maths, `devices.ts` the Devices tab).
-- `worker/public/admin/styles.css`: all styles and colour variables, edit freely.
-- `worker/public/admin/index.html`: page shell. `prices.json`: USD per million tokens used for the cost estimate (update when prices change).
-First time locally (in `worker/`): `bun install`, put `DEV_EMAIL=me@example.com` in `.dev.vars`, `bun run db:local` (creates the tables in the local database), `bun run build`. Then `bun run dev` serves it locally; `bun run typecheck` checks both Worker and page code; `node worker/test/seed.mjs` fills a local dev server with demo data.
+## Code layout (worker/)
+**Worker** (`src/`, TypeScript on Cloudflare): `index.ts` only routes. `ingest.ts` (device token: turns, limits, old-history import), `devices.ts` (create a device, link code), `events.ts` (turn rows and their SQL), `auth.ts` (Cloudflare Access login), `util.ts`, `env.ts`; `admin/` has one file per group of admin routes (`devices`, `data`, `stats`) and `index.ts` that checks the login and dispatches.
+
+**Dashboard** (`web/`, TypeScript bundled with [bun](https://bun.sh): `bun install`, then `bun run build`; Cloudflare runs the same build on deploy). One folder per layer, with no import cycles:
+- `lib/`: pure helpers without page state: `stats.ts` (grouping by the viewer's time zone, cost, limits; tested in Node), `types.ts`, `format.ts`, `dom.ts`, `api.ts`.
+- `core/`: `state.ts` (what the viewer chose, saved in localStorage), `time.ts`, `range.ts` (the shown period), `store.ts` (loaded data, cached requests), `load.ts`, `palette.ts` (stable device colours), `actions.ts` (hooks the controls fill in, so data code can ask for a redraw without importing the controls).
+- `charts/`: SVG charts (`line`, `bar`, `calendar`, `heat`, `donut`) on `base.ts` (tooltip, empty state) and `scale.ts` (axis maths). Each takes a container and redraws on resize.
+- `ui/`: `controls.ts` (controls bar and tabs), `render.ts` (draws the open tab), `dropdown.ts`, `layout.ts`.
+- `tabs/`: one file per tab (`overview`, `analytics` with `activity`, `money`, `sessions`, `devices`).
+- `app.ts`: the entry, only wires the modules together.
+Adding a tab: a file in `tabs/` with a render function, a `<section id="tab-...">` and a button in `public/admin/index.html`, one line each in `core/state.ts` (the tab list) and `ui/render.ts`.
+
+Styles are one file, `public/admin/styles.css` (colours are variables at the top); `index.html` is the page shell; `prices.json` is USD per million tokens for the cost estimate (update when prices change). First time locally (in `worker/`): `bun install`, put `DEV_EMAIL=me@example.com` in `.dev.vars`, `bun run db:local` (creates the tables in the local database), `bun run build`. Then `bun run dev` serves it; `bun run typecheck` checks both parts; `node test/seed.mjs` fills a local dev server with demo data.
 
 Subscription limits (5-hour and weekly percent used) are sent by the mod on devices with a subscription; cloud sessions do not report them.
 

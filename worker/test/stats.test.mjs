@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { freshInput, makeTz, addDays, dayList, rangeMs, aggregate, priceFor, costOf, cacheHit, delta, records, latestLimits, weeklyWindows, forecast, efficiency } from '../web/stats.ts'
+import { freshInput, makeTz, addDays, dayList, rangeMs, aggregate, priceFor, costOf, cacheHit, delta, records, latestLimits, weeklyWindows, forecast, efficiency } from '../web/lib/stats.ts'
 import { readFileSync } from 'node:fs'
 
 const prices = JSON.parse(readFileSync(new URL('../public/admin/prices.json', import.meta.url), 'utf8'))
