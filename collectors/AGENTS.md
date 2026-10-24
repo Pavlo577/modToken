@@ -1,6 +1,8 @@
-# The collector (`token-tracker`)
+# The collector (`token-tracker`): the brief for the `codex` branch
 
-A small program that sends the token usage of AI coding agents (now: OpenAI Codex) to the tracker site. One file for the user: built with `bun build --compile` from `token-tracker.mjs` (no Node on the user's machine), released as `token-tracker-{windows-x64.exe,macos-arm64,macos-x64,linux-x64,linux-arm64}` by `.github/workflows/collector-release.yml` (Actions → Collector release → Run workflow with `tag` = `collector-vX.Y.Z`; tag pushes from the cloud sandbox are blocked). Read `/AGENTS.md` first (ownership, privacy, commands).
+This file is for whoever works on the **`codex` branch** (the Codex side of the collector). Branch rules and the split between the agents are in `/AGENTS.md`: you own the Codex-specific files listed there; the shared layer (`token-tracker.mjs`, `wizard.mjs`, `lib/{core,contract,notify-log}.mjs`, `DATA.md`, the release workflow) is owned by the `claude` branch, so a change there is a request.
+
+A small program that sends the token usage of AI coding agents (now: OpenAI Codex) to the tracker site. One file for the user: built with `bun build --compile` from `token-tracker.mjs` (no Node on the user's machine), released as `token-tracker-{windows-x64.exe,macos-arm64,macos-x64,linux-x64,linux-arm64}` by `.github/workflows/collector-release.yml` (Actions → Collector release → Run workflow with `tag` = `collector-vX.Y.Z`; tag pushes from the cloud sandbox are blocked). Read `/AGENTS.md` first (branches, privacy, commands).
 
 ## What it does for the user
 Double click → a guide (`wizard.mjs`, Ukrainian): first run links the device with a code from the site (Devices tab), sends the existing history, offers the automatic update; later runs show a status screen and send what is new. Commands for scripts: `link <CODE> [--url]`, `sync [--full] [--file <rollout>]`, `status`, `setup`, `log`, `hook-stop`, `notify`.
