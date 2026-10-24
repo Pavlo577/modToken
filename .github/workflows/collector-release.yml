@@ -36,7 +36,7 @@ jobs:
           bun-version: 1.4.2
       - name: Compile
         shell: bash
-        run: bun build --compile --minify --target=${{ matrix.target }} collectors/codex.mjs --outfile "dist/${{ matrix.name }}"
+        run: bun build --compile --minify --target=${{ matrix.target }} collectors/token-tracker.mjs --outfile "dist/${{ matrix.name }}"
       - name: Smoke test (runs only where the program can run)
         if: ${{ !contains(matrix.target, 'x64') || matrix.os != 'macos-latest' }}
         shell: bash
