@@ -12,14 +12,13 @@
 //
 // The device token and the list of what was sent live in ~/.token-tracker (TOKEN_TRACKER_HOME). CODEX_HOME and CLAUDE_CONFIG_DIR are honoured.
 import { spawn } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename } from 'node:path'
 import claude from './agents/claude.mjs'
 import codex from './agents/codex.mjs'
 import { AGENTS } from './agents/index.mjs'
-import { arg, command, configFile, link, readJson, self, shown, writeJson } from './lib/core.mjs'
+import { arg, command, configFile, link, readJson, self, shown } from './lib/core.mjs'
 import { withHook } from './lib/hooks-json.mjs'
-import { otlpState, withOtlp, withoutOtlp } from './lib/otlp-claude.mjs'
 import { errorCategory, logEvent, readLog } from './lib/notify-log.mjs'
 import { interactive } from './wizard.mjs'
 
@@ -170,31 +169,13 @@ function otlpHeaders() {
   console.log(JSON.stringify({ 'x-device-token': cfg.token }))
 }
 
-/** `otlp enable|disable|status`: Claude Code exports its API-request events straight to the site instead of the log collector (one source per agent). */
+/** `otlp enable|disable|status`: Claude Code exports its API-request events straight to the site (the main way; one source per agent). */
 function otlp() {
-  const cfg = readJson(configFile, null)
-  const file = join(claude.home, 'settings.json')
-  const helper = command([...self, 'otlp-headers'])
-  const doc = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
-  const url = cfg?.url
   const what = a1 ?? 'status'
-  if (what === 'status') {
-    console.log(`Claude Code over OTLP: ${url ? otlpState(doc, url, helper) === 'ours' ? 'on' : 'off' : 'not linked'}`)
-  } else if (what === 'enable' || what === 'disable') {
-    if (!cfg?.token) throw new Error('not linked yet: run the program without arguments, or: link <CODE>')
-    if (existsSync(file)) copyFileSync(file, `${file}.token-tracker-backup`)
-    if (what === 'enable') {
-      writeFileSync(file, JSON.stringify(withOtlp(doc, url, helper), null, 2) + '\n')
-      writeJson(configFile, { ...cfg, sources: { ...cfg.sources, claude: 'otlp' } }, 0o600)
-      if (claude.hookState() === 'ours') claude.removeHook() // the log collector would count the same turns again
-      console.log('Claude Code will export its API requests to the site (new sessions only). Restart Claude Code.')
-    } else {
-      writeFileSync(file, JSON.stringify(withoutOtlp(doc, url, helper), null, 2) + '\n')
-      const { claude: _off, ...sources } = cfg.sources ?? {}
-      writeJson(configFile, { ...cfg, sources }, 0o600)
-      console.log('Claude Code OTLP export removed. Run "setup" to use the log collector again.')
-    }
-  } else usage(true)
+  if (what === 'status') console.log(`Claude Code over OTLP: ${{ ours: 'on', none: 'off', other: 'off (settings.json has OpenTelemetry settings of its own)', unlinked: 'not linked', unreadable: 'settings.json is not readable' }[claude.otlpState()]}`)
+  else if (what === 'enable') { claude.enableOtlp(); console.log('Claude Code will export its API requests to the site (new sessions only). Restart Claude Code.') }
+  else if (what === 'disable') { claude.disableOtlp(); console.log('Claude Code OTLP export removed. Run "setup" to use the log collector again.') }
+  else usage(true)
 }
 
 function usage(bad) {

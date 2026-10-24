@@ -47,7 +47,7 @@ Only its own area was touched (plus the one line in `agents/index.mjs`); the dat
 5. Open a pull request into `claude`.
 
 ## Privacy (hard rules, not preferences)
-Only numbers leave a machine: token counts, timestamps, model names, ids, limits. Never read into a result, send, print or log: prompts, answers, tool output, `cwd`, file contents. The JSON that Codex passes to `notify` and to hooks holds the prompt and the answer: it may be parsed in memory for yes/no flags, never stored. The diagnostic log (`~/.token-tracker/notify.log`) holds service fields only; tests check that no secret word reaches it.
+Only numbers leave a machine: token counts, timestamps, model names, ids, limits. Never read into a result, send, print or log: prompts, answers, tool output, `cwd`, file contents. The JSON that Codex passes to `notify` and to hooks holds the prompt and the answer: it may be parsed in memory for yes/no flags, never stored. The one exception, decided by the user: OTLP is the main way for Claude Code, and Claude Code adds `user.email` and account ids to its events; the Worker drops them on arrival and stores nothing of them (they cross the network over HTTPS). Nothing else may be sent. The diagnostic log (`~/.token-tracker/notify.log`) holds service fields only; tests check that no secret word reaches it.
 
 ## Commands (from `worker/`)
 - `npm test` (Node's runner, the official one) and `bun test` must both pass; `bun run typecheck`.

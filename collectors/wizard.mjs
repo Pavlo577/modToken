@@ -76,6 +76,7 @@ function showStatus(agent) {
   row('Знайдено', `${agent.detect() ? 'так' : 'ні'} (${agent.home})`)
   row('Останній синк', when(st.lastSync))
   row('Надіслано', `${st.turns} ходів з ${st.files} файлів`)
+  if (agent.otlpState) row('OTLP', { ours: 'підключено (основний спосіб)', none: 'не підключено', other: 'у settings.json є власні налаштування OpenTelemetry', unreadable: 'settings.json не читається', unlinked: 'не прив\'язано' }[agent.otlpState()])
   row('Stop-hook', hookText[agent.hookState()])
   if (hasNotify(agent)) row('Notify (запасний)', notifyText[agent.notifyState()])
   if (agent.hookState() === 'ours' || (hasNotify(agent) && agent.notifyState() === 'ours')) {
@@ -161,11 +162,34 @@ async function offerHookRemove(rl, agent) {
   try { const r = agent.removeHook(); out(r.changed ? `  Готово. Копія: ${r.backup}` : '  Нічого міняти не треба.') } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
 }
 
+/** OTLP, the main way for Claude Code: it exports its API requests to the site; no log reading, no hook. */
+async function offerOtlp(rl, agent) {
+  const state = agent.otlpState()
+  if (state === 'ours') return out(`  ${agent.title}: OTLP уже підключено.`)
+  if (state === 'other') return out(`  У ${agent.hooksJson} уже є власні налаштування OpenTelemetry: я їх не чіпаю. Підключи експорт вручну (README, OTLP) або скористайся Stop-hook.`)
+  if (state === 'unreadable') return out(`  ${agent.hooksJson} не читається як JSON, тому я його не чіпаю.`)
+  out(`\n  ${agent.title}: основний спосіб: OTLP. Він сам надсилає на сайт токени кожного запиту, без читання журналів.`)
+  out(`  Я додам у ${agent.hooksJson} налаштування експорту (адреса сайту; токен пристрою туди не копіюється: його віддає ця програма). Чужі налаштування не чіпаю, перед записом роблю копію.`)
+  out('  Увага: разом із числами Claude Code додає до подій email і id акаунта; сайт відкидає їх одразу при отриманні й не зберігає, але по мережі вони (через HTTPS) йдуть.')
+  if (!yes(await rl.question('  Підключити OTLP? (так/ні): '))) return false
+  try {
+    const r = agent.enableOtlp()
+    out(`  Додано.${r.backup ? ' Копія старого файлу: ' + r.backup : ''} Перезапусти Claude Code: нові сесії підуть через OTLP.`)
+    return true
+  } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`); return false }
+}
+
+async function offerOtlpRemove(rl, agent) {
+  if (!yes(await rl.question(`\n  Вимкнути OTLP для ${agent.title}? Свої налаштування я не чіпаю. (так/ні): `))) return out('  Добре, лишаю як є.')
+  try { const r = agent.disableOtlp(); out(`  Готово.${r.backup ? ' Копія: ' + r.backup : ''} Щоб далі збирати ходи, підключи Stop-hook.`) } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
+}
+
 /** Everything for one agent after the device is linked: its history, what is new, the Stop hook (Codex: the older notify as a fallback). */
 async function setupAgent(rl, agent) {
   out(`\n  ── ${agent.title}`)
   agent.enable?.()
   if (agent.importHistory) { out('  Надсилаю історію, що була до прив\'язки пристрою (це безпечно повторювати, нічого не задвоїться)...'); await runImport(agent) }
+  if (agent.enableOtlp && await offerOtlp(rl, agent)) return // OTLP is the source: no log sync, no hook
   out('  Надсилаю нове...')
   await runSync(agent)
   await offerHook(rl, agent)
@@ -214,6 +238,7 @@ async function firstRun(rl) {
 async function updateMenu(rl) {
   const items = []
   for (const agent of AGENTS.filter(a => a.detect())) {
+    if (agent.enableOtlp) items.push({ label: `${agent.title}: OTLP (основний)`, on: agent.otlpState() === 'ours', toggle: () => (agent.otlpState() === 'ours' ? offerOtlpRemove : offerOtlp)(rl, agent) })
     items.push({ label: `${agent.title}: Stop-hook`, on: agent.hookState() === 'ours', toggle: () => (agent.hookState() === 'ours' ? offerHookRemove : offerHook)(rl, agent) })
     if (hasNotify(agent)) items.push({ label: `${agent.title}: notify (запасний)`, on: agent.notifyState() === 'ours', toggle: () => (agent.notifyState() === 'ours' ? offerRestore : offerNotify)(rl, agent) })
   }

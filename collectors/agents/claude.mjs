@@ -16,7 +16,8 @@ import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createParser } from '../../worker/public/admin/parse.mjs'
 import { BATCH } from '../lib/contract.mjs'
-import { configFile, home, lock, post, postImport, readJson, self, writeJson } from '../lib/core.mjs'
+import { command, configFile, home, lock, post, postImport, readJson, self, writeJson } from '../lib/core.mjs'
+import { otlpState, withOtlp, withoutOtlp } from '../lib/otlp-claude.mjs'
 import { hasOurHook, isEmptyDoc, withHook, withoutHook } from '../lib/hooks-json.mjs'
 
 const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
@@ -79,7 +80,7 @@ export default {
    * Claude Code is collected only when the user chose it: its Stop hook is ours, or the guide enabled it. (A user who set the program up
    * for Codex alone must not start sending Claude turns without having said so.)
    */
-  enabled() { return readJson(configFile, {}).sources?.claude !== 'otlp' && this.hookState() === 'ours' || readJson(stateFile, {}).enabled === true },
+  enabled() { return readJson(configFile, {}).sources?.claude === 'otlp' || this.hookState() === 'ours' || readJson(stateFile, {}).enabled === true },
   enable() { const st = readJson(stateFile, { files: {}, sent: {} }); st.enabled = true; writeJson(stateFile, st) },
 
   /**
@@ -199,6 +200,39 @@ export default {
     if (isEmptyDoc(doc)) unlinkSync(settingsJson)
     else writeFileSync(settingsJson, JSON.stringify(doc, null, 2) + '\n')
     return { changed: true, backup: copy }
+  },
+  // ---- OTLP: Claude Code exports its API requests to the site itself (the main way); the log collector and the Stop hook then step aside
+  otlpHelper() { return command([...self, 'otlp-headers']) },
+  /** 'ours' | 'none' | 'other' (the user's own OpenTelemetry settings) | 'unreadable' | 'unlinked' */
+  otlpState() {
+    const url = readJson(configFile, {}).url
+    if (!url) return 'unlinked'
+    if (!existsSync(settingsJson)) return 'none'
+    try { return otlpState(JSON.parse(readFileSync(settingsJson, 'utf8')), url, this.otlpHelper()) } catch { return 'unreadable' }
+  },
+  enableOtlp() {
+    const cfg = readJson(configFile, null)
+    if (!cfg?.token) throw new Error('not linked yet: run the program without arguments, or: link <CODE>')
+    const had = existsSync(settingsJson)
+    const copy = had ? backup(settingsJson) : null
+    mkdirSync(claudeHome, { recursive: true })
+    writeFileSync(settingsJson, JSON.stringify(withOtlp(had ? JSON.parse(readFileSync(settingsJson, 'utf8')) : {}, cfg.url, this.otlpHelper()), null, 2) + '\n')
+    writeJson(configFile, { ...cfg, sources: { ...cfg.sources, claude: 'otlp' } }, 0o600)
+    if (this.hookState() === 'ours') this.removeHook() // the same turns would be counted twice
+    return { backup: copy }
+  },
+  disableOtlp() {
+    const cfg = readJson(configFile, null)
+    if (!cfg?.token) throw new Error('not linked yet')
+    const copy = existsSync(settingsJson) ? backup(settingsJson) : null
+    if (copy) {
+      const doc = withoutOtlp(JSON.parse(readFileSync(settingsJson, 'utf8')), cfg.url, this.otlpHelper())
+      if (isEmptyDoc(doc)) unlinkSync(settingsJson)
+      else writeFileSync(settingsJson, JSON.stringify(doc, null, 2) + '\n')
+    }
+    const { claude: _off, ...sources } = cfg.sources ?? {}
+    writeJson(configFile, { ...cfg, sources }, 0o600)
+    return { backup: copy }
   },
 }
 
