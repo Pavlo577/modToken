@@ -136,3 +136,24 @@ test('no text from the rollout reaches the result; garbage and token_usage_recor
 test('a file without any usage gives nothing', () => {
   assert.deepEqual(run([meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1')]), { turns: [], limits: [] })
 })
+
+test('real layout: task_started with an id, then a bare user_message, turn_context, token counts, task_complete with the duration', () => {
+  const ev = (ts, payload) => JSON.stringify({ timestamp: ts, type: 'event_msg', payload })
+  const { turns } = run([
+    JSON.stringify({ timestamp: '2026-10-24T10:35:17.640Z', type: 'session_meta', payload: { session_id: 'th1', id: 'th1', timestamp: '2026-10-24T10:35:17.640Z', cwd: '/p', source: 'vscode', thread_source: 'user', model_provider: 'openai' } }),
+    ev('2026-10-24T10:36:05.917Z', { type: 'task_started', turn_id: 'tX', started_at: 1792838165 }),
+    ev('2026-10-24T10:36:06.264Z', { type: 'user_message', message: 'hello' }),
+    ctx('2026-10-24T10:36:06.300Z', 'tX', 'gpt-5.6-sol'),
+    count('2026-10-24T10:36:18.424Z', u(17632, 11520, 147), u(17632, 11520, 147)),
+    count('2026-10-24T10:37:52.122Z', u(553341, 467328, 5189, 356), u(90001, 81536, 3681, 40)),
+    ev('2026-10-24T10:37:52.158Z', { type: 'task_complete', turn_id: 'tX', duration_ms: 106243 }),
+  ])
+  assert.equal(turns.length, 1)
+  assert.equal(turns[0].turn_id, 'codex:th1:tX')
+  assert.equal(turns[0].input_tokens, 86013)
+  assert.equal(turns[0].cache_read_tokens, 467328)
+  assert.equal(turns[0].output_tokens, 5189)
+  assert.equal(turns[0].duration_ms, 106243)
+  assert.equal(turns[0].model, 'gpt-5.6-sol')
+  assert.equal(turns[0].is_subagent, false) // source "vscode" is a plain string
+})

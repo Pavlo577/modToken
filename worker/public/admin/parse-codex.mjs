@@ -4,7 +4,7 @@
 // The rollout format is internal to Codex and not documented, so this reads only what it needs and ignores the rest:
 //   session_meta  -> thread id, when the file began, whether it is a forked / sub-agent thread
 //   turn_context  -> the model in use, the turn id
-//   event_msg     -> payload.type "token_count": cumulative `total_token_usage` (+ `last_token_usage`, `rate_limits`)
+//   event_msg     -> task_started / task_complete (turn id, Codex's own duration), user_message, and payload.type "token_count": cumulative `total_token_usage` (+ `last_token_usage`, `rate_limits`)
 // `input_tokens` includes the cached part and `output_tokens` includes the reasoning part (OpenAI usage semantics).
 //
 // Counting rules (why a plain sum of `last_token_usage` would be wrong):
@@ -64,18 +64,21 @@ export function createCodexParser(fileKey) {
   let model = ''
   let key = '' // the current turn
   let seq = 0
+  let explicit = false // the rollout names its turns (turn_id): then a bare "user_message" does not start another one
   let prev = null // totals at the previous token_count
   let limits = []
   let limitsAt = 0
-  const turns = new Map() // key -> { startTs, lastTs, sums, best, model }
+  const turns = new Map() // key -> { startTs, lastTs, sums, best, model, took }
 
   const turnOf = k => {
     let t = turns.get(k)
-    if (!t) turns.set(k, (t = { startTs: null, lastTs: null, sums: { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0 }, best: -1, model: '' }))
+    if (!t) turns.set(k, (t = { startTs: null, lastTs: null, sums: { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0 }, best: -1, model: '', took: null }))
     return t
   }
   /** A turn begins (explicit id when the record has one, else a counter). */
   const begin = (id, ts) => {
+    if (typeof id === 'string' && id) explicit = true
+    else if (explicit) return // an id-less boundary inside a rollout that has ids
     const k = typeof id === 'string' && id ? id : `n${++seq}`
     if (k !== key) key = k
     const t = turnOf(key)
@@ -123,6 +126,7 @@ export function createCodexParser(fileKey) {
       } else if (e.type === 'event_msg') {
         if (p.type === 'token_count') { if (at !== null) count(p, at) }
         else if (p.type === 'task_started' || p.type === 'turn_started' || p.type === 'user_message') begin(typeof p.turn_id === 'string' ? p.turn_id : null, at)
+        else if (p.type === 'task_complete' && typeof p.turn_id === 'string' && Number(p.duration_ms) >= 0) turnOf(p.turn_id).took = Number(p.duration_ms) // Codex's own timing of the turn
       }
     },
     finish() {
@@ -142,7 +146,7 @@ export function createCodexParser(fileKey) {
           output_tokens: s.output,
           cache_read_tokens: s.cached,
           cache_creation_tokens: s.cacheWrite,
-          duration_ms: t.startTs !== null ? Math.max(0, t.lastTs - t.startTs) : 0,
+          duration_ms: t.took ?? (t.startTs !== null ? Math.max(0, t.lastTs - t.startTs) : 0),
           is_subagent: sub,
         })
       }
