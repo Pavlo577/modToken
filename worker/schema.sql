@@ -39,3 +39,14 @@ CREATE TABLE IF NOT EXISTS otlp_calls (
   PRIMARY KEY (device_id, call_id)
 );
 CREATE INDEX IF NOT EXISTS otlp_calls_seen_idx ON otlp_calls (seen_at);
+
+-- OTLP diagnostics: the records that were NOT recognised as model calls, counted by service, event name and attribute names (never values).
+CREATE TABLE IF NOT EXISTS otlp_seen (
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  service TEXT NOT NULL,
+  event TEXT NOT NULL,
+  keys TEXT NOT NULL,
+  n INTEGER NOT NULL,
+  last_seen TEXT NOT NULL,
+  PRIMARY KEY (device_id, service, event)
+);

@@ -81,6 +81,12 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   for (let i = 0; i < parsed.calls.length; i += CHUNK) {
     await env.DB.batch(parsed.calls.slice(i, i + CHUNK).flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
   }
+  for (const x of parsed.seen) {
+    await env.DB.prepare(
+      `INSERT INTO otlp_seen (device_id, service, event, keys, n, last_seen) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (device_id, service, event) DO UPDATE SET n = n + excluded.n, keys = excluded.keys, last_seen = excluded.last_seen`,
+    ).bind(dev.id, x.service, x.event, x.keys, x.n, now).run()
+  }
   const cutoff = new Date(Date.now() - KEEP_CALLS_DAYS * 86_400_000).toISOString()
   await env.DB.batch([
     env.DB.prepare('DELETE FROM otlp_calls WHERE rowid IN (SELECT rowid FROM otlp_calls WHERE seen_at < ? LIMIT 200)').bind(cutoff),

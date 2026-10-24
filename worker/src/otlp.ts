@@ -94,10 +94,16 @@ const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) 
 export const MAX_RECORDS = 5000
 
 /** The calls in an OTLP logs payload and how many records were not one (other events, other services, empty requests). */
-export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: number } | null {
+export interface Seen { service: string; event: string; keys: string; n: number }
+
+/** What the exporter sent, by names only: the service, the event and the attribute NAMES (never a value), counted. For finding out why nothing was recognised. */
+const NAME = (v: string) => v.replace(/[^\w.:-]/g, '').slice(0, 80)
+
+export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: number; seen: Seen[] } | null {
   const doc = payload as OtlpLogs
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.resourceLogs)) return null
   const calls: ModelCall[] = []
+  const names = new Map<string, Seen>()
   let ignored = 0
   let seen = 0
   for (const rl of doc.resourceLogs) {
@@ -109,8 +115,16 @@ export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: 
         const call = adapter && rec ? adapter(attrs(rec.attributes), rec) : null
         if (call) calls.push(call)
         else ignored++
+        if (!call && rec && names.size < 50) {
+          const a = attrs(rec.attributes)
+          const event = NAME(text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : ''))
+          const key = `${NAME(service)}|${event}`
+          const hit = names.get(key)
+          if (hit) hit.n++
+          else names.set(key, { service: NAME(service), event, keys: [...a.keys()].map(NAME).sort().join(',').slice(0, 600), n: 1 })
+        }
       }
     }
   }
-  return { calls, ignored }
+  return { calls, ignored, seen: [...names.values()] }
 }

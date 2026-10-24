@@ -53,8 +53,8 @@ test('otlp: a request that cost nothing, negative or fractional numbers, other s
   const odd = record([]); odd.attributes = odd.attributes.map(a => (a.key === 'output_tokens' ? { key: 'output_tokens', value: { intValue: '-5' } } : a.key === 'duration_ms' ? { key: 'duration_ms', value: { doubleValue: 12.9 } } : a))
   const [c] = parseOtlpLogs(payload([odd])).calls
   assert.deepEqual([c.output_tokens, c.duration_ms], [0, 12])
-  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1 })
-  assert.deepEqual(parseOtlpLogs({ resourceLogs: [] }), { calls: [], ignored: 0 })
+  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
+  assert.deepEqual(parseOtlpLogs({ resourceLogs: [] }), { calls: [], ignored: 0, seen: [] })
   for (const bad of [null, 5, 'x', {}, { resourceLogs: 'no' }]) assert.equal(parseOtlpLogs(bad), null)
 })
 
@@ -67,4 +67,12 @@ test('otlp: a call with agent_id is a sub-agent call, one without is the main se
   const [main] = parseOtlpLogs(payload([record()])).calls
   const [sub] = parseOtlpLogs(payload([record([s('agent_id', 'agent-1'), s('parent_agent_id', 'main')])])).calls
   assert.equal(main.is_subagent, false); assert.equal(sub.is_subagent, true)
+})
+
+test('otlp: what was not recognised is reported by NAMES only, never by value', () => {
+  const rec = { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'claude_code.user_prompt'), s('prompt', 'SECRET PROMPT'), s('user.email', 'me@example.com'), i('prompt_length', 5)] }
+  const { seen } = parseOtlpLogs(payload([rec, rec]))
+  assert.equal(seen.length, 1); assert.equal(seen[0].n, 2); assert.equal(seen[0].event, 'claude_code.user_prompt')
+  for (const bad of ['SECRET', 'me@example.com']) assert.equal(JSON.stringify(seen).includes(bad), false, bad)
+  assert.ok(seen[0].keys.includes('prompt_length') && seen[0].keys.includes('user.email'), 'attribute names are listed')
 })
