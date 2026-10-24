@@ -37,7 +37,7 @@ async function link(code) {
   if (!res.ok) throw new Error(res.status === 403 ? 'the code is wrong, used or expired: make a new one on the site' : `site answered HTTP ${res.status}`)
   const { token, device } = await res.json()
   writeJson(configFile, { url, token }, 0o600)
-  console.log(`linked as "${device}". Now run: node collectors/codex.mjs sync`)
+  console.log(`linked as "${device}". Now run: ${command(shown)} sync`)
 }
 
 // ---------------------------------------------------------------- finding the rollouts
@@ -116,9 +116,16 @@ async function sync() {
 }
 
 // ---------------------------------------------------------------- the rest
+// Run as a script ("node codex.mjs") or as the single file made by "bun build --compile" (release binary): how to start itself again.
+const compiled = /\$bunfs|~BUN/.test(import.meta.url)
+const self = compiled ? [process.execPath] : [process.execPath, fileURLToPath(import.meta.url)]
+const shown = compiled ? [process.execPath] : ['node', fileURLToPath(import.meta.url)]
+const quoted = list => list.map(a => `"${a.replace(/\\/g, '\\\\')}"`).join(', ')
+const command = list => list.map(a => (/\s/.test(a) ? `"${a}"` : a)).join(' ')
+
 function notify() {
   // Codex passes a JSON argument with the last prompt and answer: it is never read here, only used as a signal.
-  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'sync'], { detached: true, stdio: 'ignore' })
+  const child = spawn(self[0], [...self.slice(1), 'sync'], { detached: true, stdio: 'ignore' })
   child.unref()
 }
 
@@ -130,13 +137,12 @@ function status() {
 }
 
 function setup() {
-  const me = fileURLToPath(import.meta.url)
   console.log(`1. Link this device once (make a code on the site: Devices tab, same device name as your Claude one):
-     node ${me} link <CODE>
+     ${command(shown)} link <CODE>
 2. Send what is already there:
-     node ${me} sync
+     ${command(shown)} sync
 3. Keep it up to date: add this line at the top level of ${join(codexHome, 'config.toml')} (before any [section]):
-     notify = ["node", "${me.replace(/\\/g, '\\\\')}", "notify"]
+     notify = [${quoted([...shown, 'notify'])}]
    Codex then runs it after each turn; it only wakes the collector and reads nothing from what Codex passes.
    Or run "sync" from cron / a systemd timer / Windows Task Scheduler every few minutes.`)
 }

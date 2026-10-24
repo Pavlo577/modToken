@@ -6,6 +6,8 @@ HERE=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d)
 export CODEX_HOME=$T/codex TOKEN_TRACKER_HOME=$T/tt
 fail=0
+# COLLECTOR_BIN=path/to/token-tracker tests the compiled program instead of the script
+run() { if [ -n "${COLLECTOR_BIN:-}" ]; then "$COLLECTOR_BIN" "$@"; else node "$HERE/collectors/codex.mjs" "$@"; fi; }
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1 (got $2, want $3)"; fail=1; fi; }
 mkdir -p "$CODEX_HOME/sessions/2026/10/24" "$CODEX_HOME/archived_sessions"
 F=$CODEX_HOME/sessions/2026/10/24/rollout-2026-10-24T10-00-00-th9.jsonl
@@ -21,17 +23,17 @@ RL='{"primary":{"used_percent":12.5,"window_minutes":300,"resets_at":4102444800}
 } > "$F"
 
 CODE=$(curl -s -XPOST $B/api/admin/codes -d '{"name":"collector-box"}' | sed -E 's/.*"code":"([A-F0-9]+)".*/\1/')
-node "$HERE/collectors/codex.mjs" link "$CODE" --url $B | grep -q 'linked as "collector-box"' && echo "ok   link" || { echo "FAIL link"; fail=1; }
+run link "$CODE" --url $B | grep -q 'linked as "collector-box"' && echo "ok   link" || { echo "FAIL link"; fail=1; }
 check "token not printed or world-readable" "$(stat -c %a "$TOKEN_TRACKER_HOME/config.json")" 600
-out=$(node "$HERE/collectors/codex.mjs" sync); echo "$out" | grep -q '1 turns sent, limits updated' && echo "ok   first sync" || { echo "FAIL first sync: $out"; fail=1; }
+out=$(run sync); echo "$out" | grep -q '1 turns sent, limits updated' && echo "ok   first sync" || { echo "FAIL first sync: $out"; fail=1; }
 turn() { curl -s "$B/api/admin/buckets" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["provider"]=="codex" and r["device"]=="collector-box"]; print(sum(r["output"] for r in d), sum(r["input"] for r in d), sum(r["cache_read"] for r in d), sum(r["turns"] for r in d))'; }
 check "turn stored (output input cache turns)" "$(turn)" "50 200 800 1"
 check "limits stored as codex" "$(curl -s "$B/api/admin/limits" | python3 -c 'import sys,json; print(sorted((r["provider"], r["kind"], r["percent"]) for r in json.load(sys.stdin) if r["provider"]=="codex" and r["device"]=="collector-box"))')" "[('codex', 'five_hour', 12.5), ('codex', 'seven_day', 30)]"
-out=$(node "$HERE/collectors/codex.mjs" sync); echo "$out" | grep -q '0 read, 0 turns sent' && echo "ok   second sync sends nothing" || { echo "FAIL second sync: $out"; fail=1; }
+out=$(run sync); echo "$out" | grep -q '0 read, 0 turns sent' && echo "ok   second sync sends nothing" || { echo "FAIL second sync: $out"; fail=1; }
 line 2026-10-24T10:00:20Z 3000 2500 120 2000 1700 70 null >> "$F"
-out=$(node "$HERE/collectors/codex.mjs" sync); echo "$out" | grep -q '1 turns sent' && echo "ok   a grown turn is sent again" || { echo "FAIL third sync: $out"; fail=1; }
+out=$(run sync); echo "$out" | grep -q '1 turns sent' && echo "ok   a grown turn is sent again" || { echo "FAIL third sync: $out"; fail=1; }
 check "the turn grew, not duplicated" "$(turn)" "120 500 2500 1"
-check "full resend changes nothing" "$(node "$HERE/collectors/codex.mjs" sync --full >/dev/null; turn)" "120 500 2500 1"
+check "full resend changes nothing" "$(run sync --full >/dev/null; turn)" "120 500 2500 1"
 check "no prompt text in the state files" "$(grep -rl 'TOP SECRET' "$TOKEN_TRACKER_HOME" | wc -l)" 0
 rm -rf "$T"
 exit $fail

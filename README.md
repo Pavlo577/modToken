@@ -38,9 +38,15 @@ Needs Node.js in the environment (cloud sessions ship it) and `raw.githubusercon
 ## Other agents (Codex)
 The site also takes the usage of **OpenAI Codex CLI**; a "provider" column says which agent wrote each turn, and the page gets an agent filter (shown when there is more than one) and a "By agent" card. Codex has no mods, so a small collector reads its own session files (`~/.codex/sessions`, `~/.codex/archived_sessions`) and sends only token counts, times, model names and ids, never prompts or answers. Subscription limits (5-hour and weekly) are taken from the same files when Codex wrote them.
 
+**Without Node.js (recommended for other people):** download the one-file program for your system from the repository's Releases page (`collector-v*`: `token-tracker-windows-x64.exe`, `-macos-arm64`, `-macos-x64`, `-linux-x64`, `-linux-arm64`; `SHA256SUMS` is next to them). It needs nothing installed. It is not code-signed, so Windows SmartScreen / macOS Gatekeeper may warn on the first start (macOS: `xattr -d com.apple.quarantine token-tracker-macos-*`). Use it in place of `node collectors/codex.mjs` below.
+
 1. On the site (Devices tab) make a code, with the **same device name** as your Claude device so the numbers merge.
-2. `git clone https://github.com/Pavlo577/modToken` on that machine, then `node collectors/codex.mjs link <CODE>` (add `--url https://your-site` if it is not the default one).
-3. `node collectors/codex.mjs sync` sends the existing history (safe to repeat: nothing is counted twice). `node collectors/codex.mjs setup` prints the line for `~/.codex/config.toml` (`notify = [...]`) that keeps it up to date after every turn, or run `sync` from cron / Task Scheduler.
+2. `token-tracker link <CODE>` (or `git clone https://github.com/Pavlo577/modToken` and `node collectors/codex.mjs link <CODE>`; add `--url https://your-site` if it is not the default one).
+3. `token-tracker sync` sends the existing history (safe to repeat: nothing is counted twice). `token-tracker setup` prints the line for `~/.codex/config.toml` (`notify = [...]`) that keeps it up to date after every turn, or run `sync` from cron / Task Scheduler.
+
+With nothing to install at all: Devices, "Import old data", pick the `~/.codex/sessions` folder. That is a manual one-off (no automatic updates, no limits).
+
+The programs are built by `.github/workflows/collector-release.yml` (`bun build --compile`) when a tag `collector-vX.Y.Z` is pushed.
 
 Codex's file format is internal and changes between versions; the parser (`worker/public/admin/parse-codex.mjs`) reads only the few fields it needs. Input is stored without the cached part (like Claude's "new input"), reasoning counts as output. Prices for GPT-5 models are in `prices.json`; models missing there are shown without a price. Existing databases need `worker/migrations/0002_provider.sql` once (a fresh one gets the column from `schema.sql`).
 
