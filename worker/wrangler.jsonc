@@ -10,5 +10,21 @@
   "vars": {
     "TEAM_DOMAIN": "https://billowing-feather-dc63.cloudflareaccess.com",
     "POLICY_AUD": "093672a00c66038093a36f747d866eb508b1d8e4be440a0e5b9a0c91313803a2"
+  },
+  // The OTLP-only preview: its own Worker (modtoken-solo) and its own D1 database. Deploy: npx wrangler deploy --env solo
+  "env": {
+    "solo": {
+      "name": "modtoken-solo",
+      "build": { "command": "bun run build", "watch_dir": "web" },
+      "assets": { "directory": "./public", "binding": "ASSETS" },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "modtoken-solo", "database_id": "d742cf9d-de3f-4fc4-bdc7-7510c0d48926" }
+      ],
+      "vars": {
+        "TEAM_DOMAIN": "https://billowing-feather-dc63.cloudflareaccess.com",
+        // REQUEST: the Audience tag of a new Cloudflare Access application for the modtoken-solo hostname (without it /api/admin/* answers 401)
+        "POLICY_AUD": "SET_AFTER_CREATING_THE_ACCESS_APP"
+      }
+    }
   }
 }
