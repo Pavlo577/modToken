@@ -138,8 +138,8 @@ test('notify log: a good downstream is logged with its exit code, and no text of
   const ev = Object.fromEntries(events().map(e => [e.event, e]))
   assert.equal(ev.downstream_finished.exitCode, 0)
   assert.deepEqual([ev.notify_received.hasThreadId, ev.notify_received.hasTurnId, ev.notify_received.hasInputMessages, ev.notify_received.hasAssistantMessage], [true, true, true, true])
-  assert.deepEqual(ev.downstream_started.arguments.slice(-2), [ev.downstream_started.arguments.at(-2), '<json>'])
-  assert.ok(ev.downstream_started.arguments.includes('<json>') && !ev.downstream_started.arguments.some(a => a.includes('{')))
+  // only counts are logged, never the value of an argument (it may be a secret): `node ok.mjs turn-ended` = 2 arguments + the JSON
+  assert.deepEqual([ev.downstream_started.argumentCount, ev.downstream_started.hasJsonPayload, 'arguments' in ev.downstream_started], [2, true, false])
   assert.ok(!readFileSync(logFile, 'utf8').includes(SECRET) && !readFileSync(logFile, 'utf8').includes('/secret/dir'), 'no prompt text, no directory in the log')
 })
 

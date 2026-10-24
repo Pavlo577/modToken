@@ -17,7 +17,27 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    # nothing is compiled or published unless the official tests and the typecheck pass
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: npm test
+      - run: bun test
+      - run: bun run typecheck
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:

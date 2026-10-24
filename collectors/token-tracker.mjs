@@ -15,13 +15,13 @@ import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import codex from './agents/codex.mjs'
 import { arg, command, configFile, link, readJson, self, shown } from './lib/core.mjs'
-import { logEvent, readLog } from './lib/notify-log.mjs'
+import { errorCategory, logEvent, readLog } from './lib/notify-log.mjs'
 import { interactive } from './wizard.mjs'
 
 async function sync() {
   const full = process.argv.includes('--full')
   let r
-  try { r = await codex.sync({ full, only: arg('--file') }) } catch (e) { logEvent({ event: 'sync_failed', error: e instanceof Error ? e.message : String(e) }); throw e }
+  try { r = await codex.sync({ full, only: arg('--file') }) } catch (e) { logEvent({ event: 'sync_failed', error: errorCategory(e) }); throw e }
   logEvent({ event: 'sync_finished', rows: r.rows, scanned: r.scanned })
   if (r.missing) console.log(`no Codex data in ${codex.home}`)
   else if (r.busy) console.log('another sync is running')
@@ -32,16 +32,14 @@ async function sync() {
 const startDownstream = (file, list) => new Promise(resolve => {
   const t0 = Date.now()
   let child
-  try { child = spawn(file, list, { shell: false, detached: true, stdio: 'ignore', windowsHide: true }) } catch (e) { return resolve({ error: e.code ?? e.message }) }
+  try { child = spawn(file, list, { shell: false, detached: true, stdio: 'ignore', windowsHide: true }) } catch (e) { return resolve({ error: errorCategory(e) }) }
   // Not waited for longer than 10 s and never killed: the other program may work longer on purpose.
   const timer = setTimeout(() => { child.unref(); resolve({ running: true }) }, 10_000)
-  child.on('error', e => { clearTimeout(timer); resolve({ error: e.code ?? e.message }) })
+  child.on('error', e => { clearTimeout(timer); resolve({ error: errorCategory(e) }) })
   child.on('exit', (exitCode, signal) => { clearTimeout(timer); resolve({ exitCode, signal, durationMs: Date.now() - t0 }) })
 })
 
 const hasSeparator = p => /[\\/]/.test(p)
-/** A JSON argument is shown as <json>: it carries the prompt and the answer. */
-const safeArg = a => (/^\s*[{[]/.test(a) ? '<json>' : a)
 
 async function notify() {
   // Codex adds one JSON argument (the last prompt and answer) at the end. It is only checked for which fields it has (never stored),
@@ -57,12 +55,13 @@ async function notify() {
   } catch { seen = { type: null, payload: payload ? 'not readable' : 'none' } }
   logEvent({ event: 'notify_received', ...seen, then: then.length ? basename(then[0]) : null })
 
-  try { spawn(self[0], [...self.slice(1), 'sync'], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref(); logEvent({ event: 'sync_started' }) } catch (e) { logEvent({ event: 'sync_failed', error: e.code ?? e.message }) }
+  try { spawn(self[0], [...self.slice(1), 'sync'], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref(); logEvent({ event: 'sync_started' }) } catch (e) { logEvent({ event: 'sync_failed', error: errorCategory(e) }) }
 
   if (!then.length) return
   const program = basename(then[0])
   if (hasSeparator(then[0]) && !existsSync(then[0])) return logEvent({ event: 'downstream_missing', program }) // e.g. Codex moved its helper on an update
-  logEvent({ event: 'downstream_started', program, arguments: [...then.slice(1).map(safeArg), ...(payload ? ['<json>'] : [])] })
+  // only counts: an argument may be a secret (--token ...), so no value of it is ever logged
+  logEvent({ event: 'downstream_started', program, argumentCount: then.length - 1, hasJsonPayload: Boolean(payload) })
   const r = await startDownstream(then[0], [...then.slice(1), ...(payload ? [payload] : [])])
   if (r.running) logEvent({ event: 'downstream_still_running', program })
   else if (r.error) logEvent({ event: 'downstream_failed', program, error: r.error })
@@ -93,7 +92,7 @@ async function hookStop() {
   try {
     spawn(self[0], [...self.slice(1), 'sync', ...(file ? ['--file', file] : [])], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref()
     logEvent({ event: 'sync_started', scope: file ? 'file' : 'all' })
-  } catch (e) { logEvent({ event: 'sync_failed', error: e.code ?? e.message }) }
+  } catch (e) { logEvent({ event: 'sync_failed', error: errorCategory(e) }) }
 }
 
 function log() {
