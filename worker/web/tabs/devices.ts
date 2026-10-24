@@ -1,6 +1,7 @@
 // The Devices tab: link codes, cloud token, device list and the old-history import.
 import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
+import { providerColor, providerLabel } from '../core/palette.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 interface Turn {
@@ -17,17 +18,94 @@ interface ImportResult {
   afterLink: number
 }
 
+/** Agents a device can be linked for, with what the user does with the code. */
+const LINKABLE: { id: string; how: (code: string) => (Node | string)[] }[] = [
+  { id: 'claude', how: code => ['У Claude Code на цьому пристрої виконай ', el('b', {}, `/tracker-link ${code}`), '.'] },
+  { id: 'codex', how: () => ['Завантаж програму ', el('b', {}, 'token-tracker'), ' для своєї системи зі сторінки ', el('a', { href: 'https://github.com/Pavlo577/modToken/releases', target: '_blank', rel: 'noopener' }, 'Releases'), ', відкрий її (подвійний клік) і встав код, коли вона запитає.'] },
+]
+
+/** One row per device name: every agent linked under the same name is a token of its own, the dashboard merges them by name. */
+interface DeviceGroup {
+  name: string
+  rows: DeviceRow[]
+  providers: Set<string>
+}
+
+function group(list: DeviceRow[]): DeviceGroup[] {
+  const out = new Map<string, DeviceGroup>()
+  for (const d of list) {
+    const key = d.revoked ? d.id : d.name // a revoked device stays a row of its own
+    const g = out.get(key) ?? { name: d.name, rows: [], providers: new Set<string>() }
+    g.rows.push(d)
+    for (const p of d.providers) g.providers.add(p)
+    out.set(key, g)
+  }
+  return [...out.values()]
+}
+
+let panelTimer: ReturnType<typeof setInterval> | undefined
+
+/** The code for one more agent of an existing device, shown under its row. */
+async function showCode(panel: HTMLElement, name: string, provider: string): Promise<void> {
+  clearInterval(panelTimer)
+  const how = LINKABLE.find(l => l.id === provider)?.how
+  if (!how) return
+  try {
+    const { code, expires_at } = await api<{ code: string; expires_at: string }>('/codes', { method: 'POST', body: JSON.stringify({ name }) })
+    const note = el('div', { class: 'sub' })
+    panel.replaceChildren(
+      el('div', { class: 'sub' }, `${providerLabel(provider)} для «${name}»:`),
+      el('div', { class: 'code' }, code), note,
+      el('p', { class: 'note', style: 'margin:6px 0 0' }, ...how(code)),
+      el('button', { type: 'button', onclick: () => { clearInterval(panelTimer); panel.replaceChildren(); panel.classList.add('hide') } }, 'Закрити'),
+    )
+    const tick = (): void => {
+      const left = Math.max(0, Math.round((new Date(expires_at).getTime() - Date.now()) / 1000))
+      note.textContent = left ? `Код діє ще ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} і прив'язує лише одну програму.` : 'Код прострочено. Створи новий.'
+      if (!left) clearInterval(panelTimer)
+    }
+    tick(); panelTimer = setInterval(tick, 1000)
+  } catch (err) {
+    const msg = (err as Error).message
+    panel.replaceChildren(el('div', { class: 'sub' }, msg === 'too many open codes' ? 'Забагато відкритих кодів, зачекай або використай наявні.' : 'Не вдалося створити код: ' + msg))
+  }
+}
+
+function deviceRow(g: DeviceGroup): HTMLElement {
+  const active = g.rows.filter(d => !d.revoked)
+  const revoked = active.length === 0
+  const subscription = g.rows.some(d => d.billing === 'subscription')
+  const added = g.rows.map(d => d.created_at).sort()[0]!.slice(0, 10)
+  const seen = g.rows.map(d => d.last_seen).filter((t): t is string => Boolean(t)).sort().pop()
+  const missing = LINKABLE.filter(l => !g.providers.has(l.id))
+  const panel = el('div', { class: 'dev-panel hide' })
+  const menu = el('div', { class: 'dev-menu hide' }, ...missing.map(l => el('button', { type: 'button', onclick: () => {
+    menu.classList.add('hide'); panel.classList.remove('hide'); void showCode(panel, g.name, l.id)
+  } }, providerLabel(l.id))))
+  return el('div', { class: 'dev' },
+    el('div', {}, el('b', {}, g.name), revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
+      ...[...g.providers].sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Агент надсилав дані з цього пристрою' }, providerLabel(p))),
+      el('span', { class: 'tag', title: subscription ? 'Пристрій надсилає ліміти підписки' : 'Пристрій не надсилав ліміти підписки: оплата (підписка, кредити чи API) невідома' }, subscription ? 'підписка' : 'тип оплати невизначений'),
+      el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
+    revoked ? '' : el('div', { class: 'dev-actions' },
+      el('button', { type: 'button', disabled: missing.length === 0, title: missing.length ? 'Створити код для ще одного агента на цьому пристрої' : 'Усі підтримувані агенти вже підключені', onclick: () => menu.classList.toggle('hide') }, 'Додати провайдера'),
+      el('button', { class: 'danger', onclick: async () => {
+        const what = g.providers.size ? ` (${[...g.providers].map(providerLabel).join(', ')})` : ''
+        if (!confirm(`Відкликати «${g.name}»? Усі агенти цього пристрою${what} перестануть надсилати дані.`)) return
+        for (const d of active) await api('/devices/' + d.id, { method: 'DELETE' })
+        void loadDevices()
+      } }, 'Відкликати')),
+    menu, panel)
+}
+
 export async function loadDevices(): Promise<DeviceRow[]> {
   const list = await api<DeviceRow[]>('/devices')
-  const active = list.filter(d => !d.revoked)
-  $('import-device').replaceChildren(...(active.length ? active.map(d => el('option', { value: d.id }, d.name)) : [el('option', { value: '' }, 'Спершу додай пристрій')]))
-  $('dev-list').replaceChildren(...(list.length ? list.map(d => el('div', { class: 'dev' },
-    el('div', {}, el('b', {}, d.name), d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
-      el('span', { class: 'tag', title: d.billing === 'subscription' ? 'Пристрій надсилає ліміти підписки' : 'Пристрій не надсилав ліміти підписки: оплата (підписка, кредити чи API) невідома' }, d.billing === 'subscription' ? 'підписка' : 'тип оплати невизначений'),
-      el('small', {}, 'Додано ' + d.created_at.slice(0, 10) + (d.last_seen ? ' · остання активність ' + new Date(d.last_seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
-    d.revoked ? '' : el('button', { class: 'danger', onclick: async () => {
-      if (confirm(`Відкликати «${d.name}»? Пристрій перестане надсилати дані.`)) { await api('/devices/' + d.id, { method: 'DELETE' }); void loadDevices() }
-    } }, 'Відкликати'))) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
+  const groups = group(list)
+  const importable = groups.filter(g => g.rows.some(d => !d.revoked))
+  // the oldest token of a name takes the imported history (a Claude import only counts turns from before the device was linked)
+  const oldest = (g: DeviceGroup): DeviceRow => g.rows.filter(d => !d.revoked).sort((a, b) => a.created_at.localeCompare(b.created_at))[0]!
+  $('import-device').replaceChildren(...(importable.length ? importable.map(g => el('option', { value: oldest(g).id }, g.name)) : [el('option', { value: '' }, 'Спершу додай пристрій')]))
+  $('dev-list').replaceChildren(...(groups.length ? groups.map(deviceRow) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
   return list
 }
 
