@@ -17,10 +17,11 @@ The flow, always in this direction:
 ```
 1. An agent creates its branch from `dev`, commits and pushes **only its own branch**.
 2. When a piece of work is ready it opens a **pull request into `claude`** (never into `dev` or `main`). It never merges its own pull request.
-3. Claude reviews it (checklist below), merges it into `claude`, runs the tests, and brings `claude` into `dev`. The agent then rebases/merges `dev` into its branch before the next piece.
+3. Claude reviews it (checklist below), merges it into `claude`, runs the tests, and brings `claude` into `dev`. The agent then fetches and merges `origin/dev` into its branch before it touches anything for the next piece (see the first rule).
 4. `main` is the user's decision alone.
 
 Rules (for every agent, Claude included):
+- **Always start from the latest `dev`.** Before every new piece of work, and again before opening a pull request, run `git fetch origin` and bring `origin/dev` into your branch (`git merge origin/dev`, or rebase if your branch is not shared). Never edit on top of a stale base. `dev` is where Claude puts what it has reviewed, so what is in `dev` is the agreed state of the shared files, the data contract and the rules in this very file (re-read `AGENTS.md` after each sync). If you opened a pull request and `dev` has moved since, bring `dev` into your branch and push again before asking for the merge.
 - Stay inside your own area (table above). Never push to `main`, to `dev`, or to another agent's branch (Claude, as the integrator, is the only one who writes to `dev`).
 - **Do not edit the main (shared) files; write a request instead.** The main files are everything outside your area: the Worker and dashboard (`worker/**` except your own parser/tests), the Claude mod, and the shared collector layer. If your work needs a change there (a new field in the contract, a dashboard label and colour for your agent, a schema column, a different behaviour of the program, a price), do all of this:
   - add an entry to **your own** file `requests/<agent>.md` (format in `requests/README.md`): which file, what exactly must change, why, and a suggested patch if you have one;
