@@ -213,3 +213,8 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .empty-box { display: grid; place-items: center; padding: 0 20px; text-align: center; color: var(--muted); border-radius: 12px;
   background: repeating-linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), rgba(255,255,255,.045) calc(25% - 1px), rgba(255,255,255,.045) 25%); }
 .empty-box span { background: rgba(20,17,15,.85); padding: 6px 14px; border-radius: 999px; font-size: 13.5px; }
+
+/* hide + input/output as one two-part button */
+.duo { display: inline-flex; }
+.duo .mi:first-child { border-radius: 999px 0 0 999px; border-right-width: 0; padding-right: 10px; }
+.duo .mi:last-child { border-radius: 0 999px 999px 0; padding-left: 10px; }

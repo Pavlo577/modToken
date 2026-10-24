@@ -606,7 +606,7 @@ function syncControls(): void {
   $('io-icon').innerHTML = IO_ICON[state.io]
   const ioName: Record<IoMode, string> = { both: 'вхідні та вихідні токени', in: 'лише вхідні токени', out: 'лише вихідні токени' }
   const ioNext: Record<IoMode, string> = { both: 'лише вхідні', in: 'лише вихідні', out: 'вхідні та вихідні' }
-  io.dataset.tip = `Показуються ${ioName[state.io]}. Натисни, щоб ${ioNext[state.io]}`
+  io.dataset.tip = state.ioHidden ? 'Вхідні та вихідні сховані. Натисни, щоб показати' : `Показуються ${ioName[state.io]}. Натисни, щоб ${ioNext[state.io]}`
   // the scale choice matters only when the cache shares the chart with input/output
   $('scale-mode').classList.toggle('hide', !(state.metric === 'all' && state.view !== 'cal' && !state.ioHidden))
   press($('scale-mode'), 's', state.scale)
@@ -655,7 +655,8 @@ const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); ren
 $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
 $('scale-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.scale = b.dataset.s === 'linear' ? 'linear' : 'log'; persist(); syncControls(); render() })
 $('io-off').onclick = () => { state.ioHidden = !state.ioHidden; persist(); syncControls(); render() }
-$('io-mode').onclick = () => { state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
+// hidden: the first press only shows them again (in the mode they had); then the presses cycle the modes
+$('io-mode').onclick = () => { if (state.ioHidden) state.ioHidden = false; else state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
 $('cache-on').onclick = () => {
   if (state.view === 'cal') return
   state.metric = state.metric === 'all' ? 'io' : 'all'; persist(); syncControls(); render()
