@@ -64,13 +64,17 @@ const iso = (ms: number): string => new Date(ms).toISOString()
 let saved: Partial<State> = {}
 try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<State> } catch { /* private mode: start with defaults */ }
 const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
-const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: 'overview' }
+const TABS: Tab[] = ['overview', 'analytics', 'money', 'sessions', 'devices']
+const asTab = (v: unknown): Tab | null => (TABS as unknown[]).includes(v) ? (v as Tab) : null
+// the tab survives a reload: the address (#analytics) wins, then the last one used
+const startTab: Tab = asTab(location.hash.slice(1)) ?? asTab((saved as { tab?: unknown }).tab) ?? 'overview'
+const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: startTab }
 state.range = OLD_RANGES[state.range] ?? state.range
 if ((state.io as string) === 'off') { state.io = 'both'; state.ioHidden = true } // the old fourth mode
 if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, tab: state.tab })) } catch { /* ignore */ }
 }
 
 let prices: Prices | null = null
@@ -602,6 +606,8 @@ const press = (group: HTMLElement, attr: string, value: string): void =>
 
 function setTab(tab: Tab): void {
   state.tab = tab
+  persist()
+  if (location.hash.slice(1) !== tab) history.replaceState(null, '', '#' + tab)
   press($('nav'), 'tab', tab)
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('hide', s.id !== 'tab-' + tab))
   $('controls').classList.toggle('hide', tab === 'devices')
@@ -656,6 +662,7 @@ function syncControls(): void {
 const clicked = (e: Event): HTMLButtonElement | null => (e.target as HTMLElement).closest('button')
 
 $('nav').addEventListener('click', e => { const b = clicked(e); if (b) setTab(b.dataset.tab as Tab) })
+window.addEventListener('hashchange', () => { const t = asTab(location.hash.slice(1)); if (t && t !== state.tab) setTab(t) })
 $('range').addEventListener('click', e => {
   const b = clicked(e); if (!b) return
   state.range = b.dataset.r ?? 'month'; state.anchor = ''; persist(); syncControls(); void load()
@@ -696,4 +703,5 @@ $('day-today').onclick = () => setDay(need().r.today)
 api<{ email: string }>('/me').then(m => { $('who').textContent = m.email; $('av').textContent = m.email.slice(0, 2).toUpperCase() }).catch(() => { $('who').textContent = 'не вдалося визначити користувача' })
 initDevices()
 syncControls()
+setTab(state.tab)
 fetch('prices.json').then(r => r.json() as Promise<Prices>).then(p => { prices = p }).catch(() => {}).finally(() => void load())
