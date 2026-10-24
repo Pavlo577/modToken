@@ -10,7 +10,7 @@ import { dayLabel, dur, fmt, fmtPct, fmtUsd } from '../lib/format.ts'
 // ---------- sessions
 export function renderSessions(agg: S.Aggregate): void {
   const d = need()
-  const sessions = d.sessions.filter(s => !state.device || s.device === state.device)
+  const sessions = d.sessions.filter(s => (!state.device || s.device === state.device) && (!state.provider || s.provider === state.provider))
   const rec = S.records(agg.days, sessions, tz)
   const tiles: [string, string, string][] = [
     ['Найкращий день', rec.bestDay ? dayLabel(rec.bestDay.day) : '—', rec.bestDay ? `${fmt(rec.bestDay.output)} вихідних, ${rec.bestDay.turns} ходів` : ''],

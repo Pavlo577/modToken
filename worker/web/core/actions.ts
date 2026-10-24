@@ -4,4 +4,5 @@ export const actions = {
   render: (): void => {},
   syncControls: (): void => {},
   setDevices: (_names: string[]): void => {},
+  setProviders: (_names: string[]): void => {},
 }

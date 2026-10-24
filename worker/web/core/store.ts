@@ -16,7 +16,7 @@ interface Data {
 }
 
 /** Loaded data and lists shared by the tabs. */
-export const store: { data: Data | null; prices: Prices | null; deviceNames: string[] } = { data: null, prices: null, deviceNames: [] }
+export const store: { data: Data | null; prices: Prices | null; deviceNames: string[]; providers: string[] } = { data: null, prices: null, deviceNames: [], providers: [] }
 
 const memo = new Map<string, { t: number; v: unknown }>()
 
@@ -35,5 +35,5 @@ export const need = (): Data => { if (!store.data) throw new Error('data not loa
 
 export const aggregate = (opts: S.AggregateOptions = {}): S.Aggregate => {
   const d = need()
-  return S.aggregate(d.buckets, tz, { fromMs: d.r.from, toMs: d.r.to, device: state.device || null, prices: store.prices, ...opts })
+  return S.aggregate(d.buckets, tz, { fromMs: d.r.from, toMs: d.r.to, device: state.device || null, provider: state.provider || null, prices: store.prices, ...opts })
 }

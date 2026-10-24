@@ -117,20 +117,22 @@ export interface AggregateOptions {
   fromMs?: number
   toMs?: number
   device?: string | null
+  provider?: string | null
   prices?: Prices | null
 }
 
 /**
  * Hourly UTC buckets -> everything the charts need, in the viewer's time zone.
- * `bucket.h` is 'YYYY-MM-DDTHH' (UTC). `fromMs`/`toMs` clip to the shown range; `device` filters.
+ * `bucket.h` is 'YYYY-MM-DDTHH' (UTC). `fromMs`/`toMs` clip to the shown range; `device` and `provider` filter.
  */
-export function aggregate(buckets: Bucket[], tz: Tz, { fromMs = -Infinity, toMs = Infinity, device = null, prices = null }: AggregateOptions = {}): Aggregate {
+export function aggregate(buckets: Bucket[], tz: Tz, { fromMs = -Infinity, toMs = Infinity, device = null, provider = null, prices = null }: AggregateOptions = {}): Aggregate {
   const days = new Map<string, Totals>(), models = new Map<string, Totals>(), devices = new Map<string, Totals>(), hours = new Map<string, Totals>()
   const unpriced = new Set<string>()
   const matrix: Cell[][] = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0 })))
   const total = zero()
   for (const b of buckets) {
     if (device && b.device !== device) continue
+    if (provider && b.provider !== provider) continue
     const ms = Date.parse(b.h + ':00:00Z')
     if (ms < fromMs || ms >= toMs) continue
     const p = tz.parts(ms)

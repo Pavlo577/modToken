@@ -15,6 +15,8 @@ export interface Bucket extends Counts {
   device: string
   model: string
   sub: number
+  /** which agent: claude, codex, gemini ... */
+  provider: string
 }
 
 /** One turn: GET /api/admin/turns */
@@ -29,6 +31,7 @@ export interface TurnRow {
   cache_creation: number
   duration_ms: number
   sub: number
+  provider: string
 }
 
 /** One session: GET /api/admin/sessions */
@@ -38,6 +41,7 @@ export interface SessionRow extends Counts {
   first_ts: string
   last_ts: string
   model: string | null
+  provider: string
 }
 
 /** One reading of a subscription window: GET /api/admin/limits */
@@ -47,6 +51,7 @@ export interface LimitRow {
   kind: string // 'five_hour' | 'seven_day'
   percent: number
   resets_at: string | null
+  provider: string
 }
 
 export interface PriceEntry {
@@ -71,6 +76,8 @@ export interface DeviceRow {
   last_seen: string | null
   /** 'subscription' if the device ever reported plan limits, else we cannot tell. */
   billing: 'subscription' | 'unknown'
+  /** agents that sent turns from this device */
+  providers: string[]
 }
 
 /** Sums plus the estimated cost, per day / hour / model / device. */

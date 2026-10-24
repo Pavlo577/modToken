@@ -85,6 +85,7 @@ export function renderActivity(agg: S.Aggregate): void {
       const acc = Array.from({ length: 12 }, () => Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0, by: new Map<string, number>() })))
       for (const t of all) {
         if (state.device && t.device !== state.device) continue
+        if (state.provider && t.provider !== state.provider) continue
         const p = tz.parts(Date.parse(t.ts)), a = acc[Math.floor(p.min / 5)][p.h]
         a.output += t.output; a.input += S.freshInput(t); a.turns++
         a.by.set(t.device, (a.by.get(t.device) ?? 0) + t.output)

@@ -3,7 +3,7 @@ import * as S from '../lib/stats.ts'
 import { barChart } from '../charts/bar.ts'
 import { COLORS } from '../charts/base.ts'
 import { lineChart } from '../charts/line.ts'
-import { PALETTE } from '../core/palette.ts'
+import { PALETTE, providerLabel } from '../core/palette.ts'
 import { rangeTitle } from '../core/range.ts'
 import { state } from '../core/state.ts'
 import { get, need, q, store } from '../core/store.ts'
@@ -23,9 +23,16 @@ const agoText = (ms: number): string => {
   return m < 2 ? 'щойно' : m < 60 ? `${m} хв тому` : m < 1440 ? `${Math.round(m / 60)} год тому` : `${Math.round(m / 1440)} дн тому`
 }
 
+/** Limits are shown for one agent at a time: the chosen one, else Claude, else the first that reports any. */
+const limitProvider = (limits: { provider: string }[]): string => state.provider || (limits.length && !limits.some(l => l.provider === 'claude') ? limits[0].provider : 'claude')
+
 export function renderLimits(): void {
   const d = need()
-  const rows = d.limits.filter(l => !state.device || l.device === state.device)
+  const lp = limitProvider(d.limits)
+  const limits = d.limits.filter(l => l.provider === lp)
+  const rows = limits.filter(l => !state.device || l.device === state.device)
+  const others = [...new Set(d.limits.map(l => l.provider))].filter(p => p !== lp)
+  $('limits-sub').textContent = `${providerLabel(lp)}: дані з останнього виміру на пристроях із підпискою` + (!state.provider && others.length ? `. Інші агенти (${others.map(providerLabel).join(', ')}): обери їх зверху` : '')
   const latest = S.latestLimits(rows)
   const kinds = ([['five_hour', 'Поточна сесія', '5 годин'], ['seven_day', 'Тиждень', '7 днів']] as const).filter(([k]) => latest[k])
   if (!kinds.length) {
@@ -66,11 +73,11 @@ export function renderLimits(): void {
 
   // efficiency: what each past week cost per 1% of the limit (account-wide)
   // only devices that reported limits count: others (cloud credits, API key) do not draw on the subscription
-  const subDevices = new Set(d.limits.map(l => l.device))
+  const subDevices = new Set(limits.map(l => l.device))
   // the last ten weeks of usage are fetched on their own, so this does not depend on the period shown
   const recent = tz.startOfDay(S.addDays(d.r.today, -70))
   void get<Bucket[]>('/buckets?' + q(recent, Date.now() + 3_600_000)).then(buckets => {
-  const wins = S.efficiency(S.weeklyWindows(d.limits).filter(w => w.peak > 0).slice(-8), buckets.filter(b => subDevices.has(b.device)), store.prices)
+  const wins = S.efficiency(S.weeklyWindows(limits).filter(w => w.peak > 0).slice(-8), buckets.filter(b => b.provider === lp && subDevices.has(b.device)), store.prices)
   const maxTok = Math.max(1, ...wins.map(w => w.tokensPerPct ?? 0))
   $('efficiency').replaceChildren(...(wins.length ? wins.reverse().map(w => el('div', { class: 'hrow', style: 'grid-template-columns:minmax(90px,130px) 1fr auto;margin-bottom:12px;--c:var(--in)' },
     el('span', { class: 'name', title: w.reset ? 'Ліміт скинуто вручну до кінця тижня' : '' }, `${dayLabel(tz.parts(w.start + 3_600_000).day)} – ${dayLabel(tz.parts(w.end - 3_600_000).day)}${w.reset ? ' · скинуто' : ''}`),
@@ -92,6 +99,7 @@ export function renderCost(agg: S.Aggregate): void {
   const perModelDay = new Map<string, number>()
   for (const b of d.buckets) {
     if (state.device && b.device !== state.device) continue
+    if (state.provider && b.provider !== state.provider) continue
     const ms = Date.parse(b.h + ':00:00Z')
     if (ms < d.r.from || ms >= d.r.to) continue
     const key = `${tz.parts(ms).day}|${b.model}`

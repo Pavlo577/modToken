@@ -1,6 +1,6 @@
 // Endpoints that a device calls with its own token: live turns (and limits), and the old-history import.
 import type { Env } from './env.ts'
-import { INGEST_SQL, MAX_ROWS, eventStmt } from './events.ts'
+import { INGEST_SQL, MAX_ROWS, eventStmt, providerOf } from './events.ts'
 import { json, sha256, str, text } from './util.ts'
 
 /** Old history for a device: only turns from before it was linked (later ones are collected live). */
@@ -56,17 +56,18 @@ export async function ingest(req: Request, env: Env): Promise<Response> {
   for (const l of (Array.isArray(limits) ? limits : []).slice(0, 8) as Record<string, unknown>[]) {
     const kind = str(l.kind, 30)
     const pct = Number(l.percentUsed)
-    if (!/^[a-z_]+$/.test(kind) || !Number.isFinite(pct)) continue
+    const provider = providerOf(l.provider)
+    if (!/^[a-z_]+$/.test(kind) || !Number.isFinite(pct) || !provider) continue
     const resets = l.resetsAt ? new Date(str(l.resetsAt)) : null
     const resetsAt = resets && !Number.isNaN(resets.getTime()) ? resets.toISOString() : ''
     stmts.push(
       env.DB.prepare(
-        `INSERT INTO plan_limits (user_email, device_id, ts, kind, percent_used, resets_at)
-         SELECT ?1, ?2, ?3, ?4, ?5, NULLIF(?6, '')
+        `INSERT INTO plan_limits (user_email, device_id, ts, kind, percent_used, resets_at, provider)
+         SELECT ?1, ?2, ?3, ?4, ?5, NULLIF(?6, ''), ?7
          WHERE NOT EXISTS (
-           SELECT 1 FROM plan_limits WHERE id = (SELECT MAX(id) FROM plan_limits WHERE device_id = ?2 AND kind = ?4)
+           SELECT 1 FROM plan_limits WHERE id = (SELECT MAX(id) FROM plan_limits WHERE device_id = ?2 AND kind = ?4 AND provider = ?7)
              AND percent_used = ?5 AND IFNULL(resets_at, '') = ?6)`,
-      ).bind(dev.user_email, dev.id, now, kind, Math.min(1000, Math.max(0, pct)), resetsAt),
+      ).bind(dev.user_email, dev.id, now, kind, Math.min(1000, Math.max(0, pct)), resetsAt, provider),
     )
   }
   stmts.push(env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(now, dev.id))

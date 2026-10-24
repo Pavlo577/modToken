@@ -15,3 +15,13 @@ export const rememberDevices = (names: string[]): void => {
 }
 
 export const devColor = (name: string): string => PALETTE[Math.max(0, seenDevices.indexOf(name)) % PALETTE.length]
+
+const PROVIDERS: Record<string, { label: string; color: string }> = {
+  claude: { label: 'Claude', color: '#ff7a1a' },
+  codex: { label: 'Codex', color: '#35c98c' },
+  gemini: { label: 'Gemini', color: '#3d8bff' },
+  mistral: { label: 'Mistral', color: '#ffc24a' },
+  opencode: { label: 'OpenCode', color: '#9b7bff' },
+}
+export const providerLabel = (p: string): string => PROVIDERS[p]?.label ?? p
+export const providerColor = (p: string): string => PROVIDERS[p]?.color ?? '#6f655c'

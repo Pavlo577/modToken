@@ -1,13 +1,14 @@
 // The controls bar and the tab strip: reflect the state in the page and react to clicks.
 import * as S from '../lib/stats.ts'
 import { actions } from '../core/actions.ts'
+import { providerLabel } from '../core/palette.ts'
 import { load } from '../core/load.ts'
 import { currentRange } from '../core/range.ts'
 import { IO_NEXT, asTab, persist, state } from '../core/state.ts'
 import type { IoMode, Tab, View } from '../core/state.ts'
 import { aggregate } from '../core/store.ts'
 import { lastOfMonth, tz } from '../core/time.ts'
-import { $ } from '../lib/dom.ts'
+import { $, el } from '../lib/dom.ts'
 import { renderActivity } from '../tabs/activity.ts'
 import { loadDevices } from '../tabs/devices.ts'
 import { dropdown } from './dropdown.ts'
@@ -103,6 +104,13 @@ export function initControls(): void {
   $('cache-on').onclick = () => {
     if (state.view === 'cal') return
     state.metric = state.metric === 'all' ? 'io' : 'all'; persist(); syncControls(); render()
+  }
+  // which agent to show: only when the data comes from more than one
+  const providerBox = $('provider')
+  providerBox.addEventListener('click', e => { const b = clicked(e); if (!b) return; state.provider = b.dataset.p ?? ''; persist(); press(providerBox, 'p', state.provider); render() })
+  actions.setProviders = names => {
+    providerBox.classList.toggle('hide', names.length < 2)
+    providerBox.replaceChildren(...['', ...names].map(n => el('button', { 'data-p': n, 'aria-pressed': String(n === state.provider) }, n ? providerLabel(n) : 'Усі агенти')))
   }
   actions.render = render
   actions.syncControls = syncControls

@@ -10,10 +10,10 @@ const MAX_OPEN_CODES = 5
 export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
   if (path === '/devices' && req.method === 'GET') {
     const { results } = await env.DB.prepare(
-      'SELECT id, name, revoked, created_at, last_seen, EXISTS(SELECT 1 FROM plan_limits p WHERE p.device_id = devices.id) AS has_limits FROM devices WHERE user_email = ? ORDER BY created_at DESC',
+      'SELECT id, name, revoked, created_at, last_seen, EXISTS(SELECT 1 FROM plan_limits p WHERE p.device_id = devices.id) AS has_limits, (SELECT GROUP_CONCAT(DISTINCT t.provider) FROM token_events t WHERE t.device_id = devices.id) AS providers FROM devices WHERE user_email = ? ORDER BY created_at DESC',
     ).bind(email).all()
     // Billing is told apart only by whether the device ever reported subscription limits.
-    return json(results.map(({ has_limits, ...d }) => ({ ...d, billing: has_limits ? 'subscription' : 'unknown' })))
+    return json(results.map(({ has_limits, providers, ...d }) => ({ ...d, billing: has_limits ? 'subscription' : 'unknown', providers: providers ? String(providers).split(',') : [] })))
   }
 
   const dev = path.match(/^\/devices\/([0-9a-f-]{36})$/)

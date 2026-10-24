@@ -49,6 +49,27 @@ for (const dev of devices) {
       }
     }
   }
+  // some Codex use on the two work machines (the collector sends input without the cached part)
+  if (dev.name !== 'cloud') {
+    for (let d = 60; d >= 0; d--) {
+      if (rnd() > 0.45) continue
+      const day = new Date(now - d * 86_400_000)
+      const sid = `codex-${dev.name}-${d}`
+      let hour = pick(dev.workHours), minute = Math.floor(rnd() * 50)
+      for (let t = 0, n = 2 + Math.floor(rnd() * 10); t < n; t++) {
+        minute += 2 + Math.floor(rnd() * 12)
+        if (minute >= 60) { minute -= 60; hour = Math.min(23, hour + 1) }
+        const ts = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute, Math.floor(rnd() * 60)))
+        if (ts.getTime() > now - 600_000) continue
+        rows.push({
+          provider: 'codex', turn_id: `codex:${sid}:${t}`, session_id: sid, ts: ts.toISOString(), model: rnd() < 0.8 ? 'gpt-5-codex' : 'gpt-5',
+          input_tokens: Math.floor(2_000 + rnd() * 30_000), output_tokens: Math.floor(300 + rnd() * 3_500),
+          cache_read_tokens: Math.floor(20_000 + rnd() * 250_000), cache_creation_tokens: 0,
+          duration_ms: Math.floor(6_000 + rnd() * 90_000),
+        })
+      }
+    }
+  }
   for (let i = 0; i < rows.length; i += 400) await post('/api/ingest', rows.slice(i, i + 400), { 'x-device-token': token })
   tokens.push({ dev, token })
   console.log(`${dev.name}: ${rows.length} turns`)
@@ -63,5 +84,9 @@ while (nextWed.getUTCDay() !== 3 || nextWed.getTime() <= now) nextWed.setUTCDate
 await post('/api/ingest', { limits: [
   { kind: 'seven_day', percentUsed: 41.5, resetsAt: nextWed.toISOString() },
   { kind: 'five_hour', percentUsed: 62.5, resetsAt: new Date(now + 2 * 3_600_000).toISOString() },
+] }, { 'x-device-token': token })
+await post('/api/ingest', { limits: [
+  { provider: 'codex', kind: 'seven_day', percentUsed: 22, resetsAt: nextWed.toISOString() },
+  { provider: 'codex', kind: 'five_hour', percentUsed: 35, resetsAt: new Date(now + 3 * 3_600_000).toISOString() },
 ] }, { 'x-device-token': token })
 console.log('limits sent')

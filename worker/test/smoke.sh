@@ -67,6 +67,14 @@ check "bad limit kind ignored"     "$(code_of -XPOST $B/api/ingest -H "x-device-
 check "buckets: hourly sums"       "$(curl -s "$B/api/admin/buckets" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(int(len(d)>0 and all(len(r["h"])==13 and r["device"] for r in d)))')" 1
 check "turns: raw rows"            "$(curl -s "$B/api/admin/turns" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(int(len(d)>0 and "session_id" in d[0]))')" 1
 check "sessions: per session"      "$(curl -s "$B/api/admin/sessions" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(int(len(d)>0 and "first_ts" in d[0] and d[0]["model"]!=None))')" 1
+CX='[{"session_id":"cx1","turn_id":"codex:th1:1","provider":"codex","ts":"2026-10-22T11:00:00Z","model":"gpt-5","input_tokens":50,"output_tokens":8,"cache_read_tokens":20}]'
+check "codex turn accepted"         "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$CX")" 204
+check "unknown provider rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d '[{"turn_id":"z","provider":"nope","ts":"2026-10-22T11:00:00Z"}]')" 400
+check "provider in buckets"         "$(curl -s "$B/api/admin/buckets" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(sorted({r["provider"] for r in d}))')" "['claude', 'codex']"
+check "provider in sessions"        "$(curl -s "$B/api/admin/sessions" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(sorted({r["provider"] for r in d}))')" "['claude', 'codex']"
+code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d '{"limits":[{"provider":"codex","kind":"seven_day","percentUsed":14,"resetsAt":"2099-01-01T00:00:00Z"}]}' >/dev/null
+check "limits kept per provider"    "$(curl -s "$B/api/admin/limits" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(sorted({r["provider"] for r in d}))')" "['claude', 'codex']"
+check "device lists its providers"  "$(curl -s "$B/api/admin/devices" | ID=$ID python3 -c 'import sys,json,os; d=[x for x in json.load(sys.stdin) if x["id"]==os.environ["ID"]]; print(sorted(d[0]["providers"]))')" "['claude', 'codex']"
 check "range can be narrowed"      "$(curl -s "$B/api/admin/buckets?from=2001-01-01T00:00:00Z&to=2001-01-02T00:00:00Z")" "[]"
 check "revoke device"            "$(code_of -XDELETE $B/api/admin/devices/$ID)" 204
 check "revoked token rejected"   "$(code_of -XPOST $B/api/ingest -H "x-device-token: $TOKEN" -d "$ROW")" 401

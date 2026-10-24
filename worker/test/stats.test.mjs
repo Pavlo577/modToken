@@ -149,3 +149,11 @@ test('limit reset by hand: window ends early, the next starts at the reset, fore
   const f = forecast(l, now)
   assert.equal(Math.round((f.fullAt - Date.parse('2026-10-22T12:00:00Z')) / 3_600_000), 600)
 })
+
+test('aggregate can keep one provider (rows without one count as everything)', () => {
+  const buckets = [bk('2026-10-24T10', { provider: 'claude' }), bk('2026-10-24T11', { provider: 'codex', output: 7, model: 'gpt-5-codex' }), bk('2026-10-24T12', { provider: 'codex', output: 5 })]
+  assert.equal(aggregate(buckets, kyiv, { prices }).total.output, 112)
+  assert.equal(aggregate(buckets, kyiv, { prices, provider: 'codex' }).total.output, 12)
+  assert.equal(aggregate(buckets, kyiv, { prices, provider: 'claude' }).total.output, 100)
+  assert.equal(aggregate(buckets, kyiv, { prices, provider: 'gemini' }).total.output, 0)
+})

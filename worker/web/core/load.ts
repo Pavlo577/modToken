@@ -30,6 +30,10 @@ export async function load(): Promise<void> {
     rememberDevices(names)
     if (state.device && !names.includes(state.device)) state.device = ''
     actions.setDevices(names)
+    const providers = [...new Set(buckets.map(b => b.provider || 'claude'))].sort()
+    store.providers = providers
+    if (state.provider && !providers.includes(state.provider)) state.provider = ''
+    actions.setProviders(providers)
     actions.render()
   } catch (e) {
     clearTimeout(slow)

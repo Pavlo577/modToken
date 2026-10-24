@@ -58,7 +58,7 @@ export function renderMain(agg: S.Aggregate): void {
     const to = r.today, from = S.addDays(to, -364)
     void get<Bucket[]>('/buckets?' + q(tz.startOfDay(from), tz.startOfDay(S.addDays(to, 1)))).then(buckets => {
       if (state.view !== 'cal') return
-      const a = S.aggregate(buckets, tz, { device: state.device || null, prices: store.prices })
+      const a = S.aggregate(buckets, tz, { device: state.device || null, provider: state.provider || null, prices: store.prices })
       if (state.ioHidden) { empty($('main-chart'), 'Увімкни вхідні та/або вихідні токени (кнопка з оком)', 190); return }
       const picks = ioDefs() // the cache is not shown here
       const days = new Map([...a.days].map(([d, t]) => [d, picks.reduce((sum, [, , pick]) => sum + pick(t), 0)]))
@@ -112,6 +112,7 @@ export async function renderDay(): Promise<void> {
   }
   if ((state.day || need().r.today) !== day) return
   if (state.device) turns = turns.filter(t => t.device === state.device)
+  if (state.provider) turns = turns.filter(t => t.provider === state.provider)
   const hrs = Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0 }))
   let out = 0, inp = 0, ms = 0
   for (const t of turns) {

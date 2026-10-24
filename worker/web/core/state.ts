@@ -23,6 +23,8 @@ interface State {
   from: string
   to: string
   device: string
+  /** Only this agent (claude, codex ...); '' = all of them. */
+  provider: string
   view: View
   metric: Metric
   io: IoMode
@@ -45,7 +47,7 @@ export const asTab = (v: unknown): Tab | null => (TABS as unknown[]).includes(v)
 // the tab survives a reload: the address (#analytics) wins, then the last one used
 const startTab: Tab = asTab(location.hash.slice(1)) ?? asTab((saved as { tab?: unknown }).tab) ?? 'overview'
 
-export const state: State = { range: 'month', from: '', to: '', device: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: startTab }
+export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: startTab }
 
 state.range = OLD_RANGES[state.range] ?? state.range
 
@@ -56,5 +58,5 @@ if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 
 export const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, tab: state.tab })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, tab: state.tab })) } catch { /* ignore */ }
 }
