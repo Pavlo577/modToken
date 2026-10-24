@@ -35,11 +35,7 @@ test('hooks.json: ours is added as a new group next to other hooks, nothing else
   assert.equal(isOurHook('"D:\\moved\\token-tracker-windows-x64.exe" hook-stop', WIN), true, 'recognised even when the program was moved')
 })
 
-// ---- installing into a real (temporary) Codex home, and what the hook does when Codex runs it
-const dir = mkdtempSync(join(tmpdir(), 'hk-'))
-mkdirSync(join(dir, 'codex'), { recursive: true })
-process.env.CODEX_HOME = join(dir, 'codex'); process.env.TOKEN_TRACKER_HOME = join(dir, 'tt')
-const codex = (await import('../../collectors/agents/codex.mjs')).default
+import { codex, dir } from './codex-home.mjs'
 const file = join(dir, 'codex', 'hooks.json')
 
 test('install / remove on disk: a copy is kept, other hooks stay, an invalid file is never touched', () => {

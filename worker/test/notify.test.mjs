@@ -22,11 +22,7 @@ test('notify: reads a plain array, a multi-line one with comments and Windows pa
 const THEIRS = 'C:\\\\Users\\\\IOOOI\\\\Tools\\\\other-notifier.exe'
 const config = `model = "gpt-5.6-sol"\n\nnotify = [ "${THEIRS}", "turn-ended" ]\n\n[projects.x]\ntrust = "trusted"\n`
 
-// one temporary home for the collector (it reads CODEX_HOME / TOKEN_TRACKER_HOME when it is loaded)
-const dir = mkdtempSync(join(tmpdir(), 'nt-'))
-mkdirSync(join(dir, 'codex'), { recursive: true })
-process.env.CODEX_HOME = join(dir, 'codex'); process.env.TOKEN_TRACKER_HOME = join(dir, 'tt')
-const codex = (await import('../../collectors/agents/codex.mjs')).default
+import { codex, dir } from './codex-home.mjs'
 const file = join(dir, 'codex', 'config.toml')
 
 test('notify: another program\'s notify is chained, kept, and restored byte for byte', () => {
