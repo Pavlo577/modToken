@@ -97,7 +97,12 @@ const adapterFor = (service: string) => ADAPTERS[service] ?? (service.startsWith
 export const MAX_RECORDS = 5000
 
 /** The calls in an OTLP logs payload and how many records were not one (other events, other services, empty requests). */
-export interface Seen { service: string; event: string; keys: string; n: number }
+export interface Seen { service: string; event: string; keys: string; lens: string; n: number }
+
+/** Attributes that may carry the text of the conversation. Only their LENGTH (and whether they look like a redaction placeholder) is ever reported. */
+const CONTENT_KEYS = ['prompt', 'prompt_text', 'response', 'tool_input', 'tool_parameters', 'tool_result', 'tool_output', 'error', 'body']
+const lensOf = (a: Attrs): string =>
+  CONTENT_KEYS.flatMap(k => { const v = a.get(k); return typeof v === 'string' ? [`${k}=${v.length}${/^\W*redact/i.test(v) ? 'R' : ''}`] : [] }).join(',')
 
 /** What the exporter sent, by names only: the service, the event and the attribute NAMES (never a value), counted. For finding out why nothing was recognised. */
 const NAME = (v: string) => v.replace(/[^\w.:-]/g, '').slice(0, 80)
@@ -124,7 +129,7 @@ export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: 
           const key = `${NAME(service)}|${event}`
           const hit = names.get(key)
           if (hit) hit.n++
-          else names.set(key, { service: NAME(service), event, keys: [...a.keys()].map(NAME).sort().join(',').slice(0, 600), n: 1 })
+          else names.set(key, { service: NAME(service), event, keys: [...a.keys()].map(NAME).sort().join(',').slice(0, 600), lens: lensOf(a), n: 1 })
         }
       }
     }

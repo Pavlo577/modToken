@@ -53,7 +53,7 @@ test('otlp: a request that cost nothing, negative or fractional numbers, other s
   const odd = record([]); odd.attributes = odd.attributes.map(a => (a.key === 'output_tokens' ? { key: 'output_tokens', value: { intValue: '-5' } } : a.key === 'duration_ms' ? { key: 'duration_ms', value: { doubleValue: 12.9 } } : a))
   const [c] = parseOtlpLogs(payload([odd])).calls
   assert.deepEqual([c.output_tokens, c.duration_ms], [0, 12])
-  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
+  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', lens: '', keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
   assert.deepEqual(parseOtlpLogs({ resourceLogs: [] }), { calls: [], ignored: 0, seen: [] })
   for (const bad of [null, 5, 'x', {}, { resourceLogs: 'no' }]) assert.equal(parseOtlpLogs(bad), null)
 })
@@ -84,4 +84,11 @@ test('otlp: the Claude app (service claude-code-desktop) is Claude Code too; the
   assert.equal(JSON.stringify(calls).includes('SECRET'), false)
   assert.equal(parseOtlpLogs(payload([record()], 'claude-codex-fake')).calls.length, 1, 'any claude-code* name')
   assert.equal(parseOtlpLogs(payload([record()], 'codex')).calls.length, 0)
+})
+
+test('otlp: for conversation text only the length is reported, and whether it looks redacted', () => {
+  const rec = { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'claude_code.user_prompt'), s('prompt', 'SECRET PROMPT'), s('prompt_text', '[REDACTED]'), s('response', '')] }
+  const { seen } = parseOtlpLogs(payload([rec]))
+  assert.equal(seen[0].lens, 'prompt=13,prompt_text=10R,response=0')
+  assert.equal(JSON.stringify(seen).includes('SECRET'), false)
 })
