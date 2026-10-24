@@ -2,28 +2,45 @@
 
 A tracker of AI-agent token usage from many devices, in one place: a Cloudflare Worker + D1 database + a static dashboard (`worker/`), a mod for Claude Code (`hooks/`, `cloud/`, `import-logs.mjs`), and a collector program for the other agents (`collectors/`, one module per agent). Site: https://track.brolafkodev.pp.ua. User-facing text is Ukrainian, code, comments and docs are English.
 
-## Branches: one branch per agent, each agent works only in its own
+## Branches and flow: agents work in their own branch and hand over through `claude`
 | Branch | Who | Works on (and only on) |
 |---|---|---|
-| `claude` | Claude Code | `worker/**` (Worker, D1 schema, dashboard), `hooks/**`, `cloud/**`, `import-logs.mjs`, and the shared collector layer below |
+| `claude` | Claude Code, the **integrator** | `worker/**` (Worker, D1 schema, dashboard), `hooks/**`, `cloud/**`, `import-logs.mjs`, and the shared collector layer below. Receives the other agents' pull requests |
 | `codex` | Codex | everything Codex-specific: `collectors/agents/codex.mjs`, `collectors/lib/{toml-notify,notify-chain,hooks-json}.mjs`, `worker/public/admin/parse-codex.mjs`, `worker/test/{codex,notify,hook}.test.mjs`, `worker/test/codex-collector.sh`, `collectors/AGENTS.md` (its brief) |
 | `mistral`, `gemini`, ... | one agent each, created when that agent starts | its own `collectors/agents/<agent>.mjs`, its helpers `collectors/lib/<agent>-*.mjs`, its tests `worker/test/<agent>*.test.mjs`. **Each agent implements its own way of collecting tokens**: a different file format, OpenTelemetry, an API; nothing forces it to look like Codex's |
-| `dev` | integration | branches are merged here (pull request, or a fast-forward when nothing else changed) |
+| `dev` | integration | **only Claude merges here**, from `claude`, when `claude` is green |
 | `main` | live | goes live (Cloudflare builds and deploys it); **only the user says when** |
 
+The flow, always in this direction:
+```
+<agent branch> --pull request--> claude --(Claude, when green)--> dev --(the user says "push to main")--> main
+```
+1. An agent creates its branch from `dev`, commits and pushes **only its own branch**.
+2. When a piece of work is ready it opens a **pull request into `claude`** (never into `dev` or `main`). It never merges its own pull request.
+3. Claude reviews it (checklist below), merges it into `claude`, runs the tests, and brings `claude` into `dev`. The agent then rebases/merges `dev` into its branch before the next piece.
+4. `main` is the user's decision alone.
+
 Rules (for every agent, Claude included):
-- Create your branch from `dev`, commit only there, push only your own branch, merge into `dev` through a pull request. Never push to `main`, never push to another agent's branch.
-- Stay inside your area. If you need a change outside it, describe it in your pull request and stop; the owner makes it. In particular a new agent asks Claude for its label and colour in the dashboard (`worker/web/core/palette.ts`) and for any Worker/schema change.
-- **Shared collector layer (owner: `claude`; a change from another branch is a request, not an edit)**: `collectors/token-tracker.mjs`, `collectors/wizard.mjs`, `collectors/lib/{core,contract,notify-log}.mjs`, `collectors/DATA.md`, `.github/workflows/collector-release.yml`. This layer defines what may be sent and how the program starts, links and reports; every agent plugs into it. The one edit every agent is allowed to make there is registering itself in `collectors/agents/index.mjs` (one import and one array entry).
-- **The data contract is the same for every agent**: `collectors/DATA.md` and `collectors/lib/contract.mjs` say exactly which fields may leave a machine. A new agent returns rows in that shape; if it needs a field the contract lacks, that is a request to the owner of the shared layer and of the Worker, never a workaround.
+- Stay inside your own area (table above). Never push to `main`, to `dev`, or to another agent's branch (Claude, as the integrator, is the only one who writes to `dev`).
+- **Do not edit the main (shared) files; write a request instead.** The main files are everything outside your area: the Worker and dashboard (`worker/**` except your own parser/tests), the Claude mod, and the shared collector layer. If your work needs a change there (a new field in the contract, a dashboard label and colour for your agent, a schema column, a different behaviour of the program, a price), do all of this:
+  - add an entry to **your own** file `requests/<agent>.md` (format in `requests/README.md`): which file, what exactly must change, why, and a suggested patch if you have one;
+  - repeat it in the pull request description under the heading `Requests for the main files`;
+  - where the change would go, you may leave a one-line comment `// REQUEST(<agent>): <what and why>` **in your own files** next to the code that depends on it, but not in the main files;
+  - then carry on with the part that does not depend on it. Claude makes the change in `claude` (or answers why not) and the request is marked done.
+- **Shared collector layer (owner: `claude`)**: `collectors/token-tracker.mjs`, `collectors/wizard.mjs`, `collectors/lib/{core,contract,notify-log}.mjs`, `collectors/DATA.md`, `.github/workflows/collector-release.yml`. This layer defines what may be sent and how the program starts, links and reports; every agent plugs into it. The one edit every agent may make there is registering itself in `collectors/agents/index.mjs` (one import and one array entry).
+- **The data contract is the same for every agent**: `collectors/DATA.md` and `collectors/lib/contract.mjs` say exactly which fields may leave a machine. A new agent returns rows in that shape; a missing field is a request, never a workaround.
 - Shared file: `worker/public/admin/parse-codex.mjs` is Codex's session parser, also used by the dashboard's browser import. Codex owns it; a change needs `worker/test/codex.test.mjs` green and a pull request that says what changed in the counting.
 - Never commit secrets, device tokens, real session files or anything with prompt text. Test fixtures are synthetic.
+
+### What Claude checks in a pull request
+Only its own area was touched (plus the one line in `agents/index.mjs`); the data contract is respected and no new field leaves the machine; the privacy tests are there and green (`npm test`, `bun test`, `bun run typecheck`, the end-to-end `codex-collector.sh`-style test for the agent); the requests are written in `requests/<agent>.md` and in the description; no secrets or real session files.
 
 ### Adding an agent (checklist)
 1. `git checkout -b <agent> dev`; read `collectors/DATA.md` and `collectors/agents/codex.mjs` as the example of the shape (`id, title, home, detect, sync, status`), not as a template to copy.
 2. Write `collectors/agents/<agent>.mjs` (+ `collectors/lib/<agent>-*.mjs` if needed) returning `TurnRow`s and, if the agent reports them, `LimitReading`s, and add it to `collectors/agents/index.mjs`.
 3. Tests in `worker/test/<agent>*.test.mjs` with synthetic fixtures, including one that plants a secret word in the fixture and checks that it never reaches the request body, the state files or the log.
-4. Ask Claude for the dashboard label/colour and prices (`worker/public/admin/prices.json`) of the agent's models.
+4. Write to `requests/<agent>.md`: the dashboard label and colour of the agent, prices of its models (`worker/public/admin/prices.json`), and anything else the main files need.
+5. Open a pull request into `claude`.
 
 ## Privacy (hard rules, not preferences)
 Only numbers leave a machine: token counts, timestamps, model names, ids, limits. Never read into a result, send, print or log: prompts, answers, tool output, `cwd`, file contents. The JSON that Codex passes to `notify` and to hooks holds the prompt and the answer: it may be parsed in memory for yes/no flags, never stored. The diagnostic log (`~/.token-tracker/notify.log`) holds service fields only; tests check that no secret word reaches it.
