@@ -51,3 +51,12 @@ CREATE TABLE IF NOT EXISTS plan_limits (
   provider TEXT NOT NULL DEFAULT 'claude'
 );
 CREATE INDEX IF NOT EXISTS limits_user_ts_idx ON plan_limits (user_email, ts);
+
+-- OTLP: the model calls already counted (so a call sent twice is not added twice). Old rows are dropped after 14 days.
+CREATE TABLE IF NOT EXISTS otlp_calls (
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  call_id TEXT NOT NULL,
+  seen_at TEXT NOT NULL,
+  PRIMARY KEY (device_id, call_id)
+);
+CREATE INDEX IF NOT EXISTS otlp_calls_seen_idx ON otlp_calls (seen_at);
