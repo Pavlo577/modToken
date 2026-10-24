@@ -2,6 +2,7 @@
 import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { MAX_LIMITS, sanitizeLimit, sanitizeRow } from './contract.mjs'
 
 export const DEFAULT_URL = 'https://track.brolafkodev.pp.ua'
 export const home = process.env.TOKEN_TRACKER_HOME || join(homedir(), '.token-tracker')
@@ -38,7 +39,10 @@ export async function link(code, urlOption) {
 
 export const linked = () => Boolean(readJson(configFile, null)?.token)
 
+/** The only way data leaves: rows and limits are cut to the fields of lib/contract.mjs first. */
 export async function post(cfg, body) {
+  body = { rows: (body.rows ?? []).map(sanitizeRow).filter(Boolean), ...(body.limits ? { limits: body.limits.map(sanitizeLimit).filter(Boolean).slice(0, MAX_LIMITS) } : {}) }
+  if (!body.rows.length && !body.limits?.length) return // nothing valid is left: the Worker refuses an empty call
   const res = await fetch(`${cfg.url}/api/ingest`, { method: 'POST', headers: { 'x-device-token': cfg.token, 'content-type': 'application/json' }, body: JSON.stringify(body) })
   if (res.status === 401) throw new Error('the device token was rejected (revoked?): link again with a new code')
   if (!res.ok) throw new Error(`site answered HTTP ${res.status}`)

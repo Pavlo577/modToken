@@ -5,7 +5,7 @@ A tracker of AI-agent token usage from many devices, in one place: a Cloudflare 
 ## Ownership (to keep two people's work apart)
 | Area | Owner |
 |---|---|
-| `collectors/**`, `.github/workflows/collector-release.yml`, `worker/test/{codex-home,notify,hook}.test.mjs`, `worker/test/codex-collector.sh`, the collector part of `README.md` | **Codex** (this file's reader): see `collectors/AGENTS.md` |
+| `collectors/**`, `.github/workflows/collector-release.yml`, `worker/test/{codex-home,notify,hook}.test.mjs`, `worker/test/codex-collector.sh`, the collector part of `README.md` | **Codex** (this file's reader): see `collectors/AGENTS.md`, the data it sends: `collectors/DATA.md` |
 | `worker/**` (Worker, D1 schema, dashboard), `hooks/**`, `cloud/**`, `import-logs.mjs` | Claude Code + the user |
 
 Rules:

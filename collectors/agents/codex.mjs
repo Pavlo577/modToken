@@ -6,11 +6,11 @@ import { basename, join, relative, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createCodexParser } from '../../worker/public/admin/parse-codex.mjs'
 import { configFile, home, lock, post, readJson, self, writeJson } from '../lib/core.mjs'
+import { BATCH } from '../lib/contract.mjs'
 import { chainArgv, directOurs, isOurs as ours, stripOurs } from '../lib/notify-chain.mjs'
 import { hasOurHook, hookCommand, isEmptyDoc, withHook, withoutHook } from '../lib/hooks-json.mjs'
 import { findNotify, formatNotify } from '../lib/toml-notify.mjs'
 
-const BATCH = 300
 const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')
 const configToml = join(codexHome, 'config.toml')
 const hooksJson = join(codexHome, 'hooks.json')

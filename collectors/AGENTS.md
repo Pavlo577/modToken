@@ -12,6 +12,7 @@ Double click → a guide (`wizard.mjs`, Ukrainian): first run links the device w
 - The parser lives in `../worker/public/admin/parse-codex.mjs` (shared with the browser import).
 
 ## Contract with the Worker (change only together with the other owner)
+**What exactly is sent, field by field, with examples and the Codex mapping: `collectors/DATA.md`. In code: `lib/contract.mjs` (types + an allow-list that `post()` applies to every row and limit, so an unlisted field can never leave the machine; extend it deliberately, with a test).** Short form:
 - `POST {url}/api/link` body `{"code": "..."}` → `200 {"token","device"}`; `403` wrong/used/expired code. The token is a device token: kept in `~/.token-tracker/config.json` with mode 600, never printed.
 - `POST {url}/api/ingest` header `x-device-token`, body `{"rows":[...], "limits":[...]}` (or just an array of rows). At most 500 rows per call (the collector sends 300), at most 8 limits. `401` = revoked token (tell the user to link again).
 - Row: `provider` (`claude|codex|gemini|mistral|opencode`; missing = claude), `turn_id` (unique per device; Codex: `codex:<thread>:<turn>`), `session_id`, `ts` (ISO), `model`, `input_tokens` (**without** the cached part), `output_tokens` (includes reasoning), `cache_read_tokens`, `cache_creation_tokens`, `duration_ms`, `is_subagent`. A row sent again with larger numbers raises them (MAX), so a growing turn may be resent; equal ones change nothing.
