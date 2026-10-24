@@ -54,14 +54,18 @@ async function showCode(panel: HTMLElement, name: string, provider: string): Pro
     const { code, expires_at } = await api<{ code: string; expires_at: string }>('/codes', { method: 'POST', body: JSON.stringify({ name }) })
     const note = el('div', { class: 'sub' })
     const close = (): void => { clearInterval(panelTimer); panel.replaceChildren(); panel.classList.add('hide') }
+    // The cross also voids the code: a closed panel can no longer show it, so it must not stay valid.
+    const cancel = async (): Promise<void> => {
+      try { await api('/codes/cancel', { method: 'POST', body: JSON.stringify({ code }) }); close() } catch (err) { alert('Не вдалося скасувати код: ' + (err as Error).message) }
+    }
+    const cross = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    cross.setAttribute('viewBox', '0 0 12 12'); cross.setAttribute('width', '12'); cross.setAttribute('height', '12')
+    cross.innerHTML = '<path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>'
     panel.replaceChildren(
-      el('button', { type: 'button', class: 'dev-x', 'aria-label': 'Закрити (код лишається чинним)', title: 'Закрити: код лишається чинним, поки не мине 10 хвилин', onclick: close }, '×'),
+      el('button', { type: 'button', class: 'dev-x', 'aria-label': 'Закрити й скасувати код', title: 'Закрити й зробити код недійсним', onclick: () => void cancel() }, cross),
       el('div', { class: 'sub' }, `${providerLabel(provider)} для «${name}»:`),
       el('div', { class: 'code' }, code), note,
       el('p', { class: 'note', style: 'margin:6px 0 0' }, ...how(code)),
-      el('div', { class: 'dev-cancel' }, el('button', { type: 'button', title: 'Зробити код недійсним', onclick: async () => {
-        try { await api('/codes/cancel', { method: 'POST', body: JSON.stringify({ code }) }); close() } catch (err) { alert('Не вдалося скасувати код: ' + (err as Error).message) }
-      } }, 'Скасувати')),
     )
     const tick = (): void => {
       const left = Math.max(0, Math.round((new Date(expires_at).getTime() - Date.now()) / 1000))
