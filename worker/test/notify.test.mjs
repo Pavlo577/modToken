@@ -75,3 +75,12 @@ test('notify: `notify --then <cmd> ... <json>` starts the old command with its a
   while (!existsSync(out) && Date.now() - t0 < 5000) spawnSync(process.execPath, ['-e', 'setTimeout(()=>{},50)'])
   assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')), ['turn-ended', payload])
 })
+
+test('compiled program is recognised on every system (Windows shows the virtual folder with %7E)', async () => {
+  const { isCompiled } = await import('../../collectors/lib/core.mjs')
+  assert.equal(isCompiled('file:///B:/%7EBUN/root/token-tracker-windows-x64.exe', 'B:\\~BUN\\root\\token-tracker-windows-x64.exe'), true)
+  assert.equal(isCompiled('file:///B:/~BUN/root/token-tracker.exe', undefined), true)
+  assert.equal(isCompiled('file:///$bunfs/root/token-tracker', '/$bunfs/root/token-tracker'), true)
+  assert.equal(isCompiled('file:///home/u/modToken/collectors/lib/core.mjs', '/home/u/modToken/collectors/token-tracker.mjs'), false)
+  assert.equal(isCompiled('file:///C:/repo/collectors/lib/core.mjs', 'C:\\repo\\collectors\\codex.mjs'), false)
+})

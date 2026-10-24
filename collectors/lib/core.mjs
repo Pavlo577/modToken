@@ -12,7 +12,12 @@ export const writeJson = (file, data, mode) => { mkdirSync(home, { recursive: tr
 export const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined }
 
 // Run as a script ("node token-tracker.mjs") or as the single file made by "bun build --compile" (the release program).
-export const compiled = /\$bunfs|~BUN/.test(import.meta.url)
+/**
+ * Is this the single-file program? Its code lives in a virtual folder ("/$bunfs/root/..." on Linux and macOS, "B:/~BUN/root/..."
+ * on Windows, where the url shows the "~" as %7E), and the "script" it was started from is that program, not a .mjs file.
+ */
+export const isCompiled = (url, script) => /\$bunfs|~BUN|%7EBUN/i.test(url) || /\$bunfs|~BUN/i.test(script ?? '') || (Boolean(script) && !/\.[cm]?js$/i.test(script))
+export const compiled = isCompiled(import.meta.url, process.argv[1])
 /** The command that starts this program again, and how to show it to the user. */
 const script = process.argv[1] ? resolve(process.argv[1]) : ''
 export const self = compiled ? [process.execPath] : [process.execPath, script]
