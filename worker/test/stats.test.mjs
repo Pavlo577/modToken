@@ -157,3 +157,13 @@ test('aggregate can keep one provider (rows without one count as everything)', (
   assert.equal(aggregate(buckets, kyiv, { prices, provider: 'claude' }).total.output, 100)
   assert.equal(aggregate(buckets, kyiv, { prices, provider: 'gemini' }).total.output, 0)
 })
+
+test('a price applies to its own model and dated or suffixed ids, not to another version', () => {
+  const p = { updated: '', source: '', note: '', models: [{ match: 'gpt-5', input: 1, output: 2, cache_read: 0, cache_write: 1 }, { match: 'gpt-5-mini', input: 3, output: 4, cache_read: 0, cache_write: 3 }, { match: 'claude-sonnet-5', input: 9, output: 9, cache_read: 0, cache_write: 9 }] }
+  assert.equal(priceFor('gpt-5', p).input, 1)
+  assert.equal(priceFor('gpt-5-2025-08-07', p).input, 1)
+  assert.equal(priceFor('gpt-5-mini-2025-08-07', p).input, 3)
+  assert.equal(priceFor('gpt-5.6-sol', p), null)
+  assert.equal(priceFor('gpt-50', p), null)
+  assert.equal(priceFor('claude-sonnet-5-5-20260101', p).input, 9)
+})

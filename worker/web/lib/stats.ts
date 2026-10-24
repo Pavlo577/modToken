@@ -71,7 +71,9 @@ export const rangeMs = (tz: Tz, fromDay: string, toDay: string): { from: number;
 // ---- prices
 export function priceFor(model: string, prices: Prices | null): PriceEntry | null {
   let best: PriceEntry | null = null
-  for (const p of prices?.models ?? []) if (String(model).startsWith(p.match) && (!best || p.match.length > best.match.length)) best = p
+  const id = String(model)
+  // a prefix must end at the end of the id or at a "-" / "_": "gpt-5" is not the price of "gpt-5.6-sol" or "gpt-50"
+  for (const p of prices?.models ?? []) if (id.startsWith(p.match) && !/^[.\w]/.test(id.slice(p.match.length).replace(/^[-_].*/, '')) && (!best || p.match.length > best.match.length)) best = p
   return best
 }
 
