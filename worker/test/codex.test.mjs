@@ -1,6 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createCodexParser } from '../public/admin/parse-codex.mjs'
+import { dir } from './codex-home.mjs'
+
+const { allowedRollout, rowSignature } = await import('../../collectors/agents/codex.mjs')
 
 const meta = (ts, extra = {}) => JSON.stringify({ timestamp: ts, type: 'session_meta', payload: { id: 'th1', timestamp: ts, cwd: '/p', ...extra } })
 const ctx = (ts, turn, model = 'gpt-5-codex') => JSON.stringify({ timestamp: ts, type: 'turn_context', payload: { turn_id: turn, model, cwd: '/p' } })
@@ -103,7 +108,7 @@ test('turns without ids are told apart by the start-of-turn events', () => {
 })
 
 test('rate limits become five_hour and seven_day readings, the newest wins', () => {
-  const { limits } = run([
+  const { limits, limitsAt } = run([
     meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1'),
     count('2026-10-24T10:00:05Z', u(10, 0, 1), u(10, 0, 1), { primary: { used_percent: 5, window_minutes: 300, resets_at: 1792840000 }, secondary: { used_percent: 9, window_minutes: 10080, resets_at: 1793300000 }, plan_type: 'plus' }),
     count('2026-10-24T10:10:05Z', u(20, 0, 2), u(10, 0, 1), { primary: { used_percent: 57, window_minutes: 300, resets_at: 1792840000 }, secondary: { used_percent: 63, window_minutes: 10080, resets_at: 1793300000 } }),
@@ -111,6 +116,41 @@ test('rate limits become five_hour and seven_day readings, the newest wins', () 
   ])
   assert.deepEqual(limits.map(l => [l.provider, l.kind, l.percentUsed]), [['codex', 'five_hour', 57], ['codex', 'seven_day', 63]])
   assert.equal(limits[0].resetsAt, new Date(1792840000 * 1000).toISOString())
+  assert.equal(limitsAt, Date.parse('2026-10-24T10:10:05Z'))
+})
+
+test('row signature changes when task metadata changes without new tokens', () => {
+  const before = run([
+    meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1'),
+    count('2026-10-24T10:00:05Z', u(10, 0, 1), u(10, 0, 1)),
+  ]).turns[0]
+  const complete = JSON.stringify({ timestamp: '2026-10-24T10:00:06Z', type: 'event_msg', payload: { type: 'task_complete', turn_id: 't1', duration_ms: 12345 } })
+  const after = run([
+    meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1'),
+    count('2026-10-24T10:00:05Z', u(10, 0, 1), u(10, 0, 1)), complete,
+  ]).turns[0]
+  assert.deepEqual([before.input_tokens, before.output_tokens], [after.input_tokens, after.output_tokens])
+  assert.notEqual(rowSignature(before), rowSignature(after))
+  assert.equal(after.duration_ms, 12345)
+})
+
+test('hook rollout path is contained in sessions and rejects external files and symlink escapes', () => {
+  const sessions = join(dir, 'codex', 'sessions')
+  const outside = join(dir, 'rollout-outside.jsonl')
+  const inside = join(sessions, 'rollout-inside.jsonl')
+  const link = join(sessions, 'rollout-link.jsonl')
+  mkdirSync(sessions, { recursive: true })
+  writeFileSync(outside, '')
+  writeFileSync(inside, '')
+  assert.equal(allowedRollout(inside), inside)
+  assert.equal(allowedRollout(join(sessions, '..', '..', 'rollout-outside.jsonl')), null)
+  assert.equal(allowedRollout(outside), null)
+  try {
+    symlinkSync(outside, link)
+    assert.equal(allowedRollout(link), null)
+  } catch (e) {
+    if (process.platform !== 'win32') throw e
+  }
 })
 
 test('sub-agent threads are marked', () => {
@@ -134,7 +174,7 @@ test('no text from the rollout reaches the result; garbage and token_usage_recor
 })
 
 test('a file without any usage gives nothing', () => {
-  assert.deepEqual(run([meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1')]), { turns: [], limits: [] })
+  assert.deepEqual(run([meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1')]), { turns: [], limits: [], limitsAt: null })
 })
 
 test('real layout: task_started with an id, then a bare user_message, turn_context, token counts, task_complete with the duration', () => {

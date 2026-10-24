@@ -1,8 +1,8 @@
 // OpenAI Codex: reads the rollout files Codex writes (~/.codex/sessions, ~/.codex/archived_sessions) line by line.
 // Only token counts, timestamps, model names and ids leave the machine, never prompts, answers or tool output.
-import { createReadStream, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createReadStream, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createCodexParser } from '../../worker/public/admin/parse-codex.mjs'
 import { configFile, home, lock, post, readJson, self, writeJson } from '../lib/core.mjs'
@@ -40,7 +40,28 @@ async function parseFile(path) {
   return parser.finish()
 }
 
-const sig = t => `${t.input_tokens},${t.output_tokens},${t.cache_read_tokens},${t.cache_creation_tokens}`
+export const rowSignature = t => JSON.stringify([
+  t.provider, t.turn_id, t.session_id, t.ts, t.model,
+  t.input_tokens, t.output_tokens, t.cache_read_tokens, t.cache_creation_tokens,
+  t.duration_ms, t.is_subagent,
+])
+
+/** A hook may name only a real rollout below Codex's sessions directories; symlink escapes are rejected. */
+export function allowedRollout(file) {
+  if (typeof file !== 'string' || !/^rollout-.*\.jsonl$/.test(basename(file))) return null
+  let real
+  try {
+    real = realpathSync(resolve(file))
+    if (!statSync(real).isFile()) return null
+  } catch { return null }
+  for (const dir of [join(codexHome, 'sessions'), join(codexHome, 'archived_sessions')]) {
+    let root
+    try { root = realpathSync(dir) } catch { continue }
+    const rel = relative(root, real)
+    if (rel && !rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel)) return real
+  }
+  return null
+}
 
 const isOurs = argv => ours(argv, self)
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-')
@@ -71,9 +92,9 @@ export default {
     if (!unlock) return { files: 0, scanned: 0, rows: 0, limits: false, busy: true }
     const stats = { files: 0, scanned: 0, rows: 0, limits: false }
     try {
-      let limits = [], limitsAt = ''
+      let limits = [], limitsAt = 0
       // `only`: the one rollout a hook named (it must look like a rollout file and exist); else every rollout
-      const paths = only ? [resolve(only)].filter(f => /^rollout-.*\.jsonl$/.test(basename(f)) && existsSync(f) && statSync(f).isFile()) : rollouts()
+      const paths = only ? [allowedRollout(only)].filter(Boolean) : rollouts()
       for (const [n, path] of paths.entries()) {
         onFile?.(n + 1, paths.length)
         stats.files++
@@ -81,11 +102,11 @@ export default {
         const fileSig = `${st.size}:${Math.floor(st.mtimeMs)}`
         if (!full && state.files[path] === fileSig) continue
         stats.scanned++
-        const { turns, limits: l } = await parseFile(path)
-        if (l.length && st.mtime.toISOString() >= limitsAt) { limits = l; limitsAt = st.mtime.toISOString() }
-        const fresh = turns.filter(t => full || state.sent[t.turn_id] !== sig(t))
+        const { turns, limits: l, limitsAt: fileLimitsAt } = await parseFile(path)
+        if (l.length && fileLimitsAt !== null && fileLimitsAt >= limitsAt) { limits = l; limitsAt = fileLimitsAt }
+        const fresh = turns.filter(t => full || state.sent[t.turn_id] !== rowSignature(t))
         for (let i = 0; i < fresh.length; i += BATCH) await post(cfg, { rows: fresh.slice(i, i + BATCH) })
-        for (const t of fresh) state.sent[t.turn_id] = sig(t)
+        for (const t of fresh) state.sent[t.turn_id] = rowSignature(t)
         stats.rows += fresh.length
         state.files[path] = fileSig // only after the rows of this file were accepted
         writeJson(stateFile, state)
