@@ -6,6 +6,7 @@ import { join, relative, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createCodexParser } from '../../worker/public/admin/parse-codex.mjs'
 import { configFile, home, lock, post, readJson, self, writeJson } from '../lib/core.mjs'
+import { chainArgv, isOurs as ours, stripOurs } from '../lib/notify-chain.mjs'
 import { findNotify, formatNotify } from '../lib/toml-notify.mjs'
 
 const BATCH = 300
@@ -39,10 +40,7 @@ async function parseFile(path) {
 
 const sig = t => `${t.input_tokens},${t.output_tokens},${t.cache_read_tokens},${t.cache_creation_tokens}`
 
-const norm = p => String(p).replace(/\\/g, '/').toLowerCase()
-const base = p => norm(p).split('/').pop().replace(/\.exe$/, '')
-/** Is this notify command ours (this program, wherever it lies, or this script)? */
-const isOurs = argv => argv.some(a => norm(a) === norm(self[0]) || (self[1] && norm(a) === norm(self[1])) || base(a).startsWith('token-tracker') || /collectors\/(codex|token-tracker)\.mjs$/.test(norm(a)))
+const isOurs = argv => ours(argv, self)
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-')
 const backup = () => { // a name that is never taken: two copies in the same millisecond must not overwrite each other
   let to = `${configToml}.bak-${stamp()}`
@@ -151,21 +149,28 @@ export default {
     const text = readFileSync(configToml, 'utf8'), f = findNotify(text)
     const copy = backup()
     writeJson(originalFile, { argv: info.argv, text: text.slice(f.start, f.end), at: new Date().toISOString() })
-    writeFileSync(configToml, `${text.slice(0, f.start)}# token-tracker runs first and then the command that was here before (kept in ${originalFile})\n${this.notifyLine(info.argv)}${text.slice(f.end)}`)
+    writeFileSync(configToml, `${text.slice(0, f.start)}# token-tracker runs together with the command that was here before (kept in ${originalFile})\n${formatNotify(this.chainArgv(info.argv))}${text.slice(f.end)}`)
     return { changed: true, state: 'other', chained: info.argv, backup: copy }
   },
 
-  /** Turns our notify off: the command that was there before comes back, or the line is removed if there was none. */
+  /** What the notify becomes when our command joins `argv`: the line shown to the user before anything is written. */
+  chainArgv: argv => chainArgv(argv, self),
+  chainLine(argv) { return formatNotify(this.chainArgv(argv)) },
+
+  /** Turns our notify off: what was there before comes back, or the line is removed if there was nothing. */
   restoreNotify() {
     const info = this.notifyInfo()
-    if (info.state !== 'ours') return { changed: false, state: info.state }
+    if (info.state !== 'ours' || !info.argv) return { changed: false, state: info.state }
     const text = readFileSync(configToml, 'utf8'), f = findNotify(text)
     const copy = backup()
-    const saved = readJson(originalFile, null), orig = saved?.argv
+    const saved = readJson(originalFile, null)
+    const left = stripOurs(info.argv, self)
+    // the line as it was before we came, if it is what is left; else a fresh one; nothing when nothing is left
+    const statement = !left ? '' : saved?.argv && JSON.stringify(saved.argv) === JSON.stringify(left) ? saved.text : formatNotify(left)
     // the comment line we wrote above the statement goes with it
     const before = text.slice(0, f.start).replace(/(^|\n)[ \t]*# token-tracker[^\n]*\n$/, '$1')
-    writeFileSync(configToml, `${before}${saved?.text ?? (orig?.length ? formatNotify(orig) : '')}${text.slice(f.end)}`.replace(/^\n+/, ''))
+    writeFileSync(configToml, `${before}${statement}${text.slice(f.end)}`.replace(/^\n+/, ''))
     try { unlinkSync(originalFile) } catch { /* none */ }
-    return { changed: true, restored: orig ?? null, backup: copy }
+    return { changed: true, restored: left, backup: copy }
   },
 }

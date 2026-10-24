@@ -19,7 +19,7 @@ test('notify: reads a plain array, a multi-line one with comments and Windows pa
   assert.equal(formatNotify(['C:\\a b\\x.exe', 'q"t']), 'notify = ["C:\\\\a b\\\\x.exe", "q\\"t"]')
 })
 
-const THEIRS = 'C:\\\\Users\\\\IOOOI\\\\AppData\\\\Local\\\\OpenAI\\\\Codex\\\\bin\\\\codex-computer-use.exe'
+const THEIRS = 'C:\\\\Users\\\\IOOOI\\\\Tools\\\\other-notifier.exe'
 const config = `model = "gpt-5.6-sol"\n\nnotify = [ "${THEIRS}", "turn-ended" ]\n\n[projects.x]\ntrust = "trusted"\n`
 
 // one temporary home for the collector (it reads CODEX_HOME / TOKEN_TRACKER_HOME when it is loaded)
@@ -83,4 +83,44 @@ test('compiled program is recognised on every system (Windows shows the virtual 
   assert.equal(isCompiled('file:///$bunfs/root/token-tracker', '/$bunfs/root/token-tracker'), true)
   assert.equal(isCompiled('file:///home/u/modToken/collectors/lib/core.mjs', '/home/u/modToken/collectors/token-tracker.mjs'), false)
   assert.equal(isCompiled('file:///C:/repo/collectors/lib/core.mjs', 'C:\\repo\\collectors\\codex.mjs'), false)
+})
+
+// Codex Desktop's computer-use helper keeps the previous notify itself and rewrites a notify it finds into --previous-notify form
+const CU = 'C:\\Users\\IOOOI\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\x\\bin\\codex-computer-use.exe'
+const asToml = a => formatNotify(a)
+const cuConfig = argv => `model = "m"\n\n${asToml(argv)}\n\n[projects.x]\ntrust = "trusted"\n`
+
+test('notify: the computer-use helper: ours goes into --previous-notify, and comes out again as it was', () => {
+  const original = cuConfig([CU, 'turn-ended'])
+  writeFileSync(file, original)
+  assert.equal(codex.notifyState(), 'other')
+  assert.equal(codex.installNotify({ chain: true }).changed, true)
+  const argv = findNotify(readFileSync(file, 'utf8')).argv
+  assert.deepEqual(argv.slice(0, 3), [CU, 'turn-ended', '--previous-notify'])
+  assert.deepEqual(JSON.parse(argv[3]).slice(-1), ['notify'], 'a bare command of ours, no --then, nothing called twice')
+  assert.equal(argv.length, 4)
+  assert.equal(codex.notifyState(), 'ours')
+  assert.equal(codex.installNotify({ chain: true }).changed, false)
+  assert.equal(codex.restoreNotify().changed, true)
+  assert.equal(readFileSync(file, 'utf8'), original)
+})
+
+test('notify: the helper wrapped OUR old line (with the extra ~BUN path and --then <helper>): that is ours, and turning it off leaves the helper alone', () => {
+  const ours = ['C:\\Users\\IOOOI\\Downloads\\token-tracker-windows-x64 (2).exe', 'B:\\~BUN\\root\\token-tracker-windows-x64.exe', 'notify', '--then', CU, 'turn-ended']
+  writeFileSync(file, cuConfig([CU, 'turn-ended', '--previous-notify', JSON.stringify(ours)]))
+  assert.equal(codex.notifyState(), 'ours')
+  assert.equal(codex.restoreNotify().changed, true)
+  assert.equal(readFileSync(file, 'utf8'), cuConfig([CU, 'turn-ended']))
+  assert.equal(codex.notifyState(), 'other')
+})
+
+test('notify: the helper with somebody else\'s previous notify: ours is added inside, only ours is taken out', () => {
+  const theirs = ['C:\\Tools\\mux.exe', 'x']
+  writeFileSync(file, cuConfig([CU, 'turn-ended', '--previous-notify', JSON.stringify(theirs)]))
+  codex.installNotify({ chain: true })
+  const argv = findNotify(readFileSync(file, 'utf8')).argv
+  assert.deepEqual(JSON.parse(argv[3]).slice(-3), ['--then', ...theirs])
+  assert.equal(codex.notifyState(), 'ours')
+  codex.restoreNotify()
+  assert.deepEqual(findNotify(readFileSync(file, 'utf8')).argv, [CU, 'turn-ended', '--previous-notify', JSON.stringify(theirs)])
 })
