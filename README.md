@@ -35,6 +35,15 @@ Plugins from marketplaces are not installed in cloud sessions, so the mod cannot
 
 Needs Node.js in the environment (cloud sessions ship it) and `raw.githubusercontent.com` reachable while the setup script runs. All sessions of the environment report as one device; revoking it on the site stops them. Set up each environment you use. Turns are keyed by session id, so a session that continues in a second log file (after a `cd`) is not counted twice, and a turn the log had not fully written yet is completed by the next report.
 
+## Other agents (Codex)
+The site also takes the usage of **OpenAI Codex CLI**; a "provider" column says which agent wrote each turn, and the page gets an agent filter (shown when there is more than one) and a "By agent" card. Codex has no mods, so a small collector reads its own session files (`~/.codex/sessions`, `~/.codex/archived_sessions`) and sends only token counts, times, model names and ids, never prompts or answers. Subscription limits (5-hour and weekly) are taken from the same files when Codex wrote them.
+
+1. On the site (Devices tab) make a code, with the **same device name** as your Claude device so the numbers merge.
+2. `git clone https://github.com/Pavlo577/modToken` on that machine, then `node collectors/codex.mjs link <CODE>` (add `--url https://your-site` if it is not the default one).
+3. `node collectors/codex.mjs sync` sends the existing history (safe to repeat: nothing is counted twice). `node collectors/codex.mjs setup` prints the line for `~/.codex/config.toml` (`notify = [...]`) that keeps it up to date after every turn, or run `sync` from cron / Task Scheduler.
+
+Codex's file format is internal and changes between versions; the parser (`worker/public/admin/parse-codex.mjs`) reads only the few fields it needs. Input is stored without the cached part (like Claude's "new input"), reasoning counts as output. Prices for GPT-5 models are in `prices.json`; models missing there are shown without a price. Existing databases need `worker/migrations/0002_provider.sql` once (a fresh one gets the column from `schema.sql`).
+
 ## Import old history
 The mod only counts turns after a device is linked. To bring in earlier history from the device's own logs, run `/tracker-import` there (needs Node.js on that device; with the npm install of Claude Code it is always there). It reads `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) with `import-logs.mjs` and sends only token counts, timestamps and model names. Nothing runs automatically; run it once after `/tracker-link`.
 
