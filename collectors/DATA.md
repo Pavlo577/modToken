@@ -77,5 +77,61 @@ Done by `worker/public/admin/parse.mjs` (shared with the dashboard's browser imp
 ## 4. Never send, read into a result, log or print
 Prompts, `input-messages`, `last-assistant-message`, tool output, file contents, `cwd`, file names, the device token. The JSON passed by Codex to `notify` and to the `Stop` hook contains such text: look at it in memory for yes/no flags or for the session file path, drop the rest at once. `lib/contract.mjs` makes this structural for the upload (an unknown field is dropped); the diagnostic log has its own rule (see `lib/notify-log.mjs`).
 
-## 5. Adding another agent
+## 5. OTLP: what the Worker receives and keeps (a second way in, planned; not built yet)
+An agent that has no readable session log (Gemini CLI, Mistral Vibe) or that cannot run our program (cloud sessions) can export OpenTelemetry instead, straight to the site. The Worker takes **OTLP/HTTP in JSON** (`POST /v1/logs`, header `x-device-token` as for `/api/ingest`) and turns it into the one structure below. Everything else in the payload is dropped on arrival, so the privacy boundary here is the Worker's allow-list, not the client (the program's `contract.mjs` is the client-side one).
+
+**What arrives (OTLP/JSON, only `resourceLogs[].scopeLogs[].logRecords[]` matters).** Integers come as strings (`"intValue": "86013"`); an attribute is `{ "key", "value": { "stringValue" | "intValue" | "doubleValue" | "boolValue" } }`; the event name is the `event.name` attribute (accept it with or without the `claude_code.` prefix); the time is `timeUnixNano`.
+```json
+{ "resourceLogs": [{ "resource": { "attributes": [{ "key": "service.name", "value": { "stringValue": "claude-code" } }] },
+  "scopeLogs": [{ "logRecords": [{
+    "timeUnixNano": "1761300000123456789",
+    "attributes": [
+      { "key": "event.name",            "value": { "stringValue": "claude_code.api_request" } },
+      { "key": "session.id",            "value": { "stringValue": "01a16d7a-..." } },
+      { "key": "prompt.id",             "value": { "stringValue": "b7e0..." } },
+      { "key": "request_id",            "value": { "stringValue": "req_01..." } },
+      { "key": "model",                 "value": { "stringValue": "claude-sonnet-x" } },
+      { "key": "input_tokens",          "value": { "intValue": "86013" } },
+      { "key": "output_tokens",         "value": { "intValue": "5189" } },
+      { "key": "cache_read_tokens",     "value": { "intValue": "467328" } },
+      { "key": "cache_creation_tokens", "value": { "intValue": "0" } },
+      { "key": "duration_ms",           "value": { "intValue": "10243" } },
+      { "key": "user.email",            "value": { "stringValue": "dropped on arrival" } }
+    ] }] }] }] }
+```
+
+**The structure the Worker extracts: one `ModelCall` per request to the model (agent-neutral).**
+```ts
+type ModelCall = {
+  provider: 'claude' | 'codex' | 'gemini' | 'mistral'  // from the device's setting / resource service.name
+  call_id: string        // idempotency key: the same call sent twice is counted once
+  session_id: string     // the conversation
+  turn_key: string       // what groups calls into one turn
+  ts: string             // ISO UTC, from timeUnixNano
+  model: string
+  input_tokens: number           // NEW input only: the cached part excluded
+  output_tokens: number          // reasoning included
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  duration_ms: number            // of this call
+  is_subagent: boolean
+}
+```
+| Field | Claude Code (**verified** in its monitoring docs: event `claude_code.api_request`) | Codex / Gemini CLI / Mistral Vibe (**not verified**: read their telemetry docs first) |
+|---|---|---|
+| `call_id` | `request_id` | the agent's request id; else a hash of `(session, timeUnixNano, sequence)` |
+| `session_id` | `session.id` | the agent's session / thread attribute |
+| `turn_key` | `prompt.id` | the agent's turn id / `prompt_id` (Gemini) / trace id (Mistral) |
+| `ts` | `timeUnixNano` (or `event.timestamp`) | the same |
+| tokens | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Gemini counts cached inside input: subtract it; Codex `input` includes cached too |
+| `duration_ms` | `duration_ms` | the agent's duration attribute |
+| `is_subagent` | the call carries `agent.name` (**assumption**) | from the agent's metadata, never from text |
+
+**How calls become the turn row of section 2.** The Worker groups calls by `(device, provider, session_id, turn_key)`; the row has `turn_id = otlp:<provider>:<session_id>:<turn_key>`, `ts` = the last call's time, `model` = the model with the most output, and the four token counters are **sums** of the calls (additive, unlike section 2 where a resend keeps the maximum). A call is added once: a table `(device_id, call_id)` records what was counted, and a call that is already there changes nothing. `duration_ms` is the sum of the calls' durations, so it is shorter than a log-based turn (which is prompt to last reply, waiting included): a device uses one source per agent, never both.
+
+**Dropped on arrival, never stored:** `user.email`, `user.id`, `user.account_uuid`, `user.account_id`, `organization.id`, `prompt`, `tool_*`, request and response bodies, `cost_usd` (the dashboard computes the cost from `prices.json` itself) and every attribute not named above. If an exporter sends prompt text anyway (`OTEL_LOG_USER_PROMPTS=1`, Gemini's `logPrompts`, Codex's `log_user_prompt`), it is ignored and never read past the allow-list; the setup instructions must tell the user to leave those switches off (Gemini's `logPrompts` is **on** by default: set it to `false`).
+
+**What OTLP does not carry:** the subscription limits (Claude Code exports none: the mod still sends them) and any history from before the exporter was switched on (the log import covers it). Delivery is best effort: exporters batch (Claude Code: metrics every 60 s, logs every 5 s) and there is no local queue, so the log-based collection stays the exact one where the logs can be read.
+
+## 6. Adding another agent
 Make `agents/<name>.mjs` returning rows in exactly this shape (the contract above, with its own `provider` and `turn_id` prefix), reading only numeric fields from the agent's own files or telemetry. Prove "no text leaves" with a test that plants a secret word in the fixture and greps the request body, the state files and the log (see `worker/test/codex-collector.sh`).
