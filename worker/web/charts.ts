@@ -38,11 +38,12 @@ function tooltip(container: Host): Tip {
 // The container may have been emptied since the tooltip was made (another chart took its place): make a new one then.
 const tipOf = (c: Host): Tip => (c._tip && c._tip.el.isConnected ? c._tip : (c._tip = tooltip(c)))
 
+/** Axis maximum: the smallest of 1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8 times a power of ten that holds v (so a quarter of it is a round step too). */
 const niceMax = (v: number): number => {
   if (v <= 0) return 1
   const p = 10 ** Math.floor(Math.log10(v))
   const f = v / p
-  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p
+  return ([1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10].find(n => f <= n + 1e-9) ?? 10) * p
 }
 const ticks = (max: number, n = 4): number[] => Array.from({ length: n + 1 }, (_, i) => (max / n) * i)
 
