@@ -1,16 +1,18 @@
 // OpenAI Codex: reads the rollout files Codex writes (~/.codex/sessions, ~/.codex/archived_sessions) line by line.
 // Only token counts, timestamps, model names and ids leave the machine, never prompts, answers or tool output.
-import { createReadStream, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createCodexParser } from '../../worker/public/admin/parse-codex.mjs'
-import { configFile, home, lock, post, quoted, readJson, self, writeJson } from '../lib/core.mjs'
+import { configFile, home, lock, post, readJson, self, writeJson } from '../lib/core.mjs'
+import { findNotify, formatNotify } from '../lib/toml-notify.mjs'
 
 const BATCH = 300
 const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')
 const configToml = join(codexHome, 'config.toml')
 const stateFile = join(home, 'codex-state.json')
+const originalFile = join(home, 'notify-original.json') // the notify Codex had before ours took its place
 
 function rollouts() {
   const out = []
@@ -37,9 +39,17 @@ async function parseFile(path) {
 
 const sig = t => `${t.input_tokens},${t.output_tokens},${t.cache_read_tokens},${t.cache_creation_tokens}`
 
-// The `notify` line of config.toml: only the top level counts (before the first [section]); a TOML array may span lines.
-const topLevel = text => { const i = text.search(/^\s*\[/m); return i < 0 ? text : text.slice(0, i) }
-const isOurs = text => /token-tracker|collectors[\\/]+(codex|token-tracker)\.mjs/.test(text) || text.includes(self[0].replace(/\\/g, '\\\\'))
+const norm = p => String(p).replace(/\\/g, '/').toLowerCase()
+const base = p => norm(p).split('/').pop().replace(/\.exe$/, '')
+/** Is this notify command ours (this program, wherever it lies, or this script)? */
+const isOurs = argv => argv.some(a => norm(a) === norm(self[0]) || (self[1] && norm(a) === norm(self[1])) || base(a).startsWith('token-tracker') || /collectors\/(codex|token-tracker)\.mjs$/.test(norm(a)))
+const stamp = () => new Date().toISOString().replace(/[:.]/g, '-')
+const backup = () => { // a name that is never taken: two copies in the same millisecond must not overwrite each other
+  let to = `${configToml}.bak-${stamp()}`
+  for (let n = 2; existsSync(to); n++) to = `${configToml}.bak-${stamp()}-${n}`
+  copyFileSync(configToml, to)
+  return to
+}
 
 export default {
   id: 'codex',
@@ -102,29 +112,60 @@ export default {
     return { lastSync: st?.lastSync ?? null, lastError: st?.lastError ?? null, turns: Object.keys(st?.sent ?? {}).length, files: Object.keys(st?.files ?? {}).length }
   },
 
-  notifyLine: () => `notify = [${quoted([...self, 'notify'])}]`,
+  /** The notify of this program: a bare one, or wrapping `then` (the command that was there first). */
+  notifyArgv: then => [...self, 'notify', ...(then?.length ? ['--then', ...then] : [])],
+  notifyLine(then) { return formatNotify(this.notifyArgv(then)) },
   configToml,
 
-  /** 'ours' | 'other' (someone else's notify, never touched) | 'none' | 'no-config' */
-  notifyState() {
+  /**
+   * 'ours' | 'other' (a notify of another program) | 'none' | 'no-config'.
+   * 'other' also with `argv` (what it runs, null if it cannot be read as plain strings).
+   */
+  notifyInfo() {
     let text
-    try { text = readFileSync(configToml, 'utf8') } catch { return 'no-config' }
-    const m = topLevel(text).match(/^\s*notify\s*=\s*(\[[\s\S]*?\]|.*)$/m)
-    if (!m) return 'none'
-    return isOurs(m[1]) ? 'ours' : 'other'
+    try { text = readFileSync(configToml, 'utf8') } catch { return { state: 'no-config' } }
+    const f = findNotify(text)
+    if (!f) return { state: 'none' }
+    if (f.argv && isOurs(f.argv)) return { state: 'ours', argv: f.argv }
+    if (!f.argv && isOurs([text.slice(f.start, f.end)])) return { state: 'ours', argv: null }
+    return { state: 'other', argv: f.argv }
+  },
+  notifyState() { return this.notifyInfo().state },
+
+  /**
+   * Puts our `notify` into config.toml; a copy of the old file is kept next to it.
+   * No notify yet: our line is added at the top. Another program's notify: only with `chain`, then ours runs first and
+   * starts that command afterwards with the same arguments (Codex allows a single notify command); the old one is remembered.
+   */
+  installNotify({ chain = false } = {}) {
+    const info = this.notifyInfo()
+    if (info.state === 'ours') return { changed: false, state: 'ours' }
+    if (info.state === 'no-config' || info.state === 'none') {
+      mkdirSync(codexHome, { recursive: true })
+      const old = info.state === 'none' ? readFileSync(configToml, 'utf8') : ''
+      const copy = info.state === 'none' ? backup() : null
+      writeFileSync(configToml, `# token-tracker: tells the collector that a Codex turn ended (it reads no text)\n${this.notifyLine()}\n${old ? '\n' + old : ''}`)
+      return { changed: true, state: info.state, backup: copy }
+    }
+    if (!chain || !info.argv?.length) return { changed: false, state: 'other', argv: info.argv }
+    const text = readFileSync(configToml, 'utf8'), f = findNotify(text)
+    const copy = backup()
+    writeJson(originalFile, { argv: info.argv, text: text.slice(f.start, f.end), at: new Date().toISOString() })
+    writeFileSync(configToml, `${text.slice(0, f.start)}# token-tracker runs first and then the command that was here before (kept in ${originalFile})\n${this.notifyLine(info.argv)}${text.slice(f.end)}`)
+    return { changed: true, state: 'other', chained: info.argv, backup: copy }
   },
 
-  /** Adds our `notify` line at the very top of config.toml (a copy of the old file is kept next to it). */
-  installNotify() {
-    const state = this.notifyState()
-    if (state === 'ours' || state === 'other') return { changed: false, state }
-    const old = state === 'none' ? readFileSync(configToml, 'utf8') : ''
-    let backup = null
-    if (state === 'none') {
-      backup = `${configToml}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
-      copyFileSync(configToml, backup)
-    } else mkdirSync(codexHome, { recursive: true })
-    writeFileSync(configToml, `# token-tracker: tells the collector that a Codex turn ended (it reads no text)\n${this.notifyLine()}\n${old ? '\n' + old : ''}`)
-    return { changed: true, state, backup }
+  /** Turns our notify off: the command that was there before comes back, or the line is removed if there was none. */
+  restoreNotify() {
+    const info = this.notifyInfo()
+    if (info.state !== 'ours') return { changed: false, state: info.state }
+    const text = readFileSync(configToml, 'utf8'), f = findNotify(text)
+    const copy = backup()
+    const saved = readJson(originalFile, null), orig = saved?.argv
+    // the comment line we wrote above the statement goes with it
+    const before = text.slice(0, f.start).replace(/(^|\n)[ \t]*# token-tracker[^\n]*\n$/, '$1')
+    writeFileSync(configToml, `${before}${saved?.text ?? (orig?.length ? formatNotify(orig) : '')}${text.slice(f.end)}`.replace(/^\n+/, ''))
+    try { unlinkSync(originalFile) } catch { /* none */ }
+    return { changed: true, restored: orig ?? null, backup: copy }
   },
 }

@@ -14,8 +14,9 @@ export const arg = name => { const i = process.argv.indexOf(name); return i > 0 
 // Run as a script ("node token-tracker.mjs") or as the single file made by "bun build --compile" (the release program).
 export const compiled = /\$bunfs|~BUN/.test(import.meta.url)
 /** The command that starts this program again, and how to show it to the user. */
-export const self = compiled ? [process.execPath] : [process.execPath, resolve(process.argv[1])]
-export const shown = compiled ? [process.execPath] : ['node', resolve(process.argv[1])]
+const script = process.argv[1] ? resolve(process.argv[1]) : ''
+export const self = compiled ? [process.execPath] : [process.execPath, script]
+export const shown = compiled ? [process.execPath] : ['node', script]
 export const quoted = list => list.map(a => `"${a.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(', ')
 export const command = list => list.map(a => (/\s/.test(a) ? `"${a}"` : a)).join(' ')
 

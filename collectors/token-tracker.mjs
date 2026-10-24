@@ -23,9 +23,15 @@ async function sync() {
 }
 
 function notify() {
-  // Codex passes a JSON argument with the last prompt and answer: it is never read here, only used as a signal.
-  const child = spawn(self[0], [...self.slice(1), 'sync'], { detached: true, stdio: 'ignore' })
-  child.unref()
+  // Codex adds one JSON argument (the last prompt and answer) at the end: it is never read here, only passed on untouched to the
+  // command given after --then (the notify that was there before ours), and used as the signal to sync.
+  const args = process.argv.slice(3)
+  const payload = args.length && args[args.length - 1].startsWith('{') ? args.pop() : null
+  const at = args.indexOf('--then')
+  const then = at >= 0 ? args.slice(at + 1) : []
+  const run = (file, list) => { try { spawn(file, list, { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref() } catch { /* a missing program must not stop the other */ } }
+  run(self[0], [...self.slice(1), 'sync'])
+  if (then.length) run(then[0], [...then.slice(1), ...(payload ? [payload] : [])])
 }
 
 function status() {

@@ -30,7 +30,7 @@ const notifyText = {
   ours: 'підключено: після кожного ходу Codex дані йдуть самі',
   none: 'не підключено (у config.toml Codex немає рядка notify)',
   'no-config': 'не підключено (config.toml Codex ще нема)',
-  other: 'у config.toml вже є чужий notify, його не чіпаю',
+  other: 'не підключено: у config.toml уже є notify іншої програми (пункт 3 запропонує ланцюжок)',
 }
 
 function showStatus(agent) {
@@ -46,27 +46,52 @@ function showStatus(agent) {
   if (st.lastError) row('Остання помилка', `${st.lastError.message} (${when(st.lastError.at)})`)
 }
 
-/** Offers to add the `notify` line to Codex's config.toml; nothing is written without a "yes". */
+/** Offers to connect the `notify` of config.toml; nothing is written without a "yes". */
 async function offerNotify(rl, agent) {
-  const state = agent.notifyState()
-  if (state === 'ours') return out('  Автооновлення вже підключено.')
-  if (state === 'other') {
-    out(`  У ${agent.configToml} вже є рядок notify від іншої програми, тому я його не міняю.`)
-    out('  Якщо хочеш, щоб дані йшли самі, об\'єднай їх вручну або запускай цю програму раз на кілька днів.')
-    return
-  }
+  const info = agent.notifyInfo()
+  if (info.state === 'ours') return out('  Автооновлення вже підключено.')
+  if (info.state === 'other') return offerChain(rl, agent, info.argv)
   out(`\n  Щоб дані йшли самі після кожного ходу Codex, треба додати в ${agent.configToml} один рядок:`)
   out(`    ${agent.notifyLine()}`)
-  out(`  Він лише будить цю програму й не передає їй жодного тексту. ${state === 'none' ? 'Спершу я зроблю резервну копію файлу.' : 'Файлу ще нема, його буде створено.'}`)
+  out(`  Він лише будить цю програму й не передає їй жодного тексту. ${info.state === 'none' ? 'Спершу я зроблю резервну копію файлу.' : 'Файлу ще нема, його буде створено.'}`)
   if (!yes(await rl.question('  Додати? (так/ні): '))) return out('  Добре, не чіпаю. Дані підтягуватимуться, коли відкриваєш цю програму.')
+  apply(agent, () => agent.installNotify(), 'Додано.')
+}
+
+/** Codex runs one notify command only: ours goes first and starts the old one after itself, with the same arguments. */
+async function offerChain(rl, agent, argv) {
+  out(`\n  У ${agent.configToml} вже є notify іншої програми, а Codex дозволяє лише одну команду.`)
+  if (!argv?.length) {
+    out('  Я не можу безпечно прочитати цей рядок, тому нічого не змінюю.')
+    out(`  Якщо хочеш автооновлення, об'єднай команди вручну: нехай твоя команда запускає «${command(shown)} sync», або запускай цю програму раз на кілька днів.`)
+    return
+  }
+  out(`  Зараз там: ${command(argv)}`)
+  out('  Я можу стати першою: після кожного ходу я надішлю числа, а потім запущу цю саму команду з тими самими аргументами (і тим самим JSON від Codex), тож вона працюватиме як раніше.')
+  out(`  Новий рядок:\n    ${agent.notifyLine(argv)}`)
+  out('  Спершу зроблю резервну копію config.toml і запам\'ятаю стару команду, щоб її можна було повернути (пункт «вимкнути автооновлення» в меню).')
+  if (!yes(await rl.question('  Зробити так? (так/ні): '))) return out('  Добре, не чіпаю. Дані підтягуватимуться, коли відкриваєш цю програму.')
+  apply(agent, () => agent.installNotify({ chain: true }), 'Готово, стара команда збережена й запускатиметься після моєї.')
+}
+
+function apply(agent, action, doneText) {
   try {
-    const r = agent.installNotify()
-    out(`  Додано.${r.backup ? ' Копія старого файлу: ' + r.backup : ''}`)
+    const r = action()
+    out(`  ${doneText}${r.backup ? ' Копія старого файлу: ' + r.backup : ''}`)
     out('  Codex читає конфіг при запуску: перезапусти Codex, а після першого ходу відкрий цю програму й перевір «Останній синк».')
   } catch (e) {
     out(`  Не вдалося змінити конфіг: ${e instanceof Error ? e.message : e}`)
-    out(`  Додай вручну на самому верху ${agent.configToml}:\n    ${agent.notifyLine()}`)
+    out(`  Файл не зіпсовано (копія поруч, якщо вона встигла створитись). Додай вручну: ${agent.notifyLine()}`)
   }
+}
+
+async function offerRestore(rl, agent) {
+  out(`\n  Я прибираю свій notify з ${agent.configToml}${', а стару команду, якщо вона була, повертаю на місце'}. Спершу робиться копія файлу.`)
+  if (!yes(await rl.question('  Вимкнути автооновлення? (так/ні): '))) return out('  Добре, лишаю як є.')
+  try {
+    const r = agent.restoreNotify()
+    out(r.changed ? `  Готово.${r.restored ? ' Повернуто: ' + command(r.restored) : ''} Копія: ${r.backup}` : '  Нічого міняти не треба.')
+  } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
 }
 
 async function firstRun(rl, agent) {
@@ -105,11 +130,11 @@ async function statusLoop(rl, agent) {
   await runSync(agent)
   for (;;) {
     showStatus(agent)
-    const more = agent.notifyState() === 'ours' ? '' : ', 3 — підключити автооновлення'
-    const a = (await rl.question(`\n  1 — оновити зараз, 2 — переслати все заново${more}, Enter — закрити: `)).trim()
+    const on = agent.notifyState() === 'ours'
+    const a = (await rl.question(`\n  1 — оновити зараз, 2 — переслати все заново, 3 — ${on ? 'вимкнути' : 'підключити'} автооновлення, Enter — закрити: `)).trim()
     if (a === '1') await runSync(agent)
     else if (a === '2') await runSync(agent, true)
-    else if (a === '3' && more) await offerNotify(rl, agent)
+    else if (a === '3') await (on ? offerRestore : offerNotify)(rl, agent)
     else return
   }
 }

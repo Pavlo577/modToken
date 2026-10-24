@@ -9,7 +9,7 @@
     "deploy": "wrangler deploy",
     "prices": "node scripts/update-prices.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web",
-    "test": "node --test test/parse.test.mjs test/codex.test.mjs test/prices.test.mjs test/stats.test.mjs"
+    "test": "node --test test/parse.test.mjs test/codex.test.mjs test/prices.test.mjs test/stats.test.mjs test/notify.test.mjs"
   },
   "dependencies": {
     "jose": "^6.0.0"
