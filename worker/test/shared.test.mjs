@@ -6,11 +6,14 @@ import { createServer } from 'node:http'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dir } from './codex-home.mjs' // sets CODEX_HOME / TOKEN_TRACKER_HOME before the collector is loaded
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const tracker = join(root, 'collectors/token-tracker.mjs')
+// a spawned `node -e` script imports by file URL (a path like C:/... is refused on Windows as an unknown URL scheme)
+const coreUrl = JSON.stringify(pathToFileURL(join(root, 'collectors/lib/core.mjs')).href)
+const logUrl = JSON.stringify(pathToFileURL(join(root, 'collectors/lib/notify-log.mjs')).href)
 const { errorCategory, logFile, readLog } = await import('../../collectors/lib/notify-log.mjs')
 const core = await import('../../collectors/lib/core.mjs')
 
@@ -43,7 +46,7 @@ test('http: a site that never answers ends in a clear, path-free error after the
   const srv = createServer(() => { /* never answers */ })
   await new Promise(r => srv.listen(0, '127.0.0.1', r))
   const url = `http://127.0.0.1:${srv.address().port}`
-  const code = `import('${join(root, 'collectors/lib/core.mjs').replace(/\\/g, '/')}').then(async c => { try { await c.post({ url: ${JSON.stringify(url)}, token: 't' }, { rows: [{ turn_id: 'a', ts: '2026-10-24T10:00:00Z' }] }); console.log('no error') } catch (e) { console.log(e.message) } })`
+  const code = `import(${coreUrl}).then(async c => { try { await c.post({ url: ${JSON.stringify(url)}, token: 't' }, { rows: [{ turn_id: 'a', ts: '2026-10-24T10:00:00Z' }] }); console.log('no error') } catch (e) { console.log(e.message) } })`
   const t0 = Date.now()
   const child = spawn(process.execPath, ['-e', code], { env: { ...process.env, TOKEN_TRACKER_HTTP_TIMEOUT_MS: '400', TOKEN_TRACKER_HOME: join(dir, 'tt') } })
   let out = ''; child.stdout.on('data', d => (out += d))
@@ -79,7 +82,7 @@ test('sync lock: a live process keeps it even when the lock is old; a dead one d
 
 test('notify log: parallel writers and rotation never corrupt a line or lose the newest events', async () => {
   const home = mkdtempSync(join(tmpdir(), 'rot-'))
-  const writer = id => `import('${join(root, 'collectors/lib/notify-log.mjs').replace(/\\/g, '/')}').then(m => { for (let i = 0; i < 300; i++) m.logEvent({ event: 'e', writer: ${id}, i, pad: 'x'.repeat(60) }) })`
+  const writer = id => `import(${logUrl}).then(m => { for (let i = 0; i < 300; i++) m.logEvent({ event: 'e', writer: ${id}, i, pad: 'x'.repeat(60) }) })`
   const env = { ...process.env, TOKEN_TRACKER_HOME: home, TOKEN_TRACKER_LOG_MAX: '30000' }
   await Promise.all([1, 2, 3, 4].map(id => new Promise(r => spawn(process.execPath, ['-e', writer(id)], { env }).on('close', r))))
   for (const f of ['notify.log', 'notify.log.1']) {
