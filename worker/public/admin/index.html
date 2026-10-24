@@ -166,9 +166,9 @@
     <div class="card"><h2 style="margin-bottom:6px">Мої пристрої</h2><div id="dev-list"></div></div>
     <div class="card">
       <h2>Імпорт старих даних</h2>
-      <p class="sub" style="margin:3px 0 14px">Підтягне історію з локальних логів Claude Code, яка була до прив'язки пристрою. Файли читає твій браузер, на сервер іде лише кількість токенів, час і модель, текст розмов не передається. Повторний імпорт безпечний: дублікатів не буде.</p>
+      <p class="sub" style="margin:3px 0 14px">Підтягне історію з локальних логів Claude Code (до прив'язки пристрою) і Codex (уся). Файли читає твій браузер, на сервер іде лише кількість токенів, час і модель, текст розмов не передається. Повторний імпорт безпечний: дублікатів не буде.</p>
       <form id="import-form"><select id="import-device" aria-label="Пристрій" required></select><input id="import-files" type="file" webkitdirectory multiple aria-label="Папка з логами"></form>
-      <p class="note">Вибери папку <b>~/.claude/projects</b> (на Windows <b>%USERPROFILE%\.claude\projects</b>) і пристрій, якому вона належить. Для сервера без браузера на самому сервері виконай <code>/tracker-import</code>.</p>
+      <p class="note">Вибери папку <b>~/.claude/projects</b> для Claude або <b>~/.codex/sessions</b> для Codex (на Windows <b>%USERPROFILE%\...</b>) і пристрій, якому вона належить. Для сервера без браузера на самому сервері виконай <code>/tracker-import</code>.</p>
       <div id="import-status" class="sub" style="margin-top:10px"></div>
     </div>
   </section>

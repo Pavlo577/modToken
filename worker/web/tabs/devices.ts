@@ -7,9 +7,9 @@ interface Turn {
   turn_id: string
   [k: string]: unknown
 }
-interface Parser {
+interface Parser<T> {
   push(line: string): void
-  finish(): Turn[]
+  finish(): T
 }
 interface ImportResult {
   inserted: number
@@ -35,19 +35,24 @@ async function importFolder(): Promise<void> {
   const input = $<HTMLInputElement>('import-files'), status = $('import-status')
   const deviceId = $<HTMLSelectElement>('import-device').value
   const path = (f: File): string => f.webkitRelativePath || f.name
-  const files = [...(input.files ?? [])].filter(f => f.name.endsWith('.jsonl')).sort((a, b) => path(a).localeCompare(path(b)))
+  const isCodex = (f: File): boolean => /^rollout-.*\.jsonl$/.test(f.name)
+  // history.jsonl of Codex holds the typed prompts and no usage: never even opened
+  const files = [...(input.files ?? [])].filter(f => f.name.endsWith('.jsonl') && f.name !== 'history.jsonl').sort((a, b) => path(a).localeCompare(path(b)))
   const seen = new Set<string>()
   if (!deviceId) { status.textContent = 'Спершу додай пристрій.'; input.value = ''; return }
-  if (!files.length) { status.textContent = 'У вибраній папці нема файлів .jsonl. Потрібна папка projects.'; input.value = ''; return }
+  if (!files.length) { status.textContent = 'У вибраній папці нема файлів .jsonl. Потрібна папка projects (Claude) або sessions (Codex).'; input.value = ''; return }
   // parse.mjs stays plain JavaScript: the cloud hook and /tracker-import share it, so it is loaded at run time.
-  const parserUrl = './parse.mjs'
-  const { createParser } = (await import(/* @vite-ignore */ parserUrl)) as { createParser: (key: string, seen: Set<string>) => Parser }
+  const parserUrl = './parse.mjs', codexUrl = './parse-codex.mjs'
+  const { createParser } = (await import(/* @vite-ignore */ parserUrl)) as { createParser: (key: string, seen: Set<string>) => Parser<Turn[]> }
+  const { createCodexParser } = (await import(/* @vite-ignore */ codexUrl)) as { createCodexParser: (key: string) => Parser<{ turns: Turn[] }> }
   const total = { inserted: 0, duplicates: 0, afterLink: 0, turns: 0 }
   input.disabled = true
   try {
     for (const [i, file] of files.entries()) {
       status.textContent = `Файл ${i + 1} з ${files.length}: ${file.name}`
-      const parser = createParser(path(file).split('/').slice(1).join('/').replace(/\.jsonl$/, '') || file.name, seen)
+      const key = path(file).split('/').slice(1).join('/').replace(/\.jsonl$/, '') || file.name
+      const codex = isCodex(file)
+      const parser: Parser<Turn[] | { turns: Turn[] }> = codex ? createCodexParser(key) : createParser(key, seen)
       const reader = file.stream().pipeThrough(new TextDecoderStream()).getReader()
       let buf = ''
       for (;;) {
@@ -58,7 +63,8 @@ async function importFolder(): Promise<void> {
         for (const line of parts) parser.push(line)
       }
       if (buf) parser.push(buf)
-      const turns = parser.finish()
+      const done = parser.finish()
+      const turns = Array.isArray(done) ? done : done.turns
       total.turns += turns.length
       for (let k = 0; k < turns.length; k += 300) {
         const r = await api<ImportResult>('/import', { method: 'POST', body: JSON.stringify({ device_id: deviceId, rows: turns.slice(k, k + 300) }) })

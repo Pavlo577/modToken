@@ -3,7 +3,10 @@ import type { Env } from './env.ts'
 import { INGEST_SQL, MAX_ROWS, eventStmt, providerOf } from './events.ts'
 import { json, sha256, str, text } from './util.ts'
 
-/** Old history for a device: only turns from before it was linked (later ones are collected live). */
+/**
+ * Old history for a device. Claude turns (`imp:`) only from before the device was linked (later ones are collected live by the mod);
+ * Codex turns (`codex:`, same ids as the collector uses, so the two never double) have no live source to overlap with and all count.
+ */
 export async function importRows(env: Env, email: string, dev: { id: string; created_at: string }, rows: unknown): Promise<Response> {
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_ROWS) return text('bad request', 400)
   const cutoff = new Date(dev.created_at).getTime()
@@ -11,10 +14,11 @@ export async function importRows(env: Env, email: string, dev: { id: string; cre
   let afterLink = 0
   for (const r of rows as Record<string, unknown>[]) {
     const turnId = str(r.turn_id)
-    if (!turnId.startsWith('imp:')) return text('bad request', 400)
+    const codex = turnId.startsWith('codex:')
+    if (!codex && !turnId.startsWith('imp:')) return text('bad request', 400)
     const stmt = eventStmt(env, email, dev.id, r, turnId)
     if (!stmt) return text('bad request', 400)
-    if (new Date(str(r.ts)).getTime() >= cutoff) { afterLink++; continue }
+    if (!codex && new Date(str(r.ts)).getTime() >= cutoff) { afterLink++; continue }
     stmts.push(stmt)
   }
   const results = stmts.length ? await env.DB.batch(stmts) : []
