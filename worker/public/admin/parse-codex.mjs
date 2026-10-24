@@ -66,6 +66,7 @@ export function createCodexParser(fileKey) {
   let seq = 0
   let explicit = false // the rollout names its turns (turn_id): then a bare "user_message" does not start another one
   let prev = null // totals at the previous token_count
+  let totalGap = false // a last_token_usage was counted without a cumulative total; the next total only restores the baseline
   let limits = []
   let limitsAt = 0
   const turns = new Map() // key -> { startTs, lastTs, sums, best, model, took }
@@ -89,15 +90,23 @@ export function createCodexParser(fileKey) {
     const rl = limitsOf(p.rate_limits)
     if (rl.length && ts >= limitsAt) { limits = rl; limitsAt = ts }
     const total = usageOf(p.info?.total_token_usage)
-    if (!total) return
     const last = usageOf(p.info?.last_token_usage)
     const replay = startedAt !== null && ts < startedAt - 1000
     let d = null
-    if (replay) d = null // history of the parent: only moves the baseline
-    else if (prev === null) d = last ?? total
-    else if (FIELDS.some(f => total[f] < prev[f])) d = last ?? total
-    else d = Object.fromEntries(FIELDS.map(f => [f, total[f] - prev[f]]))
-    prev = total
+    if (!total) {
+      if (!replay && last) d = last
+      // Without the cumulative value we cannot advance `prev`. On the next good event count only its `last`
+      // request, then adopt its total as the new baseline; this avoids counting this request twice.
+      totalGap = true
+    } else {
+      if (replay) d = null // history of the parent: only moves the baseline
+      else if (totalGap) d = last
+      else if (prev === null) d = last ?? total
+      else if (FIELDS.some(f => total[f] < prev[f])) d = last ?? total
+      else d = Object.fromEntries(FIELDS.map(f => [f, total[f] - prev[f]]))
+      prev = total
+      totalGap = false
+    }
     if (!d || FIELDS.every(f => d[f] === 0)) return
     if (!key) begin(null, ts)
     const t = turnOf(key)
