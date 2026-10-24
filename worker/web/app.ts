@@ -287,6 +287,19 @@ const totalsTip = (output: number, freshIn: number, turns: number): TipRow[] =>
   [['Вихідні', fmt(output), COLORS.out], ['Вхідні (нові)', fmt(freshIn), COLORS.in], ['Ходів', String(turns)]]
 
 let activitySeq = 0
+
+/** Jumps the whole page to one day (today has its own button), or to a month. */
+function goDay(day: string): void {
+  state.range = day === tz.today() ? 'today' : 'custom'
+  state.from = state.to = day
+  state.anchor = ''
+  persist(); syncControls(); void load()
+}
+function goMonth(month: string): void {
+  state.range = 'month'
+  state.anchor = month >= tz.today().slice(0, 7) ? '' : month + '-01'
+  persist(); syncControls(); void load()
+}
 const devColor = (name: string): string => PALETTE[Math.max(0, deviceNames.indexOf(name)) % PALETTE.length]
 
 /** "When do you work": the grid fits the period (a day, a week, a month, a year or your own span). */
@@ -323,6 +336,8 @@ function renderActivity(agg: S.Aggregate): void {
       dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
       monthTitle: m => `${monthName(m)} ${m.slice(0, 4)}`,
       showTitle: state.range !== 'month', // the pager already names the month
+      onDay: goDay,
+      onMonth: goMonth,
       tipTitle: d => `${weekday(d)}, ${dayLong(d)}`,
     })
   }
@@ -373,7 +388,7 @@ function renderActivity(agg: S.Aggregate): void {
       })),
       rowLabel: i => String(+days[i].slice(8)),
       rightLabel: i => DOW[tz.parts(tz.startOfDay(days[i]) + 12 * 3_600_000).dow],
-      colLabel: h => String(h), labelW: 24, maxCell: 60, cellH: 18,
+      colLabel: h => String(h), labelW: 24, maxCell: 60, cellH: 18, onCell: i => goDay(days[i]),
       tipTitle: (i, h) => `${weekday(days[i])}, ${dayLong(days[i])}, ${h}:00–${h}:59`,
     })
   } else if (mode === 'detail') {
@@ -404,8 +419,8 @@ function renderActivity(agg: S.Aggregate): void {
       if (topMode) for (const [n, sums] of byDevice) { const v = sums.get(m) ?? 0; if (v > max) { max = v; best = n } }
       const tip: TipRow[] = t ? [...totalsTip(t.output, S.freshInput(t), t.turns), ['Вартість', fmtUsd(t.cost)]] : []
       if (best) tip.push(['Найбільше', best, devColor(best)])
-      return { label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), color: best ? devColor(best) : undefined, tipTitle: `${monthName(m)} ${m.slice(0, 4)}`, tip }
-    }))
+      return { key: m, label: name, value: t?.output ?? 0, text: fmt(t?.output ?? 0), color: best ? devColor(best) : undefined, tipTitle: `${monthName(m)} ${m.slice(0, 4)}`, tip }
+    }), goMonth)
   }
 }
 

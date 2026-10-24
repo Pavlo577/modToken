@@ -351,6 +351,8 @@ export interface HeatGridOptions {
   labelW?: number
   /** Cell height when it should differ from the width. */
   cellH?: number
+  /** Makes the cells clickable. */
+  onCell?: (row: number, col: number) => void
 }
 
 /** Rows x columns of heat cells, coloured by value relative to the largest. */
@@ -385,6 +387,7 @@ export function heatGrid(container: HTMLElement, opts: HeatGridOptions): void {
       const rect = svg('rect', { x, y, width: cw, height: ch, rx: 3, fill: c.color ? shade(c.color, lvl) : HEAT[lvl], class: 'cell' })
       rect.addEventListener('pointerenter', () => tip.show(x + cw / 2, y, opts.tipTitle(r, i), c.tip))
       rect.addEventListener('pointerleave', () => tip.hide())
+      if (opts.onCell) { rect.classList.add('click'); rect.addEventListener('click', () => opts.onCell?.(r, i)) }
       root.append(rect)
     }))
     place(container, root)
@@ -399,6 +402,16 @@ export const hourGrid = (container: HTMLElement, opts: { cells: HeatCell[][]; ti
 function place(container: HTMLElement, root: Element): void {
   for (const c of [...container.children]) if (!c.classList.contains('chart-tip')) c.remove()
   container.prepend(root)
+}
+
+/** Makes an HTML element act as a button: click, Enter and Space. */
+function clickable<T extends HTMLElement>(node: T, run?: (() => void) | undefined): T {
+  if (!run) return node
+  node.tabIndex = 0
+  node.setAttribute('role', 'button')
+  node.addEventListener('click', run)
+  node.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run() } })
+  return node
 }
 
 /** Heat level 0-4 for each value: quartiles of the non-zero ones, so a few huge days do not wash out the rest. */
@@ -425,6 +438,9 @@ export interface MonthCalendarsOptions {
   /** false when the month is named elsewhere (the pager). */
   showTitle?: boolean
   tipTitle: (day: string) => string
+  /** Clicking a day / a month title (when shown). */
+  onDay?: (day: string) => void
+  onMonth?: (month: string) => void
 }
 
 /** One small calendar per month, every date a heat square with its number. */
@@ -445,17 +461,20 @@ export function monthCalendars(container: HTMLElement, opts: MonthCalendarsOptio
       if (d < from || d > to) { grid.append(el('span', { class: 'md off' }, String(+d.slice(8)))); continue }
       const c = days.get(d)
       const lvl = level(c?.value ?? 0)
-      const cell = el('span', { class: `md l${lvl}`, style: c?.color ? `background:${shade(c.color, lvl)}` : '' }, String(+d.slice(8)), big && c?.text ? el('small', {}, c.text) : '')
+      const cell = el('span', { class: `md l${lvl}${opts.onDay ? ' click' : ''}`, style: c?.color ? `background:${shade(c.color, lvl)}` : '' }, String(+d.slice(8)), big && c?.text ? el('small', {}, c.text) : '')
       cell.addEventListener('pointerenter', () => showAt(host, cell, opts.tipTitle(d), c?.tip ?? []))
       cell.addEventListener('pointerleave', () => tipOf(host).hide())
+      if (opts.onDay) clickable(cell, () => opts.onDay?.(d))
       grid.append(cell)
     }
-    return el('div', { class: months.length === 1 ? 'mcal big' : 'mcal' }, ...(opts.showTitle === false ? [] : [el('h3', {}, opts.monthTitle(m))]), grid)
+    return el('div', { class: months.length === 1 ? 'mcal big' : 'mcal' }, ...(opts.showTitle === false ? [] : [clickable(el('h3', { class: opts.onMonth ? 'click' : '' }, opts.monthTitle(m)), opts.onMonth && (() => opts.onMonth?.(m)))]), grid)
   })
   container.replaceChildren(el('div', { class: 'mcals' }, ...blocks))
 }
 
 export interface MonthTile {
+  /** 'YYYY-MM' */
+  key: string
   label: string
   value: number
   text: string
@@ -465,7 +484,7 @@ export interface MonthTile {
 }
 
 /** One tile per month, coloured by its value, with the figure written on it. */
-export function monthTiles(container: HTMLElement, tiles: MonthTile[]): void {
+export function monthTiles(container: HTMLElement, tiles: MonthTile[], onPick?: (month: string) => void): void {
   const host = container as Host
   if (!tiles.some(t => t.value > 0)) return empty(container)
   release(container)
@@ -474,7 +493,8 @@ export function monthTiles(container: HTMLElement, tiles: MonthTile[]): void {
     const tile = el('div', { class: `mt l${level(t.value)}`, style: t.color ? `background:${shade(t.color, level(t.value))}` : '' }, el('span', {}, t.label), el('b', {}, t.value > 0 ? t.text : '—'))
     tile.addEventListener('pointerenter', () => showAt(host, tile, t.tipTitle, t.tip))
     tile.addEventListener('pointerleave', () => tipOf(host).hide())
-    return tile
+    if (onPick) tile.classList.add('click')
+    return clickable(tile, onPick && (() => onPick(t.key)))
   })))
 }
 
