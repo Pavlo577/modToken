@@ -124,3 +124,48 @@ test('notify: the helper with somebody else\'s previous notify: ours is added in
   codex.restoreNotify()
   assert.deepEqual(findNotify(readFileSync(file, 'utf8')).argv, [CU, 'turn-ended', '--previous-notify', JSON.stringify(theirs)])
 })
+
+// ---- the diagnostic log of `notify`
+const logFile = join(dir, 'tt', 'notify.log')
+const events = () => (existsSync(logFile) ? readFileSync(logFile, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)) : [])
+const wait = ms => spawnSync(process.execPath, ['-e', `setTimeout(()=>{},${ms})`])
+const callNotify = (then, payload) => spawnSync(process.execPath, [join(root, 'collectors/token-tracker.mjs'), 'notify', ...(then.length ? ['--then', ...then] : []), payload], { env: { ...process.env, TOKEN_TRACKER_HOME: join(dir, 'tt'), CODEX_HOME: join(dir, 'none') } })
+const SECRET = 'TOP-SECRET-PROMPT-TEXT'
+const PAYLOAD = JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 't1', 'turn-id': 'u1', cwd: '/secret/dir', 'input-messages': [SECRET], 'last-assistant-message': SECRET })
+
+test('notify log: a good downstream is logged with its exit code, and no text of the payload gets in', () => {
+  writeFileSync(logFile, '')
+  const ok = join(dir, 'ok.mjs'); writeFileSync(ok, 'process.exit(0)')
+  assert.equal(callNotify([process.execPath, ok, 'turn-ended'], PAYLOAD).status, 0)
+  const names = events().map(e => e.event)
+  assert.deepEqual(names.filter(n => !n.startsWith('sync_')), ['notify_received', 'downstream_started', 'downstream_finished']) // the detached sync writes its own events whenever it ends
+  const ev = Object.fromEntries(events().map(e => [e.event, e]))
+  assert.equal(ev.downstream_finished.exitCode, 0)
+  assert.deepEqual([ev.notify_received.hasThreadId, ev.notify_received.hasTurnId, ev.notify_received.hasInputMessages, ev.notify_received.hasAssistantMessage], [true, true, true, true])
+  assert.deepEqual(ev.downstream_started.arguments.slice(-2), [ev.downstream_started.arguments.at(-2), '<json>'])
+  assert.ok(ev.downstream_started.arguments.includes('<json>') && !ev.downstream_started.arguments.some(a => a.includes('{')))
+  assert.ok(!readFileSync(logFile, 'utf8').includes(SECRET) && !readFileSync(logFile, 'utf8').includes('/secret/dir'), 'no prompt text, no directory in the log')
+})
+
+test('notify log: a failing downstream is logged with its code; a missing program is logged and does not break anything', () => {
+  writeFileSync(logFile, '')
+  const bad = join(dir, 'bad.mjs'); writeFileSync(bad, 'process.exit(3)')
+  assert.equal(callNotify([process.execPath, bad, 'x'], PAYLOAD).status, 0)
+  assert.equal(events().find(e => e.event === 'downstream_failed').exitCode, 3)
+  writeFileSync(logFile, '')
+  assert.equal(callNotify([join(dir, 'moved', 'codex-computer-use.exe'), 'turn-ended'], PAYLOAD).status, 0)
+  const names = events().map(e => e.event)
+  assert.ok(names.includes('downstream_missing') && !names.includes('downstream_started'))
+  assert.equal(events().find(e => e.event === 'downstream_missing').program, 'codex-computer-use.exe')
+})
+
+test('notify log: without a previous command only the notify and the sync are logged; the log command prints it', () => {
+  writeFileSync(logFile, '')
+  assert.equal(callNotify([], PAYLOAD).status, 0)
+  wait(300)
+  const names = events().map(e => e.event)
+  assert.ok(names.includes('notify_received') && names.includes('sync_started') && !names.some(n => n.startsWith('downstream_')))
+  const r = spawnSync(process.execPath, [join(root, 'collectors/token-tracker.mjs'), 'log'], { env: { ...process.env, TOKEN_TRACKER_HOME: join(dir, 'tt') } })
+  assert.match(String(r.stdout), /notify_received/)
+  assert.ok(!String(r.stdout).includes(SECRET))
+})

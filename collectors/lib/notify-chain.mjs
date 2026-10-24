@@ -19,12 +19,12 @@ export function previousOf(argv) {
   } catch { return null }
 }
 
-/** `self`: how this program starts itself ([exe] or [node, script]). */
-const direct = (argv, self) => argv.slice(0, 2).some(a => norm(a) === norm(self[0]) || (self[1] && norm(a) === norm(self[1])) || base(a).startsWith('token-tracker') || /collectors\/(codex|token-tracker)\.mjs$/.test(norm(a)))
+/** Is the command itself ours (not only somewhere inside it)? `self`: how this program starts itself ([exe] or [node, script]). */
+export const directOurs = (argv, self) => argv.slice(0, 2).some(a => norm(a) === norm(self[0]) || (self[1] && norm(a) === norm(self[1])) || base(a).startsWith('token-tracker') || /collectors\/(codex|token-tracker)\.mjs$/.test(norm(a)))
 
 /** Is our command the notify, directly or inside a --previous-notify (however deep)? */
 export function isOurs(argv, self) {
-  if (direct(argv, self)) return true
+  if (directOurs(argv, self)) return true
   const p = previousOf(argv)
   return Boolean(p && isOurs(p.argv, self))
 }
@@ -34,7 +34,7 @@ export const isHost = argv => argv.length > 0 && base(argv[0]).startsWith('codex
 
 /** `argv` without us: what was there before; null if nothing is left (the notify can go). */
 export function stripOurs(argv, self) {
-  if (direct(argv, self)) { const t = argv.indexOf('--then'); return t >= 0 && t + 1 < argv.length ? argv.slice(t + 1) : null }
+  if (directOurs(argv, self)) { const t = argv.indexOf('--then'); return t >= 0 && t + 1 < argv.length ? argv.slice(t + 1) : null }
   const p = previousOf(argv)
   if (p && isOurs(p.argv, self)) {
     const head = argv.slice(0, p.at), tail = argv.slice(p.at + 2)

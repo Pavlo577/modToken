@@ -4,6 +4,7 @@ import { stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { AGENTS } from './agents/index.mjs'
 import { arg, command, configFile, link, linked, readJson, shown } from './lib/core.mjs'
+import { lastNotify, summarize } from './lib/notify-log.mjs'
 
 const out = (s = '') => console.log(s)
 const when = iso => (iso ? new Date(iso).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : 'ще не було')
@@ -43,6 +44,11 @@ function showStatus(agent) {
   row('Останній синк', when(st.lastSync))
   row('Надіслано', `${st.turns} ходів з ${st.files} файлів`)
   row('Автооновлення', notifyText[agent.notifyState()])
+  if (agent.notifyState() === 'ours') {
+    const n = lastNotify()
+    row('Останній notify', n ? `${when(n.at)}: ${summarize(n) ?? 'викликано'}` : 'Codex ще жодного разу не викликав програму (зроби хід у Codex і відкрий знову)')
+    for (const p of agent.notifyProblems()) row('Увага', p.kind === 'ours' ? `програму не знайдено за шляхом з config.toml (${p.program}); натисни 3 двічі: вимкнути й підключити знову` : `команду, що працює разом із нами, не знайдено (${p.program}): Codex, схоже, оновився; натисни 3, потім 3 знову`)
+  }
   if (st.lastError) row('Остання помилка', `${st.lastError.message} (${when(st.lastError.at)})`)
 }
 

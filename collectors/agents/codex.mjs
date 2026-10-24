@@ -6,7 +6,7 @@ import { join, relative, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createCodexParser } from '../../worker/public/admin/parse-codex.mjs'
 import { configFile, home, lock, post, readJson, self, writeJson } from '../lib/core.mjs'
-import { chainArgv, isOurs as ours, stripOurs } from '../lib/notify-chain.mjs'
+import { chainArgv, directOurs, isOurs as ours, stripOurs } from '../lib/notify-chain.mjs'
 import { findNotify, formatNotify } from '../lib/toml-notify.mjs'
 
 const BATCH = 300
@@ -156,6 +156,20 @@ export default {
   /** What the notify becomes when our command joins `argv`: the line shown to the user before anything is written. */
   chainArgv: argv => chainArgv(argv, self),
   chainLine(argv) { return formatNotify(this.chainArgv(argv)) },
+
+  /**
+   * Things wrong with the notify now: our program moved, or the command kept next to ours is gone (Codex moves its helpers when it updates).
+   * [{ kind, program }]; empty when all is well or our notify is not connected.
+   */
+  notifyProblems() {
+    const info = this.notifyInfo()
+    if (info.state !== 'ours' || !info.argv) return []
+    const out = []
+    const gone = (kind, argv) => { if (argv?.[0] && /[\\/]/.test(argv[0]) && !existsSync(argv[0])) out.push({ kind, program: argv[0] }) }
+    gone('ours', directOurs(info.argv, self) ? info.argv : null)
+    gone('other', stripOurs(info.argv, self))
+    return out
+  },
 
   /** Turns our notify off: what was there before comes back, or the line is removed if there was nothing. */
   restoreNotify() {
