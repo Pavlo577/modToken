@@ -45,6 +45,15 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
     return json({ code, expires_at: expires })
   }
 
+  // Cancels a code that was made but not used (the user changed their mind): it can no longer link anything.
+  if (path === '/codes/cancel' && req.method === 'POST') {
+    const body = (await req.json().catch(() => null)) as { code?: unknown } | null
+    const code = str(body?.code, 40).toUpperCase().replace(/[^A-Z0-9]/g, '')
+    await env.DB.prepare('UPDATE link_codes SET used_at = ? WHERE code_hash = ? AND user_email = ? AND used_at IS NULL')
+      .bind(new Date().toISOString(), await sha256(code), email).run()
+    return new Response(null, { status: 204 })
+  }
+
   if (path === '/import' && req.method === 'POST') {
     const body = (await req.json().catch(() => null)) as { device_id?: unknown; rows?: unknown } | null
     const dev = await env.DB.prepare('SELECT id, created_at FROM devices WHERE id = ? AND user_email = ? AND revoked = 0')

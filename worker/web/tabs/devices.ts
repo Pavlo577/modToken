@@ -53,11 +53,15 @@ async function showCode(panel: HTMLElement, name: string, provider: string): Pro
   try {
     const { code, expires_at } = await api<{ code: string; expires_at: string }>('/codes', { method: 'POST', body: JSON.stringify({ name }) })
     const note = el('div', { class: 'sub' })
+    const close = (): void => { clearInterval(panelTimer); panel.replaceChildren(); panel.classList.add('hide') }
     panel.replaceChildren(
+      el('button', { type: 'button', class: 'dev-x', 'aria-label': 'Закрити (код лишається чинним)', title: 'Закрити: код лишається чинним, поки не мине 10 хвилин', onclick: close }, '×'),
       el('div', { class: 'sub' }, `${providerLabel(provider)} для «${name}»:`),
       el('div', { class: 'code' }, code), note,
       el('p', { class: 'note', style: 'margin:6px 0 0' }, ...how(code)),
-      el('button', { type: 'button', onclick: () => { clearInterval(panelTimer); panel.replaceChildren(); panel.classList.add('hide') } }, 'Закрити'),
+      el('div', { class: 'dev-cancel' }, el('button', { type: 'button', title: 'Зробити код недійсним', onclick: async () => {
+        try { await api('/codes/cancel', { method: 'POST', body: JSON.stringify({ code }) }); close() } catch (err) { alert('Не вдалося скасувати код: ' + (err as Error).message) }
+      } }, 'Скасувати')),
     )
     const tick = (): void => {
       const left = Math.max(0, Math.round((new Date(expires_at).getTime() - Date.now()) / 1000))
@@ -88,7 +92,7 @@ function deviceRow(g: DeviceGroup): HTMLElement {
       el('span', { class: 'tag', title: subscription ? 'Пристрій надсилає ліміти підписки' : 'Пристрій не надсилав ліміти підписки: оплата (підписка, кредити чи API) невідома' }, subscription ? 'підписка' : 'тип оплати невизначений'),
       el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
     revoked ? '' : el('div', { class: 'dev-actions' },
-      el('button', { type: 'button', disabled: missing.length === 0, title: missing.length ? 'Створити код для ще одного агента на цьому пристрої' : 'Усі підтримувані агенти вже підключені', onclick: () => menu.classList.toggle('hide') }, 'Додати провайдера'),
+      el('button', { type: 'button', disabled: missing.length === 0, title: missing.length ? 'Створити код для ще одного агента на цьому пристрої' : 'Усі підтримувані агенти вже підключені', onclick: () => menu.classList.toggle('hide') }, missing.length ? 'Додати провайдера' : 'Додано всі'),
       el('button', { class: 'danger', onclick: async () => {
         const what = g.providers.size ? ` (${[...g.providers].map(providerLabel).join(', ')})` : ''
         if (!confirm(`Відкликати «${g.name}»? Усі агенти цього пристрою${what} перестануть надсилати дані.`)) return
