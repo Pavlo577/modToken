@@ -21,7 +21,7 @@ Then protect the admin in Cloudflare Zero Trust → Access → Applications → 
 
 ## Use it
 1. Install the mod: `/plugin marketplace add Pavlo577/modToken`, then `/plugin install token-tracker@modtoken`.
-2. Optional: `/tracker-setup https://<your-site>` if your site is not the default one in `hooks/register.ts`.
+2. The site is fixed in the mod (`BACKEND_URL` in `hooks/register.ts`; change that line to host your own copy).
 3. On the site: Devices → create a code (valid 10 minutes, links one device only).
 4. On the device: `/tracker-link <code>`.
 

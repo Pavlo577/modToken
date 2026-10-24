@@ -2,9 +2,9 @@ import type { Register } from 'claude-code'
 
 const QUEUE = 'queue'
 const TOKEN = 'deviceToken'
-const URL_KEY = 'backendUrl'
-// Where devices send data unless /tracker-setup says otherwise. Linking still needs a one-time code from the site.
-const DEFAULT_URL = 'https://track.brolafkodev.pp.ua'
+// The site every device reports to (fixed: there is no setting for it). Linking still needs a one-time code from the site.
+// Hosting your own copy: change this line.
+const BACKEND_URL = 'https://track.brolafkodev.pp.ua'
 const MAX_QUEUE = 500
 
 type Row = {
@@ -50,12 +50,10 @@ async function readLimits($: any): Promise<{ limits: unknown[]; key: string } | 
   }
 }
 
-async function backend($: any): Promise<string> {
-  return (((await $.store.get(URL_KEY)) as string | undefined) || DEFAULT_URL).replace(/\/$/, '')
-}
+const backend = (): string => BACKEND_URL.replace(/\/$/, '')
 
 async function flush($: any, extra?: Row) {
-  const url = await backend($)
+  const url = backend()
   const token = (await $.store.get(TOKEN)) as string | undefined
   if (!token) {
     report($, 'not linked: run /tracker-link <code>')
@@ -66,11 +64,8 @@ async function flush($: any, extra?: Row) {
   const lim = extra ? await readLimits($) : undefined
   if (rows.length === 0 && !lim) return
   try {
-    const r = await $.http.fetch(`${url}/api/ingest`, {
-      method: 'POST',
-      headers: { 'x-device-token': token, 'content-type': 'application/json' },
-      body: JSON.stringify(lim ? { rows, limits: lim.limits } : rows),
-    })
+    const r = await send($, url, token, rows, lim?.limits)
+    if (r.status === 400) return await sendOneByOne($, url, token, rows, lim)
     await $.store.set(QUEUE, r.ok ? [] : rows.slice(-MAX_QUEUE))
     if (r.ok && lim) lastLimits = lim.key
     report(
@@ -87,14 +82,41 @@ async function flush($: any, extra?: Row) {
   }
 }
 
+const send = ($: any, url: string, token: string, rows: Row[], limits?: unknown[]) =>
+  $.http.fetch(`${url}/api/ingest`, {
+    method: 'POST',
+    headers: { 'x-device-token': token, 'content-type': 'application/json' },
+    body: JSON.stringify(limits ? { rows, limits } : rows),
+  })
+
+/**
+ * The server refuses a whole request with HTTP 400 when one row is bad. Kept in the queue that row would block every later turn
+ * for good, so the rows go one by one: the good ones arrive, the refused ones are dropped (and said so), the rest stays queued.
+ */
+async function sendOneByOne($: any, url: string, token: string, rows: Row[], lim?: { limits: unknown[]; key: string }) {
+  const left: Row[] = []
+  let dropped = 0
+  let failed: number | undefined
+  for (const [i, row] of rows.entries()) {
+    try {
+      const one = await send($, url, token, [row], i === 0 ? lim?.limits : undefined)
+      if (one.ok) { if (i === 0 && lim) lastLimits = lim.key }
+      else if (one.status === 400) dropped++
+      else { left.push(row); failed = one.status }
+    } catch {
+      left.push(row)
+    }
+  }
+  await $.store.set(QUEUE, left.slice(-MAX_QUEUE))
+  if (left.length) report($, failed === 401 ? 'device revoked or unknown: run /tracker-link <code>' : `${left.length} turn(s) queued`)
+  else report($, null)
+  if (dropped) $.ui.toast(`token-tracker: ${dropped} turn(s) refused by the server and skipped`)
+}
+
 export const register: Register = on => {
   let sessionId = 'unknown'
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({
-      name: 'tracker-setup',
-      description: 'Set the token-tracker site: /tracker-setup <https://your-site>',
-    })
     await $.command.register({
       name: 'tracker-link',
       description: 'Link this device to your account: /tracker-link <code from the site>',
@@ -106,18 +128,9 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'tracker-setup' }, async ($, e) => {
-    const [u] = e.args.trim().split(/\s+/)
-    if (!u || !/^https:\/\/[^\s/]+\/?$/.test(u)) {
-      return { text: 'Usage: /tracker-setup https://<your-site>' }
-    }
-    await $.store.set(URL_KEY, u.replace(/\/$/, ''))
-    return { text: 'token-tracker: site saved. Next: /tracker-link <code from the site>.' }
-  }).catch(() => ({ text: 'token-tracker: setup failed unexpectedly' }))
-
   on('command.run', { command: 'tracker-link' }, async ($, e) => {
     const code = e.args.trim()
-    const url = await backend($)
+    const url = backend()
     if (!code) return { text: 'Usage: /tracker-link <code>. Create a code on the site (Add device).' }
     try {
       const r = await $.http.fetch(`${url}/api/link`, {
@@ -143,7 +156,7 @@ export const register: Register = on => {
     const noNode = 'token-tracker: could not run Node.js here. Install Node.js, or import on the site: Devices, Import old data.'
     try {
       const r = await $.process.run(['node', `${$.plugin.root}/import-logs.mjs`], {
-        env: { TRACKER_URL: await backend($), TRACKER_TOKEN: token },
+        env: { TRACKER_URL: backend(), TRACKER_TOKEN: token },
         timeoutMs: 600_000,
       })
       if (r.exitCode !== 0) return { text: `token-tracker: import failed. ${r.stderr.trim().slice(0, 300) || `exit code ${r.exitCode}`}` }
@@ -165,8 +178,11 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const ran = await next(e)
     if (e.usage) {
+      // The session's own id (the transcript file's name), so a mod switched on in the middle of a session still names it;
+      // the id remembered at session start is the fallback, 'unknown' the last resort.
+      const session = (await $.session.id().catch(() => '')) || sessionId
       await flush($, {
-        session_id: sessionId,
+        session_id: session,
         turn_id: e.turnId,
         ts: new Date(await $.clock.now()).toISOString(),
         model: e.usage.model,
