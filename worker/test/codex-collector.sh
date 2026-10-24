@@ -34,6 +34,13 @@ line 2026-10-24T10:00:20Z 3000 2500 120 2000 1700 70 null >> "$F"
 out=$(run sync); echo "$out" | grep -q '1 turns sent' && echo "ok   a grown turn is sent again" || { echo "FAIL third sync: $out"; fail=1; }
 check "the turn grew, not duplicated" "$(turn)" "120 500 2500 1"
 check "full resend changes nothing" "$(run sync --full >/dev/null; turn)" "120 500 2500 1"
+# the Stop hook: Codex writes a JSON on stdin, naming the session file; only that file is synced, in the background
+line 2026-10-24T10:00:40Z 4000 3000 150 1000 500 30 null >> "$F"
+hk=$(printf '{"hook_event_name":"Stop","session_id":"th9","turn_id":"tA","model":"gpt-5-codex","cwd":"/secret/project","last_assistant_message":"TOP SECRET ANSWER","transcript_path":"%s","stop_hook_active":false}' "$F" | run hook-stop; echo "rc=$?")
+check "hook-stop prints nothing and exits 0" "$hk" "rc=0"
+for i in 1 2 3 4 5 6 7 8 9 10; do [ "$(turn)" = "150 1000 3000 1" ] && break; sleep 0.4; done
+check "the hook synced the file it was told about" "$(turn)" "150 1000 3000 1"
+check "no prompt text in the log or state files" "$(grep -rl 'TOP SECRET\|/secret/project' "$TOKEN_TRACKER_HOME" | wc -l)" 0
 check "no prompt text in the state files" "$(grep -rl 'TOP SECRET' "$TOKEN_TRACKER_HOME" | wc -l)" 0
 rm -rf "$T"
 exit $fail

@@ -5,7 +5,8 @@
 //   (no arguments)                       the guide: sets everything up the first time, then shows the status and sends what is new
 //   link <CODE> [--url https://site]     once per device: a code made on the site (Devices tab)
 //   sync [--full]                        send what is new (--full: send everything again)
-//   notify [...]                         for Codex's `notify`: runs `sync` in the background
+//   hook-stop                            for Codex's Stop hook (hooks.json): runs `sync` for the finished session in the background
+//   notify [...]                         for Codex's `notify` (older way): runs `sync` in the background
 //   status | setup | log                 for scripts (log: what Codex's notify did, no texts)
 //
 // The device token and the list of what was sent live in ~/.token-tracker (TOKEN_TRACKER_HOME). CODEX_HOME is honoured.
@@ -20,7 +21,7 @@ import { interactive } from './wizard.mjs'
 async function sync() {
   const full = process.argv.includes('--full')
   let r
-  try { r = await codex.sync({ full }) } catch (e) { logEvent({ event: 'sync_failed', error: e instanceof Error ? e.message : String(e) }); throw e }
+  try { r = await codex.sync({ full, only: arg('--file') }) } catch (e) { logEvent({ event: 'sync_failed', error: e instanceof Error ? e.message : String(e) }); throw e }
   logEvent({ event: 'sync_finished', rows: r.rows, scanned: r.scanned })
   if (r.missing) console.log(`no Codex data in ${codex.home}`)
   else if (r.busy) console.log('another sync is running')
@@ -68,6 +69,33 @@ async function notify() {
   else logEvent({ event: r.exitCode === 0 ? 'downstream_finished' : 'downstream_failed', program, exitCode: r.exitCode, signal: r.signal ?? null, durationMs: r.durationMs })
 }
 
+/**
+ * Codex's `Stop` hook: Codex writes a JSON about the finished turn on stdin (session id, turn id, model, the path of the session file,
+ * the last answer ...). Only the path of the session file is used (to sync just that file); the answer is never kept or printed.
+ * Nothing is printed and the exit code is always 0: a Stop hook that prints JSON with "decision":"block" would make Codex go on.
+ */
+async function hookStop() {
+  let raw = ''
+  try {
+    process.stdin.setEncoding('utf8')
+    raw = await new Promise(resolve => {
+      let s = ''
+      const t = setTimeout(() => resolve(s), 3000)
+      process.stdin.on('data', d => { s += d; if (s.length > 5_000_000) { clearTimeout(t); resolve(s) } })
+      process.stdin.on('end', () => { clearTimeout(t); resolve(s) })
+      process.stdin.on('error', () => { clearTimeout(t); resolve(s) })
+    })
+  } catch { /* no stdin */ }
+  let j = {}
+  try { j = JSON.parse(raw) ?? {} } catch { /* not JSON */ }
+  const file = typeof j.transcript_path === 'string' && /rollout-.*\.jsonl$/i.test(j.transcript_path) ? j.transcript_path : null
+  logEvent({ event: 'hook_received', hook: typeof j.hook_event_name === 'string' ? j.hook_event_name : null, hasSessionId: Boolean(j.session_id), hasTurnId: Boolean(j.turn_id), hasTranscript: Boolean(file), model: typeof j.model === 'string' ? j.model : null })
+  try {
+    spawn(self[0], [...self.slice(1), 'sync', ...(file ? ['--file', file] : [])], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref()
+    logEvent({ event: 'sync_started', scope: file ? 'file' : 'all' })
+  } catch (e) { logEvent({ event: 'sync_failed', error: e.code ?? e.message }) }
+}
+
 function log() {
   const events = readLog(Number(arg('--last')) || 30)
   if (!events.length) return console.log('notify.log is empty: Codex has not called this program yet.')
@@ -108,6 +136,7 @@ try {
     console.log(`linked as "${device}". Now run: ${command(shown)} sync`)
   } else if (cmd === 'sync') await sync()
   else if (cmd === 'notify') await notify()
+  else if (cmd === 'hook-stop') await hookStop()
   else if (cmd === 'log') log()
   else if (cmd === 'status') status()
   else if (cmd === 'setup') setup()

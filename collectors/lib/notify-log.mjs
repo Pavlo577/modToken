@@ -24,14 +24,17 @@ export function readLog(n = 40) {
   } catch { return [] }
 }
 
-/** The newest notify and what followed it: { at, events[] }, or null if Codex never called us. */
+const CALLS = ['notify_received', 'hook_received']
+
+/** The newest call from Codex (the Stop hook or the notify) and what followed it: { at, via, events[] }, or null if Codex never called us. */
 export function lastNotify() {
   const all = readLog(300)
-  const i = all.map(e => e.event).lastIndexOf('notify_received')
+  let i = -1
+  all.forEach((e, k) => { if (CALLS.includes(e.event)) i = k })
   if (i < 0) return null
   const events = []
-  for (const e of all.slice(i + 1)) { if (e.event === 'notify_received') break; events.push(e) }
-  return { at: all[i].at, received: all[i], events }
+  for (const e of all.slice(i + 1)) { if (CALLS.includes(e.event)) break; events.push(e) }
+  return { at: all[i].at, via: all[i].event === 'hook_received' ? 'hook' : 'notify', received: all[i], events }
 }
 
 /** One line for the status screen. */
@@ -47,6 +50,7 @@ export function summarize(n) {
       : down.event === 'downstream_still_running' ? 'стара команда ще працювала через 10 с (лишена без змін)'
       : 'стара команда запущена')
   }
+  if (n.via === 'hook') parts.unshift('Stop-hook')
   parts.push(!sync ? 'синхронізація: ще не завершилась' : sync.event === 'sync_finished' ? `синхронізація: надіслано ${sync.rows} ходів` : sync.event === 'sync_failed' ? `синхронізація не вдалась: ${sync.error}` : 'синхронізація запущена')
   return parts.join('; ')
 }

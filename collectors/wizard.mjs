@@ -27,11 +27,17 @@ async function runSync(agent, full = false) {
   }
 }
 
+const hookText = {
+  ours: 'підключено: після кожного ходу Codex повідомляє програму сам (Codex може один раз попросити підтвердити довіру до hook)',
+  none: 'не підключено',
+  unreadable: 'hooks.json у Codex не читається як JSON, тому я його не чіпаю',
+}
+
 const notifyText = {
   ours: 'підключено: після кожного ходу Codex дані йдуть самі',
   none: 'не підключено (у config.toml Codex немає рядка notify)',
   'no-config': 'не підключено (config.toml Codex ще нема)',
-  other: 'не підключено: у config.toml уже є notify іншої програми (пункт 3 запропонує ланцюжок)',
+  other: 'не підключено: у config.toml уже є notify іншої програми (пункт 4 запропонує ланцюжок)',
 }
 
 function showStatus(agent) {
@@ -43,11 +49,14 @@ function showStatus(agent) {
   row(agent.title, `${agent.detect() ? 'знайдено' : 'не знайдено'} (${agent.home})`)
   row('Останній синк', when(st.lastSync))
   row('Надіслано', `${st.turns} ходів з ${st.files} файлів`)
-  row('Автооновлення', notifyText[agent.notifyState()])
-  if (agent.notifyState() === 'ours') {
+  row('Stop-hook', hookText[agent.hookState()])
+  row('Notify (запасний)', notifyText[agent.notifyState()])
+  if (agent.hookState() === 'ours' || agent.notifyState() === 'ours') {
     const n = lastNotify()
-    row('Останній notify', n ? `${when(n.at)}: ${summarize(n) ?? 'викликано'}` : 'Codex ще жодного разу не викликав програму (зроби хід у Codex і відкрий знову)')
-    for (const p of agent.notifyProblems()) row('Увага', p.kind === 'ours' ? `програму не знайдено за шляхом з config.toml (${p.program}); натисни 3 двічі: вимкнути й підключити знову` : `команду, що працює разом із нами, не знайдено (${p.program}): Codex, схоже, оновився; натисни 3, потім 3 знову`)
+    row('Останній виклик', n ? `${when(n.at)}: ${summarize(n) ?? 'викликано'}` : 'Codex ще жодного разу не викликав програму (зроби хід у Codex і відкрий знову)')
+  }
+  if (agent.notifyState() === 'ours') {
+    for (const p of agent.notifyProblems()) row('Увага', p.kind === 'ours' ? `програму не знайдено за шляхом з config.toml (${p.program}); вимкни й підключи notify знову (пункт 4)` : `команду, що працює разом із нами, не знайдено (${p.program}): Codex, схоже, оновився; вимкни й підключи notify знову (пункт 4)`)
   }
   if (st.lastError) row('Остання помилка', `${st.lastError.message} (${when(st.lastError.at)})`)
 }
@@ -75,7 +84,7 @@ async function offerChain(rl, agent, argv) {
   out(`  Зараз там: ${command(argv)}`)
   out('  Я додамся поруч так, щоб стара команда працювала як раніше: після кожного ходу я надішлю числа, а вона отримає ті самі аргументи й той самий JSON від Codex.')
   out(`  Новий рядок:\n    ${agent.chainLine(argv)}`)
-  out('  Спершу зроблю резервну копію config.toml і запам\'ятаю стару команду, щоб її можна було повернути (пункт «вимкнути автооновлення» в меню).')
+  out('  Спершу зроблю резервну копію config.toml і запам\'ятаю стару команду, щоб її можна було повернути (пункт 4 в меню: вимкнути notify).')
   if (!yes(await rl.question('  Зробити так? (так/ні): '))) return out('  Добре, не чіпаю. Дані підтягуватимуться, коли відкриваєш цю програму.')
   apply(agent, () => agent.installNotify({ chain: true }), 'Готово: стара команда збережена й працюватиме як раніше.')
 }
@@ -98,6 +107,31 @@ async function offerRestore(rl, agent) {
     const r = agent.restoreNotify()
     out(r.changed ? `  Готово.${r.restored ? ' Повернуто: ' + command(r.restored) : ''} Копія: ${r.backup}` : '  Нічого міняти не треба.')
   } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
+}
+
+/** The Stop hook: several hooks live side by side in hooks.json, so nobody has to give way (unlike the single notify). */
+async function offerHook(rl, agent) {
+  const state = agent.hookState()
+  if (state === 'ours') return out('  Stop-hook уже підключено.')
+  if (state === 'unreadable') return out(`  ${agent.hooksJson} не читається як JSON, тому я його не чіпаю. Виправ файл або додай hook вручну:\n    ${agent.hookCommand()}`)
+  out(`\n  Рекомендований спосіб: Stop-hook. Codex сам викликає програму після кожного ходу, і це не заважає іншим програмам Codex (на відміну від notify, який може бути лише один).`)
+  out(`  Я додам у ${agent.hooksJson} команду:\n    ${agent.hookCommand()}`)
+  out('  Вона нічого не друкує й не змінює роботу Codex; з даних ходу використовує лише шлях до файлу сесії, а текст відповіді відкидає. Чужі hooks не чіпаю, перед записом роблю копію файлу.')
+  if (!yes(await rl.question('  Додати? (так/ні): '))) return out('  Добре, не чіпаю.')
+  try {
+    const r = agent.installHook()
+    out(`  Додано.${r.backup ? ' Копія старого файлу: ' + r.backup : ''}`)
+    out('  Перезапусти Codex: він може один раз попросити підтвердити довіру до нового hook, підтверди. Після першого ходу відкрий цю програму й перевір «Останній виклик».')
+  } catch (e) {
+    out(`  Не вдалося змінити hooks.json: ${e instanceof Error ? e.message : e}`)
+    out(`  Додай вручну в ${agent.hooksJson}:\n    ${agent.hookCommand()}`)
+  }
+}
+
+async function offerHookRemove(rl, agent) {
+  out(`\n  Я прибираю свій Stop-hook з ${agent.hooksJson}; інші hooks лишаються. Спершу робиться копія файлу.`)
+  if (!yes(await rl.question('  Вимкнути Stop-hook? (так/ні): '))) return out('  Добре, лишаю як є.')
+  try { const r = agent.removeHook(); out(r.changed ? `  Готово. Копія: ${r.backup}` : '  Нічого міняти не треба.') } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
 }
 
 async function firstRun(rl, agent) {
@@ -126,7 +160,8 @@ async function firstRun(rl, agent) {
   out('  3. Надсилаю історію, що вже є (це безпечно повторювати, нічого не задвоїться)...')
   await runSync(agent)
   out('\n  4. Автооновлення.')
-  await offerNotify(rl, agent)
+  await offerHook(rl, agent)
+  if (agent.hookState() !== 'ours') await offerNotify(rl, agent) // the older way, when the hook was not wanted
   out('\n  Усе налаштовано. Відкривай цю програму знову, щоб побачити статус і докачати нове. Вікно можна закрити.')
   return true
 }
@@ -136,11 +171,12 @@ async function statusLoop(rl, agent) {
   await runSync(agent)
   for (;;) {
     showStatus(agent)
-    const on = agent.notifyState() === 'ours'
-    const a = (await rl.question(`\n  1 — оновити зараз, 2 — переслати все заново, 3 — ${on ? 'вимкнути' : 'підключити'} автооновлення, Enter — закрити: `)).trim()
+    const hookOn = agent.hookState() === 'ours', notifyOn = agent.notifyState() === 'ours'
+    const a = (await rl.question(`\n  1 — оновити зараз, 2 — переслати все заново, 3 — ${hookOn ? 'вимкнути' : 'підключити'} Stop-hook, 4 — ${notifyOn ? 'вимкнути' : 'підключити'} notify, Enter — закрити: `)).trim()
     if (a === '1') await runSync(agent)
     else if (a === '2') await runSync(agent, true)
-    else if (a === '3') await (on ? offerRestore : offerNotify)(rl, agent)
+    else if (a === '3') await (hookOn ? offerHookRemove : offerHook)(rl, agent)
+    else if (a === '4') await (notifyOn ? offerRestore : offerNotify)(rl, agent)
     else return
   }
 }

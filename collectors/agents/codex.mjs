@@ -2,16 +2,18 @@
 // Only token counts, timestamps, model names and ids leave the machine, never prompts, answers or tool output.
 import { createReadStream, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { createCodexParser } from '../../worker/public/admin/parse-codex.mjs'
 import { configFile, home, lock, post, readJson, self, writeJson } from '../lib/core.mjs'
 import { chainArgv, directOurs, isOurs as ours, stripOurs } from '../lib/notify-chain.mjs'
+import { hasOurHook, hookCommand, isEmptyDoc, withHook, withoutHook } from '../lib/hooks-json.mjs'
 import { findNotify, formatNotify } from '../lib/toml-notify.mjs'
 
 const BATCH = 300
 const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex')
 const configToml = join(codexHome, 'config.toml')
+const hooksJson = join(codexHome, 'hooks.json')
 const stateFile = join(home, 'codex-state.json')
 const originalFile = join(home, 'notify-original.json') // the notify Codex had before ours took its place
 
@@ -42,10 +44,10 @@ const sig = t => `${t.input_tokens},${t.output_tokens},${t.cache_read_tokens},${
 
 const isOurs = argv => ours(argv, self)
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-')
-const backup = () => { // a name that is never taken: two copies in the same millisecond must not overwrite each other
-  let to = `${configToml}.bak-${stamp()}`
-  for (let n = 2; existsSync(to); n++) to = `${configToml}.bak-${stamp()}-${n}`
-  copyFileSync(configToml, to)
+const backup = (file = configToml) => { // a name that is never taken: two copies in the same millisecond must not overwrite each other
+  let to = `${file}.bak-${stamp()}`
+  for (let n = 2; existsSync(to); n++) to = `${file}.bak-${stamp()}-${n}`
+  copyFileSync(file, to)
   return to
 }
 
@@ -60,7 +62,7 @@ export default {
    * Sends what is new. `onFile(i, total)` is called for each rollout file looked at.
    * Returns { files, scanned, rows, limits } and keeps `lastSync` / `lastError` in the state file.
    */
-  async sync({ full = false, onFile } = {}) {
+  async sync({ full = false, onFile, only } = {}) {
     const cfg = readJson(configFile, null)
     if (!cfg?.token) throw new Error('not linked yet: run the program without arguments, or: link <CODE>')
     const state = readJson(stateFile, { files: {}, sent: {}, limits: '' })
@@ -70,7 +72,8 @@ export default {
     const stats = { files: 0, scanned: 0, rows: 0, limits: false }
     try {
       let limits = [], limitsAt = ''
-      const paths = rollouts()
+      // `only`: the one rollout a hook named (it must look like a rollout file and exist); else every rollout
+      const paths = only ? [resolve(only)].filter(f => /^rollout-.*\.jsonl$/.test(basename(f)) && existsSync(f) && statSync(f).isFile()) : rollouts()
       for (const [n, path] of paths.entries()) {
         onFile?.(n + 1, paths.length)
         stats.files++
@@ -156,6 +159,37 @@ export default {
   /** What the notify becomes when our command joins `argv`: the line shown to the user before anything is written. */
   chainArgv: argv => chainArgv(argv, self),
   chainLine(argv) { return formatNotify(this.chainArgv(argv)) },
+
+  hooksJson,
+  hookCommand: () => hookCommand(self),
+
+  /** 'ours' | 'none' (hooks.json without ours, or no file) | 'unreadable' (not valid JSON: never touched). */
+  hookState() {
+    if (!existsSync(hooksJson)) return 'none'
+    try { return hasOurHook(JSON.parse(readFileSync(hooksJson, 'utf8')), self) ? 'ours' : 'none' } catch { return 'unreadable' }
+  },
+
+  /** Adds our Stop hook next to the others in hooks.json; a copy of the old file is kept. Codex asks the user to trust a new hook. */
+  installHook() {
+    const state = this.hookState()
+    if (state === 'ours' || state === 'unreadable') return { changed: false, state }
+    const had = existsSync(hooksJson)
+    const copy = had ? backup(hooksJson) : null
+    const doc = had ? JSON.parse(readFileSync(hooksJson, 'utf8')) : {}
+    mkdirSync(codexHome, { recursive: true })
+    writeFileSync(hooksJson, JSON.stringify(withHook(doc, hookCommand(self)), null, 2) + '\n')
+    return { changed: true, state, backup: copy }
+  },
+
+  /** Takes our hook out again, leaving every other hook; an empty file is removed. */
+  removeHook() {
+    if (this.hookState() !== 'ours') return { changed: false }
+    const copy = backup(hooksJson)
+    const doc = withoutHook(JSON.parse(readFileSync(hooksJson, 'utf8')), self)
+    if (isEmptyDoc(doc)) unlinkSync(hooksJson)
+    else writeFileSync(hooksJson, JSON.stringify(doc, null, 2) + '\n')
+    return { changed: true, backup: copy }
+  },
 
   /**
    * Things wrong with the notify now: our program moved, or the command kept next to ours is gone (Codex moves its helpers when it updates).
