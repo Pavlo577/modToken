@@ -46,6 +46,20 @@ test('a token_count that only carries new rate limits is not counted twice', () 
   assert.equal(turns[0].cache_read_tokens, 800)
 })
 
+test('last_token_usage is counted when total_token_usage is missing or corrupt, then recovery does not count it twice', () => {
+  const missingTotal = JSON.stringify({ timestamp: '2026-10-24T10:00:05Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: u(100, 60, 10) } } })
+  const corruptTotal = JSON.stringify({ timestamp: '2026-10-24T10:00:07Z', type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: 'broken', last_token_usage: u(50, 20, 5) } } })
+  const { turns } = run([
+    meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1'),
+    missingTotal, corruptTotal,
+    count('2026-10-24T10:00:10Z', u(300, 180, 30), u(150, 100, 15)),
+    count('2026-10-24T10:00:20Z', u(350, 200, 35), u(50, 20, 5)),
+  ])
+  assert.equal(turns[0].input_tokens, 150)
+  assert.equal(turns[0].cache_read_tokens, 200)
+  assert.equal(turns[0].output_tokens, 35)
+})
+
 test('cache writes are their own part of the input', () => {
   const { turns } = run([meta('2026-10-24T10:00:00Z'), ctx('2026-10-24T10:00:01Z', 't1'), count('2026-10-24T10:00:05Z', u(1000, 600, 10, 0, 300), u(1000, 600, 10, 0, 300))])
   assert.equal(turns[0].input_tokens, 100)

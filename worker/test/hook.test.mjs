@@ -18,6 +18,14 @@ test('hook command line: quoted for cmd.exe on Windows and for sh elsewhere, pat
   assert.equal(hookCommand(['node', '/x/y.mjs'], 'darwin'), "'node' '/x/y.mjs' hook-stop")
 })
 
+test('hook command line really runs through cmd.exe with a path containing spaces and parentheses', { skip: process.platform !== 'win32' }, () => {
+  const bin = join(mkdtempSync(join(tmpdir(), 'hook command ')), 'token-tracker (2).cmd')
+  writeFileSync(bin, '@exit /b 0\r\n')
+  // Codex wraps the configured line as cmd.exe /C "<line>"; the outer quotes are significant with /S.
+  const r = spawnSync('cmd.exe', ['/D', '/S', '/C', `"${hookCommand([bin], 'win32')}"`], { windowsVerbatimArguments: true })
+  assert.equal(r.status, 0, String(r.stderr))
+})
+
 test('hooks.json: ours is added as a new group next to other hooks, nothing else is changed, and it comes out again', () => {
   const theirs = { description: 'mine', hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'audit.sh' }] }], Stop: [{ hooks: [{ type: 'command', command: 'notify-send done', timeout: 5 }] }] } }
   const cmd = hookCommand(WIN, 'win32')
