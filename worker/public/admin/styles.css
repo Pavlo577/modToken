@@ -172,12 +172,12 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .skel-chart svg path { stroke: rgba(255,255,255,.25); stroke-width: 2.4; stroke-linecap: round; animation: pulse 1.5s ease-in-out infinite; }
 .anim .draw { stroke-dasharray: 1 1; stroke-dashoffset: 1; animation: draw 1s cubic-bezier(.4,0,.2,1) forwards; }
 .anim .fade { clip-path: inset(0 100% 0 0); animation: reveal 1s cubic-bezier(.4,0,.2,1) forwards; }
-.anim .bar.grow path { transform-box: fill-box; transform-origin: bottom; transform: scaleY(0); animation: grow .55s var(--d, 0ms) cubic-bezier(.3,.7,.3,1) forwards; }
+.anim .bar.grow { transform-box: view-box; transform-origin: 0 var(--base); transform: scaleY(0); animation: grow .55s var(--d, 0ms) cubic-bezier(.3,.7,.3,1) forwards; }
 @media (prefers-reduced-motion: reduce) {
   .skel, .skel-chart svg path { animation: none; }
   .anim .draw { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; }
   .anim .fade { clip-path: none; animation: none; }
-  .anim .bar.grow path { transform: none; animation: none; }
+  .anim .bar.grow { transform: none; animation: none; }
 }
 
 /* the date pager sits in the activity card on the Analytics tab: title left, pager centred, view switch right */

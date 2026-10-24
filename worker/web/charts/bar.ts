@@ -46,7 +46,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
     for (const i of evenLabels(labels.length, iw, 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
     const groups = labels.map((_, i): [SVGElement, number, number] => {
       const cx = m.l + slotW * (i + 0.5)
-      const g = svg('g', { class: 'bar grow', style: `--d:${Math.min(600, i * 14)}ms` })
+      const g = svg('g', { class: 'bar grow', style: `--d:${Math.min(600, i * 14)}ms;--base:${m.t + ih}px` })
       g.append(svg('rect', { x: m.l + slotW * i, y: m.t, width: slotW, height: ih, class: 'bar-hit' }))
       let acc = 0
       if (lg) { // side by side, each from the bottom line up to its value
