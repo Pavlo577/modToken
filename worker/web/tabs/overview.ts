@@ -2,13 +2,14 @@
 import * as S from '../lib/stats.ts'
 import { barChart } from '../charts/bar.ts'
 import { COLORS, HEAT, empty } from '../charts/base.ts'
+import { niceMax } from '../charts/scale.ts'
 import type { Series } from '../charts/base.ts'
 import { calendarHeatmap } from '../charts/calendar.ts'
 import { lineChart } from '../charts/line.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { rangeTitle } from '../core/range.ts'
 import { state } from '../core/state.ts'
-import { ZERO, aggregate, compareAvailable, get, need, q, store } from '../core/store.ts'
+import { ZERO, aggregate, compareAvailable, fixedScaleAvailable, get, need, q, store } from '../core/store.ts'
 import { pad, timeOf, tz, weekday } from '../core/time.ts'
 import { $, el } from '../lib/dom.ts'
 import { dayLabel, dayLong, dur, durSec, fmt, fmtAxis, fmtPct, fmtUsd } from '../lib/format.ts'
@@ -51,6 +52,12 @@ function compareSeries(keys: string[], hourly: boolean): Series[] {
     const a = aggregate({ provider: p }), src = hourly ? a.hours : a.days
     return { label: providerLabel(p), color: providerColor(p), values: keys.map(k => picks.reduce((sum, pick) => sum + pick(src.get(k) ?? ZERO), 0)), fmt }
   }).filter(s => s.values.some(v => v > 0))
+}
+
+/** The top of a fixed axis: the biggest input + output of one hour / day in the shown period, over every agent and device. */
+function fixedTop(keys: string[], hourly: boolean): number {
+  const a = aggregate({ device: null, provider: null }), src = hourly ? a.hours : a.days
+  return niceMax(Math.max(0, ...keys.map(k => { const t = src.get(k) ?? ZERO; return t.output + S.freshInput(t) })))
 }
 
 export function renderMain(agg: S.Aggregate): void {
@@ -102,8 +109,11 @@ export function renderMain(agg: S.Aggregate): void {
   $('main-title').textContent = 'Токени'
   $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}${compare ? ' · за агентами: ' + (state.io === 'in' ? 'нові вхідні' : state.io === 'out' ? 'вихідні' : 'вхідні + вихідні') : ''}`
   $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
+  const logScale = !!secondary && state.scale === 'log'
+  const cacheAlone = !compare && state.metric === 'all' && !secondary && series.length === 1 && series[0].label === CACHE[0] // its own size, not the reference's
+  const yMax = state.fixedScale && fixedScaleAvailable() && !logScale && !cacheAlone ? fixedTop(keys, hourly) : undefined
   const opts = {
-    labels, series, secondary, yFmt, height: mainHeight(), logScale: !!secondary && state.scale === 'log',
+    labels, series, secondary, yFmt, yMax, height: mainHeight(), logScale,
     tipTitle: (i: number): string => (hourly ? `${dayLong(r.fromDay)}, ${keys[i].slice(11)}:00` : dayLong(keys[i])),
     extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)]],
   }

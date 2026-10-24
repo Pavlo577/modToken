@@ -16,6 +16,8 @@ export interface BarOptions {
   secondary?: Series
   /** Logarithmic axis; the bars are then side by side instead of stacked, the extra series is a bar too. */
   logScale?: boolean
+  /** A fixed top of the value axis (otherwise fitted to the data). */
+  yMax?: number
 }
 
 /** Stacked bars over categories, rounded on top, with a tooltip. */
@@ -33,7 +35,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
     const secTop = sec ? Math.max(...sec.values) : 0
     const list = [...series, ...(sec ? [sec] : [])]
     const lg = opts.logScale && list.some(l => l.values.some(v => v > 0)) ? logAxis(list.flatMap(l => l.values), m.t, ih) : null
-    const max = sec ? sharedMax(Math.max(...totals), secTop) : niceMax(Math.max(...totals))
+    const max = opts.yMax ?? (sec ? sharedMax(Math.max(...totals), secTop) : niceMax(Math.max(...totals)))
     const slotW = iw / labels.length
     const bw = Math.max(2, Math.min(34, slotW * 0.68))
     const y = (v: number): number => (lg ? lg.y(v) : m.t + ih - (Math.min(v, max) / max) * ih)

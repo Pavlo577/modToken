@@ -6,7 +6,7 @@ import { load } from '../core/load.ts'
 import { currentRange } from '../core/range.ts'
 import { IO_NEXT, asTab, persist, state } from '../core/state.ts'
 import type { IoMode, Tab, View } from '../core/state.ts'
-import { aggregate, compareAvailable, store } from '../core/store.ts'
+import { aggregate, compareAvailable, fixedScaleAvailable, store } from '../core/store.ts'
 import { lastOfMonth, tz } from '../core/time.ts'
 import { $, el } from '../lib/dom.ts'
 import { renderActivity } from '../tabs/activity.ts'
@@ -62,6 +62,10 @@ export function syncControls(): void {
   cmp.setAttribute('aria-pressed', String(state.compare && !cmpOff))
   cmp.setAttribute('aria-disabled', String(cmpOff))
   cmp.dataset.tip = store.providers.length < 2 ? 'Порівняння з\'явиться, коли буде дані від кількох агентів' : state.view === 'cal' ? 'У режимі «Календар» порівняння немає' : state.provider ? 'Вибери «Усі агенти», щоб порівняти їх' : state.compare ? 'Порівняння ввімкнено: кожен агент своїм кольором. Натисни, щоб вимкнути' : 'Порівняти агентів: кожен своїм кольором на одній шкалі'
+  const fix = $<HTMLButtonElement>('fixed-scale'), fixOff = !fixedScaleAvailable()
+  fix.setAttribute('aria-pressed', String(state.fixedScale && !fixOff))
+  fix.setAttribute('aria-disabled', String(fixOff))
+  fix.dataset.tip = state.view === 'cal' ? 'У режимі «Календар» шкали немає' : fixOff ? 'Для логарифмічної шкали (кеш) стала шкала не діє' : state.fixedScale ? 'Стала шкала: верх осі = найбільше значення за весь період (усі агенти й пристрої). Натисни, щоб вимкнути' : 'Стала шкала: верх осі = найбільше значення за весь період, не змінюється при зміні вибору'
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
@@ -104,6 +108,7 @@ export function initControls(): void {
   $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
   $('scale-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.scale = b.dataset.s === 'linear' ? 'linear' : 'log'; persist(); syncControls(); render() })
   $('compare').onclick = () => { if (!compareAvailable()) return; state.compare = !state.compare; persist(); syncControls(); render() }
+  $('fixed-scale').onclick = () => { if (!fixedScaleAvailable()) return; state.fixedScale = !state.fixedScale; persist(); syncControls(); render() }
   $('io-off').onclick = () => { state.ioHidden = !state.ioHidden; persist(); syncControls(); render() }
   // hidden: the first press only shows them again (in the mode they had); then the presses cycle the modes
   $('io-mode').onclick = () => { if (state.ioHidden) state.ioHidden = false; else state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
