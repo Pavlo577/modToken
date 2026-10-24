@@ -101,3 +101,13 @@ test('notify log: parallel writers and rotation never corrupt a line or lose the
   }
   assert.ok(all.some(e => e.i === 299), 'the newest events are kept')
 })
+
+test('setup (non-interactive): the Stop hook leads, notify is only labelled as a fallback', () => {
+  const out = String(spawnSync(process.execPath, [tracker, 'setup'], { env: { ...process.env, TOKEN_TRACKER_HOME: join(dir, 'tt'), CODEX_HOME: join(dir, 'codex') } }).stdout)
+  const hook = out.indexOf('hook-stop'), notify = out.indexOf('notify = [')
+  assert.ok(hook > 0 && notify > 0 && hook < notify, 'the hook comes first')
+  assert.match(out, /Stop hook \(recommended; the only default\)/)
+  assert.match(out, /Fallback only: use `notify` instead/)
+  assert.match(out, /"Stop"/)
+  assert.ok(out.indexOf('hooks.json') < notify)
+})

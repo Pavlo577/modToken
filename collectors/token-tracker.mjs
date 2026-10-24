@@ -15,6 +15,7 @@ import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
 import codex from './agents/codex.mjs'
 import { arg, command, configFile, link, readJson, self, shown } from './lib/core.mjs'
+import { withHook } from './lib/hooks-json.mjs'
 import { errorCategory, logEvent, readLog } from './lib/notify-log.mjs'
 import { interactive } from './wizard.mjs'
 
@@ -109,15 +110,20 @@ function status() {
 }
 
 function setup() {
+  const hookDoc = JSON.stringify(withHook({}, codex.hookCommand()), null, 2).replace(/^/gm, '     ')
   console.log(`The easy way: run ${command(shown)} with no arguments and answer its questions. By hand:
 1. Link this device once (make a code on the site: Devices tab, same device name as your Claude one):
      ${command(shown)} link <CODE>
 2. Send what is already there:
      ${command(shown)} sync
-3. Keep it up to date: add this line at the top level of ${codex.configToml} (before any [section]):
+3. Keep it up to date with Codex's Stop hook (recommended; the only default). Add this to ${codex.hooksJson}, next to any hooks it already has:
+${hookDoc}
+   Codex runs it after each turn and may ask you once to trust the new hook. It prints nothing and reads no text.
+
+Fallback only: use \`notify\` instead when your Codex is too old for hooks, or the Stop hook is unavailable or declined (never both). Add this line at the top level of ${codex.configToml} (before any [section]):
      ${codex.notifyLine()}
-   Codex then runs it after each turn; it only wakes the collector and reads nothing from what Codex passes.
-   Or run "sync" from cron / a systemd timer / Windows Task Scheduler every few minutes.`)
+   Codex has a single notify command: if another program already uses it, run the guide (no arguments), which chains the two.
+   Without either, run "sync" from cron / a systemd timer / Windows Task Scheduler every few minutes.`)
 }
 
 function usage(bad) {
