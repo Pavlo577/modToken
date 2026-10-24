@@ -2,12 +2,14 @@
   --bg: #0a0908; --card: rgba(255,255,255,.04); --card-2: rgba(255,255,255,.065); --line: rgba(255,255,255,.08);
   --text: #f6f1ea; --text-2: #c9c0b6; --muted: #8d8379; --grid: rgba(255,255,255,.07);
   --out: #ff7a1a; --in: #3d8bff; --cache: #9b7bff; --ok: #35c98c; --warn: #ffc24a; --bad: #ff6b5e;
+  --dots: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect x='7' y='11' width='2' height='2' fill='%23fff' fill-opacity='.06'/%3E%3C/svg%3E");
   --radius: 22px; --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 * { box-sizing: border-box; }
 html { background: var(--bg); }
 body { margin: 0; color: var(--text); font: 15px/1.45 var(--font); min-height: 100vh;
   background:
+    var(--dots) 0 0 / 12px 12px,
     radial-gradient(900px 520px at 8% -10%, rgba(255,122,26,.16), transparent 60%),
     radial-gradient(800px 520px at 100% 0%, rgba(61,139,255,.12), transparent 55%),
     var(--bg); }
@@ -48,7 +50,7 @@ code { font: 12.5px ui-monospace, monospace; background: rgba(255,255,255,.08); 
 .card-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 14px; justify-content: space-between; margin-bottom: 16px; }
 .card-head .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
-.kpi { background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect x='7' y='11' width='2' height='2' fill='%23fff' fill-opacity='.06'/%3E%3C/svg%3E"); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px; position: relative; overflow: hidden; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px; position: relative; overflow: hidden; }
 .kpi .l { color: var(--text-2); font-size: 13px; }
 .kpi .v { font-size: 28px; font-weight: 650; letter-spacing: -.5px; margin: 6px 0 6px; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
 .kpi .s { color: var(--muted); font-size: 12.5px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
