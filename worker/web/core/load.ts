@@ -34,6 +34,7 @@ export async function load(): Promise<void> {
     store.providers = providers
     if (state.provider && !providers.includes(state.provider)) state.provider = ''
     actions.setProviders(providers)
+    actions.syncControls()
     actions.render()
   } catch (e) {
     clearTimeout(slow)

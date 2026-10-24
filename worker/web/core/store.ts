@@ -37,3 +37,6 @@ export const aggregate = (opts: S.AggregateOptions = {}): S.Aggregate => {
   const d = need()
   return S.aggregate(d.buckets, tz, { fromMs: d.r.from, toMs: d.r.to, device: state.device || null, provider: state.provider || null, prices: store.prices, ...opts })
 }
+
+/** The agent comparison needs data from several agents, all of them selected, and a line / bar chart. */
+export const compareAvailable = (): boolean => store.providers.length > 1 && !state.provider && state.view !== 'cal'

@@ -30,6 +30,8 @@ interface State {
   io: IoMode
   /** Input and output hidden altogether (the cache can stay). */
   ioHidden: boolean
+  /** Main chart: one line / stack per agent on the same scale (input + output added up). */
+  compare: boolean
   /** Main chart with the cache on: 'log' = logarithmic, 'linear' = one linear scale, cache clipped at the top. */
   scale: 'log' | 'linear'
   day: string
@@ -47,7 +49,7 @@ export const asTab = (v: unknown): Tab | null => (TABS as unknown[]).includes(v)
 // the tab survives a reload: the address (#analytics) wins, then the last one used
 const startTab: Tab = asTab(location.hash.slice(1)) ?? asTab((saved as { tab?: unknown }).tab) ?? 'overview'
 
-export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: startTab }
+export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: startTab }
 
 state.range = OLD_RANGES[state.range] ?? state.range
 
@@ -58,5 +60,5 @@ if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 
 export const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, tab: state.tab })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, tab: state.tab })) } catch { /* ignore */ }
 }

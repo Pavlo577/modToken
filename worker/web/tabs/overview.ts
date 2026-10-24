@@ -5,9 +5,10 @@ import { COLORS, HEAT, empty } from '../charts/base.ts'
 import type { Series } from '../charts/base.ts'
 import { calendarHeatmap } from '../charts/calendar.ts'
 import { lineChart } from '../charts/line.ts'
+import { providerColor, providerLabel } from '../core/palette.ts'
 import { rangeTitle } from '../core/range.ts'
 import { state } from '../core/state.ts'
-import { ZERO, aggregate, get, need, q, store } from '../core/store.ts'
+import { ZERO, aggregate, compareAvailable, get, need, q, store } from '../core/store.ts'
 import { pad, timeOf, tz, weekday } from '../core/time.ts'
 import { $, el } from '../lib/dom.ts'
 import { dayLabel, dayLong, dur, durSec, fmt, fmtAxis, fmtPct, fmtUsd } from '../lib/format.ts'
@@ -42,6 +43,15 @@ const IN: Def = ['Вхідні (нові)', COLORS.in, S.freshInput]
 const ioDefs = (): Def[] => (state.ioHidden ? [] : state.io === 'in' ? [IN] : state.io === 'out' ? [OUT] : [OUT, IN])
 
 const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
+
+/** One series per agent on the same scale: what the input / output buttons select, added up (input + output when both are on). */
+function compareSeries(keys: string[], hourly: boolean): Series[] {
+  const picks = ioDefs().map(d => d[2])
+  return store.providers.map(p => {
+    const a = aggregate({ provider: p }), src = hourly ? a.hours : a.days
+    return { label: providerLabel(p), color: providerColor(p), values: keys.map(k => picks.reduce((sum, pick) => sum + pick(src.get(k) ?? ZERO), 0)), fmt }
+  }).filter(s => s.values.some(v => v > 0))
+}
 
 export function renderMain(agg: S.Aggregate): void {
   const r = need().r
@@ -79,17 +89,18 @@ export function renderMain(agg: S.Aggregate): void {
   const src = hourly ? agg.hours : agg.days
   const rows = keys.map(k => src.get(k) ?? ZERO)
   const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
-  let series: Series[] = ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
+  const compare = state.compare && compareAvailable()
+  let series: Series[] = compare ? compareSeries(keys, hourly) : ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
   // the cache is far larger than the rest: logarithmic axis, or one linear scale fitted to input/output with the cache clipped at the top
-  let secondary: Series | undefined = state.metric === 'all' ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
+  let secondary: Series | undefined = state.metric === 'all' && !compare ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
   if (!series.length && secondary) { series = [secondary]; secondary = undefined } // the cache alone: an ordinary chart
   if (!series.length) {
-    empty($('main-chart'), 'Нічого не вибрано: увімкни вхідні та вихідні токени (кнопка з оком) або кеш', mainHeight())
+    empty($('main-chart'), compare ? 'Нічого показувати: увімкни вхідні та/або вихідні токени (кнопка з оком)' : 'Нічого не вибрано: увімкни вхідні та вихідні токени (кнопка з оком) або кеш', mainHeight())
     $('main-sub').textContent = rangeTitle(r)
     return
   }
   $('main-title').textContent = 'Токени'
-  $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}`
+  $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}${compare ? ' · за агентами: ' + (state.io === 'in' ? 'нові вхідні' : state.io === 'out' ? 'вихідні' : 'вхідні + вихідні') : ''}`
   $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
   const opts = {
     labels, series, secondary, yFmt, height: mainHeight(), logScale: !!secondary && state.scale === 'log',

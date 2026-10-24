@@ -6,7 +6,7 @@ import { load } from '../core/load.ts'
 import { currentRange } from '../core/range.ts'
 import { IO_NEXT, asTab, persist, state } from '../core/state.ts'
 import type { IoMode, Tab, View } from '../core/state.ts'
-import { aggregate } from '../core/store.ts'
+import { aggregate, compareAvailable, store } from '../core/store.ts'
 import { lastOfMonth, tz } from '../core/time.ts'
 import { $, el } from '../lib/dom.ts'
 import { renderActivity } from '../tabs/activity.ts'
@@ -51,12 +51,17 @@ export function syncControls(): void {
   const ioNext: Record<IoMode, string> = { both: 'лише вхідні', in: 'лише вихідні', out: 'вхідні та вихідні' }
   io.dataset.tip = state.ioHidden ? 'Вхідні та вихідні сховані. Натисни, щоб показати' : `Показуються ${ioName[state.io]}. Натисни, щоб ${ioNext[state.io]}`
   // the scale choice matters only when the cache shares the chart with input/output
-  $('scale-mode').classList.toggle('hide', !(state.metric === 'all' && state.view !== 'cal' && !state.ioHidden))
+  $('scale-mode').classList.toggle('hide', !(state.metric === 'all' && state.view !== 'cal' && !state.ioHidden && !(state.compare && compareAvailable())))
   press($('scale-mode'), 's', state.scale)
-  const cache = $<HTMLButtonElement>('cache-on'), off = state.view === 'cal'
+  const cache = $<HTMLButtonElement>('cache-on'), comparing = state.compare && compareAvailable(), off = state.view === 'cal' || comparing
   cache.setAttribute('aria-pressed', String(state.metric === 'all' && !off))
   cache.setAttribute('aria-disabled', String(off))
-  cache.dataset.tip = off ? 'У режимі «Календар» кеш не відображається' : state.metric === 'all' ? 'Кеш показується. Натисни, щоб сховати' : 'Показати кеш'
+  cache.dataset.tip = comparing ? 'У режимі порівняння кеш не відображається' : off ? 'У режимі «Календар» кеш не відображається' : state.metric === 'all' ? 'Кеш показується. Натисни, щоб сховати' : 'Показати кеш'
+  // comparison: one series per agent; needs more than one agent in the data, all of them selected, and a line / bar chart
+  const cmp = $<HTMLButtonElement>('compare'), cmpOff = !compareAvailable()
+  cmp.setAttribute('aria-pressed', String(state.compare && !cmpOff))
+  cmp.setAttribute('aria-disabled', String(cmpOff))
+  cmp.dataset.tip = store.providers.length < 2 ? 'Порівняння з\'явиться, коли буде дані від кількох агентів' : state.view === 'cal' ? 'У режимі «Календар» порівняння немає' : state.provider ? 'Вибери «Усі агенти», щоб порівняти їх' : state.compare ? 'Порівняння ввімкнено: кожен агент своїм кольором. Натисни, щоб вимкнути' : 'Порівняти агентів: кожен своїм кольором на одній шкалі'
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
@@ -98,16 +103,17 @@ export function initControls(): void {
   const deviceMenu = dropdown($('device'), v => { state.device = v; persist(); render() })
   $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
   $('scale-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.scale = b.dataset.s === 'linear' ? 'linear' : 'log'; persist(); syncControls(); render() })
+  $('compare').onclick = () => { if (!compareAvailable()) return; state.compare = !state.compare; persist(); syncControls(); render() }
   $('io-off').onclick = () => { state.ioHidden = !state.ioHidden; persist(); syncControls(); render() }
   // hidden: the first press only shows them again (in the mode they had); then the presses cycle the modes
   $('io-mode').onclick = () => { if (state.ioHidden) state.ioHidden = false; else state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
   $('cache-on').onclick = () => {
-    if (state.view === 'cal') return
+    if (state.view === 'cal' || (state.compare && compareAvailable())) return
     state.metric = state.metric === 'all' ? 'io' : 'all'; persist(); syncControls(); render()
   }
   // which agent to show: only when the data comes from more than one
   const providerBox = $('provider')
-  providerBox.addEventListener('click', e => { const b = clicked(e); if (!b) return; state.provider = b.dataset.p ?? ''; persist(); press(providerBox, 'p', state.provider); render() })
+  providerBox.addEventListener('click', e => { const b = clicked(e); if (!b) return; state.provider = b.dataset.p ?? ''; persist(); press(providerBox, 'p', state.provider); syncControls(); render() })
   actions.setProviders = names => {
     providerBox.classList.toggle('hide', names.length < 2)
     providerBox.replaceChildren(...['', ...names].map(n => el('button', { 'data-p': n, 'aria-pressed': String(n === state.provider) }, n ? providerLabel(n) : 'Усі агенти')))
