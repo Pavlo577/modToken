@@ -48,14 +48,15 @@ export function readLog(n = 40) {
 
 const CALLS = ['notify_received', 'hook_received']
 
-/** The newest call from Codex (the Stop hook or the notify) and what followed it: { at, via, events[] }, or null if Codex never called us. */
-export function lastNotify() {
+/** The newest call from an agent (its Stop hook, Codex's notify), of one agent when `agent` is given, and what followed it: { at, via, events[] }, or null if Codex never called us. */
+export function lastNotify(agent) {
   const all = readLog(300)
+  const mine = e => !agent || (e.agent ?? 'codex') === agent // a call without `agent` (the notify, older logs) is Codex's
   let i = -1
-  all.forEach((e, k) => { if (CALLS.includes(e.event)) i = k })
+  all.forEach((e, k) => { if (CALLS.includes(e.event) && mine(e)) i = k })
   if (i < 0) return null
   const events = []
-  for (const e of all.slice(i + 1)) { if (CALLS.includes(e.event)) break; events.push(e) }
+  for (const e of all.slice(i + 1)) { if (CALLS.includes(e.event)) break; if (mine(e)) events.push(e) }
   return { at: all[i].at, via: all[i].event === 'hook_received' ? 'hook' : 'notify', received: all[i], events }
 }
 

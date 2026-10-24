@@ -4,7 +4,7 @@ set -u
 B=http://127.0.0.1:8787
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d)
-export CODEX_HOME=$T/codex TOKEN_TRACKER_HOME=$T/tt
+export CODEX_HOME=$T/codex TOKEN_TRACKER_HOME=$T/tt CLAUDE_CONFIG_DIR=$T/claude # never the real ~/.claude of whoever runs this
 fail=0
 # COLLECTOR_BIN=path/to/token-tracker tests the compiled program instead of the script
 run() { if [ -n "${COLLECTOR_BIN:-}" ]; then "$COLLECTOR_BIN" "$@"; else node "$HERE/collectors/codex.mjs" "$@"; fi; }

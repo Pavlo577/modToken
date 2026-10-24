@@ -9,62 +9,89 @@ import { lastNotify, summarize } from './lib/notify-log.mjs'
 const out = (s = '') => console.log(s)
 const when = iso => (iso ? new Date(iso).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : 'ще не було')
 const yes = s => /^(т|так|y|yes)$/i.test(s.trim())
-const progress = (i, total) => stdout.write(`\r  перевіряю файли Codex: ${i} з ${total}   `)
+const progress = title => (i, total) => stdout.write(`\r  перевіряю файли ${title}: ${i} з ${total}   `)
+const clear = () => stdout.write('\r' + ' '.repeat(60) + '\r')
+
+/** Collected now: Codex when it is on the machine, Claude Code only after the user chose it. */
+const enabledAgents = () => AGENTS.filter(a => (a.enabled ?? a.detect).call(a))
+const hasNotify = agent => typeof agent.notifyInfo === 'function'
+
+/** After the hook is added the agent has to be restarted to pick it up. */
+const AFTER_HOOK = {
+  claude: 'Перезапусти Claude Code (він читає settings.json при запуску). Після першого ходу відкрий цю програму й перевір «Останній виклик».',
+  codex: 'Перезапусти Codex: він може один раз попросити підтвердити довіру до нового hook, підтверди. Після першого ходу відкрий цю програму й перевір «Останній виклик».',
+}
+const HOOK_WHY = {
+  claude: 'Claude Code сам викликає програму після кожного ходу. Дані беруться з його журналу сесії, а підписочні ліміти й далі шле мод (у нього більше нічого не лишилось).',
+  codex: 'Codex сам викликає програму після кожного ходу, і це не заважає іншим програмам Codex (на відміну від notify, який може бути лише один).',
+}
 
 /** Sends what is new and says in one line what happened; errors are shown, not thrown. */
 async function runSync(agent, full = false) {
   try {
-    const r = await agent.sync({ full, onFile: progress })
-    stdout.write('\r' + ' '.repeat(50) + '\r')
+    const r = await agent.sync({ full, onFile: progress(agent.title) })
+    clear()
     if (r.missing) out(`  ${agent.title}: теки ${agent.home} ще нема, нічого надсилати.`)
-    else if (r.busy) out('  Уже йде інша синхронізація, спробуй за хвилину.')
-    else out(`  Готово: нових ходів надіслано ${r.rows}${r.limits ? ', ліміти підписки оновлено' : ''} (переглянуто файлів: ${r.scanned} з ${r.files}).`)
+    else if (r.busy) out(`  ${agent.title}: уже йде інша синхронізація, спробуй за хвилину.`)
+    else out(`  ${agent.title}: нових ходів надіслано ${r.rows}${r.limits ? ', ліміти підписки оновлено' : ''} (переглянуто файлів: ${r.scanned} з ${r.files}).`)
     return true
   } catch (e) {
-    stdout.write('\r' + ' '.repeat(50) + '\r')
-    out(`  Не вдалося: ${e instanceof Error ? e.message : e}`)
+    clear()
+    out(`  ${agent.title}: не вдалося: ${e instanceof Error ? e.message : e}`)
     return false
   }
 }
 
+/** The old history of an agent that keeps one apart (Claude Code); safe to repeat. */
+async function runImport(agent) {
+  try {
+    const r = await agent.importHistory({ onFile: progress(agent.title) })
+    clear()
+    if (r.missing) out(`  ${agent.title}: журналів ще нема.`)
+    else if (r.busy) out(`  ${agent.title}: уже йде інша операція, спробуй за хвилину.`)
+    else out(`  ${agent.title}: у журналах ${r.turns} ходів, додано ${r.inserted}, уже були ${r.duplicates}, новіші за прив'язку пристрою ${r.afterLink} (їх збирає хук).`)
+  } catch (e) {
+    clear()
+    out(`  ${agent.title}: історія не надіслалась: ${e instanceof Error ? e.message : e}`)
+  }
+}
+
 const hookText = {
-  ours: 'підключено: після кожного ходу Codex повідомляє програму сам (Codex може один раз попросити підтвердити довіру до hook)',
+  ours: 'підключено: після кожного ходу агент повідомляє програму сам',
   none: 'не підключено',
-  unreadable: 'hooks.json у Codex не читається як JSON, тому я його не чіпаю',
+  unreadable: 'файл налаштувань агента не читається як JSON, тому я його не чіпаю',
 }
 
 const notifyText = {
   ours: 'підключено: після кожного ходу Codex дані йдуть самі',
   none: 'не підключено (у config.toml Codex немає рядка notify)',
   'no-config': 'не підключено (config.toml Codex ще нема)',
-  other: 'не підключено: у config.toml уже є notify іншої програми (пункт 4 запропонує ланцюжок)',
+  other: 'не підключено: у config.toml уже є notify іншої програми (запропоную ланцюжок)',
 }
 
 function showStatus(agent) {
-  const cfg = readJson(configFile, {}), st = agent.status()
-  const row = (label, value) => out(`  ${(label + ':').padEnd(18)}${value}`)
-  out()
-  row('Сайт', cfg.url)
-  row('Пристрій', cfg.device ?? '—')
-  row(agent.title, `${agent.detect() ? 'знайдено' : 'не знайдено'} (${agent.home})`)
+  const st = agent.status()
+  const row = (label, value) => out(`  ${(label + ':').padEnd(20)}${value}`)
+  out(`\n  ── ${agent.title}`)
+  row('Знайдено', `${agent.detect() ? 'так' : 'ні'} (${agent.home})`)
   row('Останній синк', when(st.lastSync))
   row('Надіслано', `${st.turns} ходів з ${st.files} файлів`)
   row('Stop-hook', hookText[agent.hookState()])
-  row('Notify (запасний)', notifyText[agent.notifyState()])
-  if (agent.hookState() === 'ours' || agent.notifyState() === 'ours') {
-    const n = lastNotify()
-    row('Останній виклик', n ? `${when(n.at)}: ${summarize(n) ?? 'викликано'}` : 'Codex ще жодного разу не викликав програму (зроби хід у Codex і відкрий знову)')
+  if (hasNotify(agent)) row('Notify (запасний)', notifyText[agent.notifyState()])
+  if (agent.hookState() === 'ours' || (hasNotify(agent) && agent.notifyState() === 'ours')) {
+    const n = lastNotify(agent.id)
+    row('Останній виклик', n ? `${when(n.at)}: ${summarize(n) ?? 'викликано'}` : `${agent.title} ще жодного разу не викликав програму (зроби хід і відкрий знову)`)
   }
-  if (agent.notifyState() === 'ours') {
-    for (const p of agent.notifyProblems()) row('Увага', p.kind === 'ours' ? `програму не знайдено за шляхом з config.toml (${p.program}); вимкни й підключи notify знову (пункт 4)` : `команду, що працює разом із нами, не знайдено (${p.program}): Codex, схоже, оновився; вимкни й підключи notify знову (пункт 4)`)
+  if (hasNotify(agent) && agent.notifyState() === 'ours') {
+    for (const p of agent.notifyProblems()) row('Увага', p.kind === 'ours' ? `програму не знайдено за шляхом з config.toml (${p.program}); вимкни й підключи notify знову` : `команду, що працює разом із нами, не знайдено (${p.program}): Codex, схоже, оновився; вимкни й підключи notify знову`)
   }
   if (st.lastError) row('Остання помилка', `${st.lastError.message} (${when(st.lastError.at)})`)
 }
 
-/** Offers to connect the `notify` of config.toml; nothing is written without a "yes". */
+/** Offers to connect the `notify` of config.toml (Codex's older way); nothing is written without a "yes". */
 async function offerNotify(rl, agent) {
   const info = agent.notifyInfo()
-  if (info.state === 'ours') return out('  Автооновлення вже підключено.')
+  if (info.state === 'ours') return out('  Автооновлення через notify уже підключено.')
   if (info.state === 'other') return offerChain(rl, agent, info.argv)
   out(`\n  Щоб дані йшли самі після кожного ходу Codex, треба додати в ${agent.configToml} один рядок:`)
   out(`    ${agent.notifyLine()}`)
@@ -84,7 +111,7 @@ async function offerChain(rl, agent, argv) {
   out(`  Зараз там: ${command(argv)}`)
   out('  Я додамся поруч так, щоб стара команда працювала як раніше: після кожного ходу я надішлю числа, а вона отримає ті самі аргументи й той самий JSON від Codex.')
   out(`  Новий рядок:\n    ${agent.chainLine(argv)}`)
-  out('  Спершу зроблю резервну копію config.toml і запам\'ятаю стару команду, щоб її можна було повернути (пункт 4 в меню: вимкнути notify).')
+  out('  Спершу зроблю резервну копію config.toml і запам\'ятаю стару команду, щоб її можна було повернути (вимкнути notify можна в меню).')
   if (!yes(await rl.question('  Зробити так? (так/ні): '))) return out('  Добре, не чіпаю. Дані підтягуватимуться, коли відкриваєш цю програму.')
   apply(agent, () => agent.installNotify({ chain: true }), 'Готово: стара команда збережена й працюватиме як раніше.')
 }
@@ -101,30 +128,30 @@ function apply(agent, action, doneText) {
 }
 
 async function offerRestore(rl, agent) {
-  out(`\n  Я прибираю свій notify з ${agent.configToml}${', а стару команду, якщо вона була, повертаю на місце'}. Спершу робиться копія файлу.`)
-  if (!yes(await rl.question('  Вимкнути автооновлення? (так/ні): '))) return out('  Добре, лишаю як є.')
+  out(`\n  Я прибираю свій notify з ${agent.configToml}, а стару команду, якщо вона була, повертаю на місце. Спершу робиться копія файлу.`)
+  if (!yes(await rl.question('  Вимкнути notify? (так/ні): '))) return out('  Добре, лишаю як є.')
   try {
     const r = agent.restoreNotify()
     out(r.changed ? `  Готово.${r.restored ? ' Повернуто: ' + command(r.restored) : ''} Копія: ${r.backup}` : '  Нічого міняти не треба.')
   } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
 }
 
-/** The Stop hook: several hooks live side by side in hooks.json, so nobody has to give way (unlike the single notify). */
+/** The Stop hook: several hooks live side by side in the agent's settings, so nobody has to give way (unlike Codex's single notify). */
 async function offerHook(rl, agent) {
   const state = agent.hookState()
-  if (state === 'ours') return out('  Stop-hook уже підключено.')
+  if (state === 'ours') return out(`  ${agent.title}: Stop-hook уже підключено.`)
   if (state === 'unreadable') return out(`  ${agent.hooksJson} не читається як JSON, тому я його не чіпаю. Виправ файл або додай hook вручну:\n    ${agent.hookCommand()}`)
-  out(`\n  Рекомендований спосіб: Stop-hook. Codex сам викликає програму після кожного ходу, і це не заважає іншим програмам Codex (на відміну від notify, який може бути лише один).`)
+  out(`\n  ${agent.title}: рекомендований спосіб автооновлення: Stop-hook. ${HOOK_WHY[agent.id] ?? ''}`)
   out(`  Я додам у ${agent.hooksJson} команду:\n    ${agent.hookCommand()}`)
-  out('  Вона нічого не друкує й не змінює роботу Codex; з даних ходу використовує лише шлях до файлу сесії, а текст відповіді відкидає. Чужі hooks не чіпаю, перед записом роблю копію файлу.')
+  out('  Вона нічого не друкує й не змінює роботу агента; з даних ходу використовує лише шлях до журналу сесії, а текст відповіді відкидає. Чужі hooks не чіпаю, перед записом роблю копію файлу.')
   if (!yes(await rl.question('  Додати? (так/ні): '))) return out('  Добре, не чіпаю.')
   try {
     const r = agent.installHook()
     out(`  Додано.${r.backup ? ' Копія старого файлу: ' + r.backup : ''}`)
-    out('  Перезапусти Codex: він може один раз попросити підтвердити довіру до нового hook, підтверди. Після першого ходу відкрий цю програму й перевір «Останній виклик».')
+    out(`  ${AFTER_HOOK[agent.id] ?? 'Перезапусти агента.'}`)
   } catch (e) {
-    out(`  Не вдалося змінити hooks.json: ${e instanceof Error ? e.message : e}`)
-    out(`  Додай вручну в ${agent.hooksJson}:\n    ${agent.hookCommand()}`)
+    out(`  Не вдалося змінити ${agent.hooksJson}: ${e instanceof Error ? e.message : e}`)
+    out(`  Додай вручну:\n    ${agent.hookCommand()}`)
   }
 }
 
@@ -134,61 +161,94 @@ async function offerHookRemove(rl, agent) {
   try { const r = agent.removeHook(); out(r.changed ? `  Готово. Копія: ${r.backup}` : '  Нічого міняти не треба.') } catch (e) { out(`  Не вдалося: ${e instanceof Error ? e.message : e}`) }
 }
 
-async function firstRun(rl, agent) {
+/** Everything for one agent after the device is linked: its history, what is new, the Stop hook (Codex: the older notify as a fallback). */
+async function setupAgent(rl, agent) {
+  out(`\n  ── ${agent.title}`)
+  agent.enable?.()
+  if (agent.importHistory) { out('  Надсилаю історію, що була до прив\'язки пристрою (це безпечно повторювати, нічого не задвоїться)...'); await runImport(agent) }
+  out('  Надсилаю нове...')
+  await runSync(agent)
+  await offerHook(rl, agent)
+  if (hasNotify(agent) && agent.hookState() !== 'ours') await offerNotify(rl, agent) // the older way, when the hook was not wanted
+}
+
+async function firstRun(rl) {
   out(`
-  Token Tracker: підключення ${agent.title}
-  Програма надсилає на твій сайт лише числа: токени, час, назву моделі. Тексти розмов не збираються, не зберігаються і не надсилаються.
+  Token Tracker: надсилання токенів Claude Code і Codex на твій сайт
+  Програма надсилає лише числа: токени, час, назву моделі. Тексти розмов не збираються, не зберігаються і не надсилаються.
 `)
-  if (!agent.detect()) {
-    out(`  ${agent.title} не знайдено в ${agent.home}. Якщо він ще не запускався, запусти його один раз.`)
-    out('  Якщо тека в іншому місці, задай змінну середовища CODEX_HOME і запусти програму знову.')
+  const found = AGENTS.filter(a => a.detect())
+  if (!found.length) {
+    out('  Не знайдено ні Claude Code, ні Codex (їхніх тек у домашній теці). Якщо вони ще не запускались, запусти їх один раз.')
+    out('  Якщо теки в іншому місці, задай змінні середовища CLAUDE_CONFIG_DIR / CODEX_HOME і запусти програму знову.')
     if (!yes(await rl.question('  Прив\'язати пристрій усе одно? (так/ні): '))) return false
+  } else out(`  Знайдено: ${found.map(a => a.title).join(', ')}.\n`)
+  if (found.some(a => a.id === 'claude')) {
+    out('  Увага: якщо на цьому комп\'ютері мод Claude Code вже був підключений (/tracker-link), НЕ прив\'язуй пристрій тут вдруге: інакше історія порахується двічі.')
+    out('  Онови мод (/plugin update), запусти Claude Code один раз: нова версія мода передасть прив\'язку цій програмі, і код не потрібен.')
+    if (yes(await rl.question('  Мод уже був підключений на цьому комп\'ютері? (так/ні): '))) { out('\n  Тоді спершу онови мод, запусти Claude Code і відкрий цю програму знову.'); return false }
   }
-  out('  1. На сайті відкрий вкладку «Пристрої», дай пристрою ім\'я (те саме, що й для Claude) і створи код.')
+  out('  1. На сайті відкрий вкладку «Пристрої», дай пристрою ім\'я і створи код.')
   for (let attempt = 1; ; attempt++) {
     const code = (await rl.question('  2. Встав код сюди: ')).replace(/[\s-]/g, '').toUpperCase()
     if (!code) { if (attempt >= 3) return false; continue }
     try {
       const { device } = await link(code, arg('--url'))
-      out(`  Прив'язано як «${device}».\n`)
+      out(`  Прив'язано як «${device}».`)
       break
     } catch (e) {
       out(`  Не вийшло: ${e instanceof Error ? e.message : e}`)
       if (attempt >= 3) return false
     }
   }
-  out('  3. Надсилаю історію, що вже є (це безпечно повторювати, нічого не задвоїться)...')
-  await runSync(agent)
-  out('\n  4. Автооновлення.')
-  await offerHook(rl, agent)
-  if (agent.hookState() !== 'ours') await offerNotify(rl, agent) // the older way, when the hook was not wanted
+  for (const agent of found) {
+    // Claude Code is collected only when the user says so; Codex has always been the reason people run the program
+    if (agent.enable && !yes(await rl.question(`\n  Надсилати й ходи ${agent.title}? (так/ні): `))) continue
+    await setupAgent(rl, agent)
+  }
   out('\n  Усе налаштовано. Відкривай цю програму знову, щоб побачити статус і докачати нове. Вікно можна закрити.')
   return true
 }
 
-async function statusLoop(rl, agent) {
+/** The automatic-update switches of every agent, numbered; picking one turns it on or off. */
+async function updateMenu(rl) {
+  const items = []
+  for (const agent of AGENTS.filter(a => a.detect())) {
+    items.push({ label: `${agent.title}: Stop-hook`, on: agent.hookState() === 'ours', toggle: () => (agent.hookState() === 'ours' ? offerHookRemove : offerHook)(rl, agent) })
+    if (hasNotify(agent)) items.push({ label: `${agent.title}: notify (запасний)`, on: agent.notifyState() === 'ours', toggle: () => (agent.notifyState() === 'ours' ? offerRestore : offerNotify)(rl, agent) })
+  }
+  if (!items.length) return out('  Нічого налаштовувати: агентів не знайдено.')
+  out()
+  items.forEach((it, i) => out(`  ${i + 1} — ${it.label}: ${it.on ? 'підключено' : 'не підключено'}`))
+  const n = Number((await rl.question('  Який перемкнути? (номер, Enter — нічого): ')).trim())
+  if (items[n - 1]) await items[n - 1].toggle()
+}
+
+async function statusLoop(rl) {
   out('\n  Token Tracker: докачую нове...')
-  await runSync(agent)
+  for (const agent of enabledAgents()) await runSync(agent)
   for (;;) {
-    showStatus(agent)
-    const hookOn = agent.hookState() === 'ours', notifyOn = agent.notifyState() === 'ours'
-    const a = (await rl.question(`\n  1 — оновити зараз, 2 — переслати все заново, 3 — ${hookOn ? 'вимкнути' : 'підключити'} Stop-hook, 4 — ${notifyOn ? 'вимкнути' : 'підключити'} notify, Enter — закрити: `)).trim()
-    if (a === '1') await runSync(agent)
-    else if (a === '2') await runSync(agent, true)
-    else if (a === '3') await (hookOn ? offerHookRemove : offerHook)(rl, agent)
-    else if (a === '4') await (notifyOn ? offerRestore : offerNotify)(rl, agent)
+    const cfg = readJson(configFile, {})
+    out(`\n  Сайт: ${cfg.url}   Пристрій: ${cfg.device ?? '—'}`)
+    for (const agent of enabledAgents()) showStatus(agent)
+    const off = AGENTS.filter(a => a.detect() && !enabledAgents().includes(a))
+    for (const a of off) out(`\n  ${a.title} знайдено, але не підключено (пункт 4).`)
+    const a = (await rl.question(`\n  1 — оновити зараз, 2 — переслати все заново, 3 — автооновлення (hook, notify)${off.length ? ', 4 — підключити ' + off.map(x => x.title).join(', ') : ''}, Enter — закрити: `)).trim()
+    if (a === '1') for (const agent of enabledAgents()) await runSync(agent)
+    else if (a === '2') for (const agent of enabledAgents()) await runSync(agent, true)
+    else if (a === '3') await updateMenu(rl)
+    else if (a === '4' && off.length) for (const agent of off) { if (yes(await rl.question(`\n  Надсилати ходи ${agent.title}? (так/ні): `))) await setupAgent(rl, agent) }
     else return
   }
 }
 
 export async function interactive() {
-  const agent = AGENTS[0] // Codex is the only agent so far; later ones are listed by detect()
   const rl = createInterface({ input: stdin, output: stdout })
   try {
     if (!linked()) {
-      const done = await firstRun(rl, agent)
+      const done = await firstRun(rl)
       if (done) await rl.question('\n  Натисни Enter, щоб закрити...')
       else out(`\n  Нічого не змінено. Спробуй ще раз, коли буде код. Підказка: ${command(shown)}`)
-    } else await statusLoop(rl, agent)
+    } else await statusLoop(rl)
   } finally { rl.close() }
 }

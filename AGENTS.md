@@ -5,7 +5,7 @@ A tracker of AI-agent token usage from many devices, in one place: a Cloudflare 
 ## Branches and flow: agents work in their own branch and hand over through `claude`
 | Branch | Who | Works on (and only on) |
 |---|---|---|
-| `claude` | Claude Code, the **integrator** | `worker/**` (Worker, D1 schema, dashboard), `hooks/**`, `cloud/**`, `import-logs.mjs`, and the shared collector layer below. Receives the other agents' pull requests |
+| `claude` | Claude Code, the **integrator** | `worker/**` (Worker, D1 schema, dashboard), `hooks/**` (the mod: subscription limits only), `cloud/**`, `import-logs.mjs`, Claude Code's own collector files (`collectors/agents/claude.mjs`, `worker/public/admin/parse.mjs`, `worker/test/{claude,mod,shared,contract}.test.mjs`, `worker/test/claude-collector.sh`), and the shared collector layer below. Receives the other agents' pull requests |
 | `codex` | Codex | everything Codex-specific: `collectors/agents/codex.mjs`, `collectors/lib/{toml-notify,notify-chain,hooks-json}.mjs`, `worker/public/admin/parse-codex.mjs`, `worker/test/{codex,notify,hook}.test.mjs`, `worker/test/codex-collector.sh`, `collectors/AGENTS.md` (its brief) |
 | `mistral`, `gemini`, ... | one agent each, created when that agent starts | its own `collectors/agents/<agent>.mjs`, its helpers `collectors/lib/<agent>-*.mjs`, its tests `worker/test/<agent>*.test.mjs`. **Each agent implements its own way of collecting tokens**: a different file format, OpenTelemetry, an API; nothing forces it to look like Codex's |
 | `dev` | integration | **only Claude merges here**, from `claude`, when `claude` is green |

@@ -41,7 +41,8 @@ export async function link(code, urlOption) {
   const res = await request(`${url}/api/link`, { method: 'POST', body: JSON.stringify({ code }) })
   if (!res.ok) throw new Error(res.status === 403 ? 'the code is wrong, used or expired: make a new one on the site' : `site answered HTTP ${res.status}`)
   const { token, device } = await res.json()
-  writeJson(configFile, { url, token, device }, 0o600)
+  // `since`: from this moment on the turns of Claude Code are collected by this program (older ones are history)
+  writeJson(configFile, { url, token, device, since: new Date().toISOString() }, 0o600)
   return { url, device }
 }
 
@@ -54,6 +55,16 @@ export async function post(cfg, body) {
   const res = await request(`${cfg.url}/api/ingest`, { method: 'POST', headers: { 'x-device-token': cfg.token, 'content-type': 'application/json' }, body: JSON.stringify(body) })
   if (res.status === 401) throw new Error('the device token was rejected (revoked?): link again with a new code')
   if (!res.ok) throw new Error(`site answered HTTP ${res.status}`)
+}
+
+/** Old history for the device (turn ids imp:..): the Worker keeps what is older than the device and ignores repeats. */
+export async function postImport(cfg, rows) {
+  rows = rows.map(sanitizeRow).filter(Boolean)
+  if (!rows.length) return { inserted: 0, duplicates: 0, afterLink: 0 }
+  const res = await request(`${cfg.url}/api/import`, { method: 'POST', headers: { 'x-device-token': cfg.token, 'content-type': 'application/json' }, body: JSON.stringify({ rows }) })
+  if (res.status === 401) throw new Error('the device token was rejected (revoked?): link again with a new code')
+  if (!res.ok) throw new Error(`site answered HTTP ${res.status}`)
+  return res.json()
 }
 
 const LOCK_MAX_AGE_MS = 30 * 60_000

@@ -2,6 +2,6 @@
   "name": "modtoken",
   "owner": { "name": "Pavlo577" },
   "plugins": [
-    { "name": "token-tracker", "source": "./", "description": "Sends per-turn token usage and timing to your token-tracker site for a multi-device dashboard." }
+    { "name": "token-tracker", "source": "./", "description": "Reports your subscription's rate limits to your token-tracker site (turns are collected by the token-tracker program)." }
   ]
 }
