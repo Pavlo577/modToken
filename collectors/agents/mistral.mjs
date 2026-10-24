@@ -1,22 +1,33 @@
 // Mistral Vibe agent collector
 // Collects token usage from Mistral Vibe local session files (~/.vibe/logs/session/*.jsonl)
+//
+// Format notes (to be verified - see requests/mistral.md):
+// - Files are JSON Lines with one event per line
+// - Message events have type: "message" and token_usage object
+// - token_usage contains cumulative input_tokens and output_tokens
+// - session_id and turn_id are present in message events
+// - Example line: {"type":"message","session_id":"s-abc","turn_id":"t-123","token_usage":{"input_tokens":100,"output_tokens":50},"model":"mistral-medium-latest","timestamp":"2024-01-01T00:00:00Z"}
+//
 // Only numeric data leaves the machine: token counts, timestamps, model names.
-// Never reads, sends, or logs: prompts, answers, tool output, file contents.
+// Never reads, sends, or logs: prompts, answers, tool output, file contents, file paths.
 
 import { existsSync, readdirSync, readFileSync, statSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, basename, dirname } from 'node:path'
+import { join, basename } from 'node:path'
 import { configFile, home, lock, post, readJson, writeJson } from '../lib/core.mjs'
-import { BATCH, PROVIDERS } from '../lib/contract.mjs'
+import { BATCH } from '../lib/contract.mjs'
 
 const vibeHome = process.env.VIBE_HOME || join(homedir(), '.vibe')
 const sessionDir = join(vibeHome, 'logs', 'session')
 const stateFile = join(home, 'mistral-state.json')
 
+// Maximum number of sent turns to keep in state (prevent unbounded growth)
+const MAX_SENT_ENTRIES = 10000
+
 // Ensure state directory exists
 function ensureStateDir() {
   try {
-    const stateDir = dirname(stateFile)
+    const stateDir = join(home, '.token-tracker')
     if (!existsSync(stateDir)) {
       mkdirSync(stateDir, { recursive: true, mode: 0o700 })
     }
@@ -42,6 +53,7 @@ function getSessionFiles() {
  * Parse a Mistral Vibe session file (JSON Lines format)
  * Extracts TurnRow data from message events with token_usage
  * Uses cumulative token counts to calculate deltas between events
+ * Uses line number as part of turn_id to ensure uniqueness within a session
  */
 function parseSessionFile(path) {
   const turns = []
@@ -52,7 +64,8 @@ function parseSessionFile(path) {
     const content = readFileSync(path, 'utf8')
     const lines = content.trim().split('\n')
     
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex]
       if (!line.trim()) continue
       
       try {
@@ -64,16 +77,17 @@ function parseSessionFile(path) {
           const inputTotal = Number(tokenUsage.input_tokens) || 0
           const outputTotal = Number(tokenUsage.output_tokens) || 0
           
-          // Calculate delta (Mistral Vibe provides cumulative tokens)
+          // Calculate delta (Mistral Vibe provides cumulative tokens per session)
           const inputDelta = Math.max(0, inputTotal - lastInputTotal)
           const outputDelta = Math.max(0, outputTotal - lastOutputTotal)
           
           // Only add if there's actual token usage
           if (inputDelta > 0 || outputDelta > 0) {
-            // Generate stable turn_id: session_id + turn_id or index
-            const sessionId = event.session_id || basename(path, '.jsonl')
-            const turnId = event.turn_id || Object.keys(tokenUsage).join('-')
-            const stableTurnId = `mistral:${sessionId}:${turnId}`
+            // Generate stable, unique turn_id using line number to avoid collisions
+            // Format: mistral:<session_id>:<turn_id_or_index>:<line_number>
+            const sessionId = event.session_id || basename(path).replace('.jsonl', '')
+            const turnId = event.turn_id || String(lineIndex)
+            const stableTurnId = `mistral:${sessionId}:${turnId}:${lineIndex}`
             
             turns.push({
               provider: 'mistral',
@@ -95,12 +109,12 @@ function parseSessionFile(path) {
           lastOutputTotal = outputTotal
         }
       } catch (e) {
-        // Skip malformed lines
-        console.warn(`Failed to parse line in ${path}: ${e.message}`)
+        // Skip malformed lines without exposing file content
+        console.warn(`Failed to parse session line ${lineIndex + 1}: ${e.message}`)
       }
     }
   } catch (e) {
-    console.warn(`Failed to read session file ${path}: ${e.message}`)
+    console.warn(`Failed to read session file: ${e.message}`)
   }
   
   return turns
@@ -111,6 +125,18 @@ function parseSessionFile(path) {
  */
 function getTurnSignature(turn) {
   return `${turn.input_tokens},${turn.output_tokens},${turn.cache_read_tokens},${turn.cache_creation_tokens}`
+}
+
+/**
+ * Clean up old entries from state.sent to prevent unbounded growth
+ */
+function cleanupStateSent(state) {
+  const entries = Object.entries(state.sent || {})
+  if (entries.length <= MAX_SENT_ENTRIES) return
+  
+  // Keep the most recent half of entries
+  const entriesToKeep = entries.slice(-Math.floor(MAX_SENT_ENTRIES / 2))
+  state.sent = Object.fromEntries(entriesToKeep)
 }
 
 /**
@@ -125,7 +151,12 @@ async function syncSessions({ full = false, onFile, only, since } = {}) {
   }
   
   ensureStateDir()
-  const state = readJson(stateFile, { files: {}, sent: {}, lastSync: null, lastError: null })
+  const state = readJson(stateFile, { files: {}, sent: {}, lastSync: null, lastError: null, enabled: true })
+  
+  // Check if agent is enabled
+  if (!state.enabled) {
+    return { files: 0, scanned: 0, rows: 0, limits: false, disabled: true }
+  }
   
   const unlock = lock('mistral')
   if (!unlock) {
@@ -171,7 +202,6 @@ async function syncSessions({ full = false, onFile, only, since } = {}) {
         if (!existingSig) return true
         
         // If turn was sent but has grown, send updated version
-        // Compare token counts from signature
         const [existingInput, existingOutput] = existingSig.split(',').map(Number)
         return t.input_tokens > existingInput || t.output_tokens > existingOutput
       })
@@ -179,10 +209,12 @@ async function syncSessions({ full = false, onFile, only, since } = {}) {
       // Send in batches
       for (let i = 0; i < fresh.length; i += BATCH) {
         const batch = fresh.slice(i, i + BATCH)
-        const success = await post(cfg, { rows: batch })
-        if (!success) {
-          state.lastError = `Failed to send batch starting at ${batch[0]?.turn_id}`
-          break
+        try {
+          await post(cfg, { rows: batch })
+        } catch (err) {
+          state.lastError = `Failed to send batch: ${err.message}`
+          unlock?.()
+          throw err
         }
       }
       
@@ -194,6 +226,9 @@ async function syncSessions({ full = false, onFile, only, since } = {}) {
       state.files[path] = fileSig
       stats.rows += fresh.length
     }
+    
+    // Clean up old sent entries
+    cleanupStateSent(state)
     
     state.lastSync = new Date().toISOString()
     delete state.lastError
@@ -211,15 +246,49 @@ async function syncSessions({ full = false, onFile, only, since } = {}) {
 }
 
 /**
+ * Enable the Mistral Vibe collector
+ */
+function enable() {
+  ensureStateDir()
+  const state = readJson(stateFile, { enabled: true })
+  state.enabled = true
+  writeJson(stateFile, state)
+}
+
+/**
+ * Disable the Mistral Vibe collector
+ */
+function disable() {
+  ensureStateDir()
+  const state = readJson(stateFile, { enabled: true })
+  state.enabled = false
+  writeJson(stateFile, state)
+}
+
+/**
+ * Get hook state for Mistral Vibe collector
+ */
+function hookState() {
+  ensureStateDir()
+  const state = readJson(stateFile, { enabled: true, lastSync: null, lastError: null })
+  return {
+    enabled: state.enabled !== false,
+    lastSync: state.lastSync,
+    lastError: state.lastError
+  }
+}
+
+/**
  * Get status information for Mistral Vibe collector
  */
 function getStatus() {
   ensureStateDir()
-  const state = readJson(stateFile, { files: {}, sent: {}, lastSync: null, lastError: null })
+  const state = readJson(stateFile, { files: {}, sent: {}, lastSync: null, lastError: null, enabled: true })
   
   return {
     lastSync: state.lastSync,
     lastError: state.lastError,
+    enabled: state.enabled !== false,
     files: Object.keys(state.files || {}).length,
     sentTurns: Object.keys(state.sent || {}).length
   }
@@ -237,5 +306,10 @@ export default {
   sync: syncSessions,
   
   // Status information
-  status: getStatus
+  status: getStatus,
+  
+  // Enable/disable hooks
+  enable,
+  disable,
+  hookState
 }

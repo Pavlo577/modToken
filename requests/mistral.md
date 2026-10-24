@@ -1,196 +1,309 @@
-# Mistral Vibe OTLP Request: Real Event Names and Attributes
+# Mistral Vibe: Session File Format and OTLP Verification
 
-**Status:** ⏳ Awaiting verification from Mistral Vibe real-world testing
-**Priority:** High (blocks OTLP-based collection for Mistral Vibe)
-**Related:** collectors/agents/mistral.mjs, collectors/DATA.md section 5
+**Status:** ⏳ Awaiting verification from real Mistral Vibe session files
+**Priority:** High (blocks accurate turn tracking)
+**Related:** collectors/agents/mistral.mjs, collectors/DATA.md
 
 ---
 
 ## Background
 
-Mistral Vibe can export OpenTelemetry traces via OTLP/HTTP (see [Mistral Vibe SKILL.md](https://github.com/mistralai/mistral-vibe/blob/main/vibe/plugins/builtins/vibe/skills/vibe/SKILL.md#opentelemetry-tracing)). The modToken Worker already accepts OTLP/JSON at `/v1/logs` and extracts a `ModelCall` structure (collectors/DATA.md §5), but we need the **exact event names and attribute keys** that Mistral Vibe uses to map them correctly.
+Mistral Vibe stores session data in JSON Lines format at `~/.vibe/logs/session/session-<ID>.jsonl`.
+The collector (`collectors/agents/mistral.mjs`) reads these files to extract token usage.
 
-The current Worker code (worker/src/ingest.ts) handles OTLP for Claude Code with:
-- `service.name = "claude-code"` → provider = "claude"
-- `event.name = "claude_code.api_request"` → ModelCall
-
-For Mistral Vibe, we need to know:
-1. What `service.name` does it use?
-2. What event names carry token usage?
-3. What attribute keys hold: session_id, turn_id, model, input_tokens, output_tokens, cache tokens, duration
+This document tracks:
+1. The **exact format** of Mistral Vibe session files
+2. How **turn IDs are generated** to ensure uniqueness
+3. How **token deltas are calculated** from cumulative counts
+4. OTLP event names and attributes (for future direct-to-Worker sending)
 
 ---
 
-## Current Assumptions (from Mistral Vibe docs and code)
+## Session File Format (To Be Verified)
 
-From [mistral-vibe/vibe/plugins/builtins/vibe/skills/vibe/SKILL.md](https://github.com/mistralai/mistral-vibe/blob/main/vibe/plugins/builtins/vibe/skills/vibe/SKILL.md):
+### Assumed Structure
 
-> Set `enable_otel = true` to export traces for **agent, model, and tool operations** over OTLP/HTTP.
+Based on Mistral Vibe documentation and similar tools (Codex, Claude Code), we assume session files contain JSON Lines with events like:
 
-From [docs.mistral.ai/vibe/code/cli/configuration](https://docs.mistral.ai/vibe/code/cli/configuration):
+```json
+{"type":"message","role":"user","content":"...","session_id":"session-abc123","turn_id":"turn-1","timestamp":"2024-01-01T12:00:00.000Z"}
+{"type":"message","role":"assistant","content":"...","session_id":"session-abc123","turn_id":"turn-1","model":"mistral-medium-latest","token_usage":{"input_tokens":100,"output_tokens":50},"timestamp":"2024-01-01T12:00:05.000Z","duration_ms":5000}
+{"type":"message","role":"assistant","content":"...","session_id":"session-abc123","turn_id":"turn-2","model":"mistral-medium-latest","token_usage":{"input_tokens":150,"output_tokens":75},"timestamp":"2024-01-01T12:01:00.000Z","duration_ms":6000}
+```
 
-> OpenTelemetry tracing is also listed, which matters if you need to see what an agent run actually did after the fact rather than watching it scroll past.
+### Key Observations
 
-**Hypothesis:** Mistral Vibe likely uses spans (not logs) for model calls, similar to Claude Code's approach.
+1. **Cumulative Token Counts**: The `token_usage` object appears to contain **cumulative** counts for the session, not per-turn deltas.
+   - First event: `input_tokens: 100, output_tokens: 50`
+   - Second event: `input_tokens: 150, output_tokens: 75` (cumulative)
+   - Delta: `input_tokens: 50, output_tokens: 25`
+
+2. **Turn Identification**: Each turn should have a unique identifier. The collector currently uses:
+   - Format: `mistral:<session_id>:<turn_id>:<line_number>`
+   - Fallback: If `turn_id` is missing, uses line number only
+   - This ensures uniqueness even if `turn_id` is missing or duplicated
+
+3. **Delta Calculation**: The collector tracks the last seen cumulative values and calculates deltas:
+   ```javascript
+   // For each message event with token_usage
+   const inputDelta = currentInputTotal - lastInputTotal
+   const outputDelta = currentOutputTotal - lastOutputTotal
+   ```
+
+### Verification Needed
+
+We need to confirm:
+1. ✅ Do session files exist at `~/.vibe/logs/session/session-<ID>.jsonl`?
+2. ✅ Are they JSON Lines format?
+3. ❓ What are the exact field names in message events?
+   - Is it `session_id` or `session.id`?
+   - Is it `turn_id` or `turn.id`?
+   - Is it `token_usage` or `usage`?
+4. ❓ Are token counts **cumulative** or **per-turn**?
+5. ❓ Does every turn have a unique `turn_id`?
+6. ❓ What other fields are present? (model, timestamp, duration_ms, etc.)
 
 ---
 
-## What We Need to Verify
+## Real Example Needed
+
+If you have access to a real Mistral Vibe session file, please provide:
+1. A **sample line** (with sensitive data redacted)
+2. The **complete list of field names** in message events
+3. Whether `token_usage` values are cumulative or per-turn
+
+Example request:
+```
+Please share a sample line from ~/.vibe/logs/session/session-*.jsonl with:
+- All field names (values can be replaced with placeholders)
+- Confirmation if input_tokens/output_tokens are cumulative
+```
+
+---
+
+## Turn ID Generation Strategy
+
+### Current Implementation (collectors/agents/mistral.mjs)
+
+To ensure **unique turn IDs** within a session, the collector uses:
+
+```javascript
+const sessionId = event.session_id || basename(path).replace('.jsonl', '')
+const turnId = event.turn_id || String(lineIndex)
+const stableTurnId = `mistral:${sessionId}:${turnId}:${lineIndex}`
+```
+
+### Why Line Number?
+
+The original implementation used:
+```javascript
+const turnId = `mistral:${sessionId}:${Object.keys(tokenUsage).join('-')}`
+```
+
+**Problem**: `Object.keys(tokenUsage)` returns `['input_tokens', 'output_tokens']` for every turn, resulting in **identical turn IDs** for all turns in a session. The Worker then keeps only the maximum values, **silently losing data**.
+
+**Solution**: Include the **line number** in the turn ID to ensure uniqueness:
+```javascript
+`mistral:${sessionId}:${turnId}:${lineIndex}`
+```
+
+This ensures:
+- Each line in the file generates a unique turn ID
+- Even if `turn_id` is missing or duplicated, line number provides uniqueness
+- Deltas are still calculated correctly from cumulative counts
+
+### Alternative Approaches
+
+1. **Use a hash of the line content** (more robust but slower):
+   ```javascript
+   const lineHash = crypto.createHash('sha256').update(line).digest('hex').slice(0, 8)
+   const stableTurnId = `mistral:${sessionId}:${lineHash}`
+   ```
+
+2. **Use timestamp + sequence number** (if available in the data):
+   ```javascript
+   const stableTurnId = `mistral:${sessionId}:${event.timestamp}:${event.sequence}`
+   ```
+
+3. **Use the file modification time + line number**:
+   ```javascript
+   const fileMtime = statSync(path).mtimeMs
+   const stableTurnId = `mistral:${sessionId}:${fileMtime}:${lineIndex}`
+   ```
+
+**Current choice**: Line number is simplest and most reliable for JSON Lines format.
+
+---
+
+## Delta Calculation from Cumulative Counts
+
+### The Problem
+
+Mistral Vibe (like Codex) appears to store **cumulative token counts** per session, not per-turn values.
+
+Example session file:
+```json
+// Turn 1
+{"type":"message","token_usage":{"input_tokens":100,"output_tokens":50}}
+// Turn 2
+{"type":"message","token_usage":{"input_tokens":150,"output_tokens":75}}
+// Turn 3
+{"type":"message","token_usage":{"input_tokens":200,"output_tokens":100}}
+```
+
+### The Solution
+
+The collector maintains **running totals** and calculates deltas:
+
+```javascript
+let lastInputTotal = 0
+let lastOutputTotal = 0
+
+for (const line of lines) {
+  const event = JSON.parse(line)
+  if (event.token_usage) {
+    const inputTotal = event.token_usage.input_tokens
+    const outputTotal = event.token_usage.output_tokens
+    
+    const inputDelta = inputTotal - lastInputTotal  // 100, 50, 50
+    const outputDelta = outputTotal - lastOutputTotal  // 50, 25, 25
+    
+    // Send turn with delta values
+    turns.push({
+      input_tokens: inputDelta,
+      output_tokens: outputDelta
+    })
+    
+    lastInputTotal = inputTotal
+    lastOutputTotal = outputTotal
+  }
+}
+```
+
+### Edge Cases
+
+1. **Token counts go down** (session restart?):
+   - Current: `Math.max(0, delta)` ensures non-negative values
+   - Alternative: Reset running totals to current values
+
+2. **Missing token_usage**: Skip the line
+
+3. **Non-numeric token values**: Convert to Number, fallback to 0
+
+---
+
+## OTLP Integration (Future)
+
+Once we have real OTLP data from Mistral Vibe, we need to verify:
 
 ### 1. Resource Attributes
 ```json
 {
   "resource": {
     "attributes": [
-      { "key": "service.name", "value": { "stringValue": "???" } },
-      { "key": "service.version", "value": { "stringValue": "???" } }
+      { "key": "service.name", "value": { "stringValue": "???" } }
     ]
   }
 }
 ```
-**Question:** What is the `service.name` value?
-- Expected: `"mistral-vibe"` or `"vibe"` or `"mistral"`
+**Expected**: `service.name = "mistral-vibe"` or similar
 
-### 2. Span Names
-**Question:** What span names contain token usage?
-- Hypothesis: `"model.generate"` (common in LLM telemetry)
-- Alternative: `"mistral.api_request"` or `"vibe.model_call"`
+### 2. Span/Log Attributes
 
-### 3. Span Attributes for Token Usage
-```json
-{
-  "name": "model.generate",
-  "attributes": [
-    { "key": "model", "value": { "stringValue": "mistral-medium-latest" } },
-    { "key": "session_id", "value": { "stringValue": "session-abc123" } },
-    { "key": "???", "value": { "stringValue": "turn-xyz456" } },  // turn_id equivalent
-    { "key": "input_tokens", "value": { "intValue": "1234" } },
-    { "key": "output_tokens", "value": { "intValue": "567" } },
-    { "key": "duration_ms", "value": { "intValue": "4500" } },
-    { "key": "finish_reason", "value": { "stringValue": "stop" } }
-  ]
+For model calls, we need:
+- Span name (e.g., `"model.generate"`, `"mistral.api_call"`)
+- `session_id` attribute
+- `turn_id` or equivalent attribute
+- `input_tokens`, `output_tokens` attributes
+- `model` attribute
+- `duration_ms` or `durationNanos` attribute
+
+### 3. Mapping to Worker's ModelCall
+
+The Worker expects OTLP data at `/v1/logs` in this format:
+
+```typescript
+type ModelCall = {
+  provider: 'mistral'  // from service.name
+  call_id: string      // unique call identifier
+  session_id: string   // conversation identifier
+  turn_key: string     // groups calls into turns
+  ts: string           // ISO UTC timestamp
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  duration_ms: number
+  is_subagent: boolean
 }
 ```
 
-**Key Questions:**
-1. What attribute holds the **session ID**? (Claude Code uses `session.id`)
-2. What attribute holds the **turn/unique call ID**? (Claude Code uses `request_id` for call_id, `prompt.id` for turn_key)
-3. Are `input_tokens` and `output_tokens` **delta values** (per call) or **cumulative**?
-4. Does Mistral Vibe export **cache tokens**? If so, what attribute names?
+### 4. Verification Checklist
 
-### 4. Timing Attributes
-- `startTimeUnixNano` / `endTimeUnixNano` → used for `ts`
-- `durationNanos` → used for `duration_ms`
+- [ ] Confirm `service.name` value for Mistral Vibe
+- [ ] Identify span/log name containing token usage
+- [ ] Map all required ModelCall fields
+- [ ] Verify token counts are per-call (not cumulative)
+- [ ] Test with real OTLP export from Mistral Vibe
 
 ---
 
-## Verification Plan
+## Testing Requirements
 
-### Option A: Test with Real Mistral Vibe
+The collector needs tests to verify:
 
-1. **Setup OTLP endpoint** that logs all incoming data:
-   ```bash
-   # Simple OTLP receiver that dumps everything to stdout
-   npx @opentelemetry/opentelemetry-collector --config=otel-dump.yaml
-   ```
-   
-   `otel-dump.yaml`:
-   ```yaml
-   receivers:
-     otlp:
-       protocols:
-         http:
-   processors:
-     batch:
-   exporters:
-     logging:
-       logLevel: debug
-   service:
-     pipelines:
-       traces:
-         receivers: [otlp]
-         processors: [batch]
-         exporters: [logging]
-   ```
+1. **No sensitive data leakage**:
+   - Secret words in fixture files must NOT appear in:
+     - HTTP request bodies
+     - State files
+     - Log output
 
-2. **Configure Mistral Vibe** (`~/.vibe/config.toml`):
-   ```toml
-   [session_logging]
-   enable_otel = true
-   otel_endpoint = "http://localhost:4318/v1/traces"
-   otel_redaction = "default"
-   ```
+2. **Correct delta calculation**:
+   - Cumulative counts → correct deltas
+   - Edge cases (resets, missing values) handled properly
 
-3. **Run a test session**:
-   ```bash
-   vibe "Write a hello world program in Python"
-   ```
+3. **Unique turn IDs**:
+   - No collisions within a session
+   - Line numbers ensure uniqueness
 
-4. **Capture the output** and document the actual:
-   - `service.name` value
-   - Span names with token data
-   - All attribute keys and their values
+4. **Error handling**:
+   - Malformed lines skipped
+   - Network errors propagated correctly
+   - State cleaned up on errors
 
-### Option B: Check Mistral Vibe Source Code
+### Test File Location
 
-Search the Mistral Vibe codebase for:
-- OTLP exporter configuration
-- Span creation for model calls
-- Attribute naming conventions
+Tests should be added to:
+- `worker/test/mistral.test.mjs` (for Worker-side OTLP handling)
+- `worker/test/mistral-collector.test.mjs` (for collector functionality)
 
-Key files to check:
-- `vibe/telemetry/` or `vibe/tracing/`
-- `vibe/cli/` for CLI-specific telemetry
-- Search for `OpenTelemetry`, `Tracer`, `Span`
+Example test structure:
+```javascript
+// worker/test/mistral-collector.test.mjs
+import { parseSessionFile } from '../../collectors/agents/mistral.mjs'
+import { assert } from 'node:assert'
 
----
-
-## Expected Output Format
-
-Once verified, we need to update:
-
-1. **`worker/src/ingest.ts`** (or wherever OTLP is processed):
-   - Add mapping for Mistral Vibe's `service.name` → provider = "mistral"
-   - Add mapping for Mistral Vibe's event/span names → ModelCall extraction
-
-2. **`collectors/DATA.md` section 5**:
-   - Add Mistral Vibe column to the mapping table
-
-3. **`requests/mistral.md`**:
-   - Document the verified event names and attributes (this file)
-
----
-
-## Mapping Table (To Be Filled)
-
-| Field | Claude Code (verified) | Mistral Vibe (TBD) | Notes |
-|-------|----------------------|-------------------|-------|
-| provider | from `service.name = "claude-code"` | from `service.name = ???` | |
-| call_id | `request_id` | `???` | |
-| session_id | `session.id` | `???` | |
-| turn_key | `prompt.id` | `???` | |
-| ts | `timeUnixNano` | `endTimeUnixNano` | |
-| model | `model` | `model` | |
-| input_tokens | `input_tokens` | `input_tokens` | Delta or cumulative? |
-| output_tokens | `output_tokens` | `output_tokens` | Delta or cumulative? |
-| cache_read_tokens | `cache_read_tokens` | `???` | May not exist |
-| cache_creation_tokens | `cache_creation_tokens` | `???` | May not exist |
-| duration_ms | `duration_ms` | `durationNanos` or `duration_ms` | |
-| is_subagent | `agent.name` (assumed) | `???` | |
-
----
-
-## Temporary Workaround
-
-Until verification is complete, the **local file-based collector** (`collectors/agents/mistral.mjs`) will be the primary method for Mistral Vibe, as it:
-- Reads `~/.vibe/logs/session/*.jsonl` directly
-- Uses stable IDs from the session files
-- Does not depend on OTLP event naming
+Deno.test('Mistral Vibe session parsing', () => {
+  // Create fixture with known data
+  const fixture = `...`
+  
+  // Parse and verify
+  const turns = parseSessionFile(fixture)
+  assert(turns.length > 0, 'Should parse turns')
+  assert(turns[0].provider === 'mistral', 'Should set provider')
+  
+  // Verify no sensitive data
+  const requestBody = JSON.stringify({ rows: turns })
+  assert(!requestBody.includes('SECRET'), 'Should not leak secrets')
+})
+```
 
 ---
 
 ## References
 
-1. [Mistral Vibe OTLP Documentation](https://github.com/mistralai/mistral-vibe/blob/main/vibe/plugins/builtins/vibe/skills/vibe/SKILL.md#opentelemetry-tracing)
-2. [modToken DATA.md §5: OTLP](https://github.com/Pavlo577/modToken/blob/dev/collectors/DATA.md#5-otlp-what-the-worker-receives-and-keeps-a-second-way-in-planned-not-built-yet)
-3. [OpenTelemetry Semantic Conventions](https://github.com/open-telemetry/semantic-conventions)
+1. [Mistral Vibe Configuration Docs](https://docs.mistral.ai/vibe/code/cli/configuration)
+2. [Mistral Vibe OTLP Docs](https://github.com/mistralai/mistral-vibe/blob/main/vibe/plugins/builtins/vibe/skills/vibe/SKILL.md#opentelemetry-tracing)
+3. [modToken DATA.md](https://github.com/Pavlo577/modToken/blob/dev/collectors/DATA.md)
+4. [Codex Collector](https://github.com/Pavlo577/modToken/blob/dev/collectors/agents/codex.mjs) (similar approach)
