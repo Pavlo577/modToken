@@ -9,14 +9,7 @@ CREATE TABLE IF NOT EXISTS devices (
 );
 CREATE INDEX IF NOT EXISTS devices_user_idx ON devices (user_email);
 
-CREATE TABLE IF NOT EXISTS link_codes (
-  code_hash TEXT PRIMARY KEY,
-  user_email TEXT NOT NULL,
-  device_name TEXT NOT NULL,
-  expires_at TEXT NOT NULL,
-  used_at TEXT
-);
-
+-- One row per turn (a prompt and the model calls it caused), made of the OTLP model calls of the device.
 CREATE TABLE IF NOT EXISTS token_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_email TEXT NOT NULL,
@@ -31,26 +24,12 @@ CREATE TABLE IF NOT EXISTS token_events (
   cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
   duration_ms INTEGER NOT NULL DEFAULT 0,
   is_subagent INTEGER NOT NULL DEFAULT 0,
-  -- which agent wrote the turn: claude, codex, gemini ... (see PROVIDERS in src/events.ts)
+  -- which agent made the call: claude, and later codex, gemini ... (one OTLP adapter each, src/otlp.ts)
   provider TEXT NOT NULL DEFAULT 'claude',
   UNIQUE (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS events_user_ts_idx ON token_events (user_email, ts);
 CREATE INDEX IF NOT EXISTS events_user_provider_ts_idx ON token_events (user_email, provider, ts);
-
--- Snapshots of the subscription's rate-limit windows (five_hour, seven_day), sent by the mod (Claude) or the
--- Codex collector on devices signed in with a subscription. Only a changed reading is stored.
-CREATE TABLE IF NOT EXISTS plan_limits (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_email TEXT NOT NULL,
-  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  ts TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  percent_used REAL NOT NULL,
-  resets_at TEXT,
-  provider TEXT NOT NULL DEFAULT 'claude'
-);
-CREATE INDEX IF NOT EXISTS limits_user_ts_idx ON plan_limits (user_email, ts);
 
 -- OTLP: the model calls already counted (so a call sent twice is not added twice). Old rows are dropped after 14 days.
 CREATE TABLE IF NOT EXISTS otlp_calls (

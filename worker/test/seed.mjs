@@ -1,10 +1,11 @@
-// Fills a local `wrangler dev` (DEV_EMAIL in .dev.vars) with realistic demo data for working on the dashboard:
+// Fills a local `wrangler dev` (DEV_EMAIL in .dev.vars) with realistic demo data, sent the way Claude Code sends it (OTLP logs), for working on the dashboard:
 //   node test/seed.mjs [http://127.0.0.1:8787]
 const B = process.argv[2] ?? 'http://127.0.0.1:8787'
 let seed = 7
 const rnd = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296)
 const pick = arr => arr[Math.floor(rnd() * arr.length)]
 const post = async (path, body, headers = {}) => {
+  headers = { 'content-type': 'application/json', ...headers }
   const r = await fetch(B + path, { method: 'POST', body: JSON.stringify(body), headers })
   if (!r.ok && r.status !== 204) throw new Error(`${path}: ${r.status} ${await r.text()}`)
   return r.status === 204 ? null : r.json()
@@ -18,11 +19,12 @@ const devices = [
 const MODELS = [['claude-sonnet-5-5', 0.7], ['claude-opus-5-5', 0.2], ['claude-haiku-5-5', 0.1]]
 const model = () => { let r = rnd(); for (const [m, w] of MODELS) if ((r -= w) < 0) return m; return MODELS[0][0] }
 
-const tokens = []
+const kv = (key, v) => ({ key, value: typeof v === 'number' ? { intValue: String(v) } : { stringValue: v } })
+const logs = records => ({ resourceLogs: [{ resource: { attributes: [kv('service.name', 'claude-code')] }, scopeLogs: [{ logRecords: records }] }] })
+
 for (const dev of devices) {
-  const code = (await post('/api/admin/codes', { name: dev.name })).code
-  const { token } = await post('/api/link', { code })
-  const rows = []
+  const { token } = await post('/api/admin/devices', { name: dev.name })
+  const records = []
   const now = Date.now()
   for (let d = 150; d >= 0; d--) {
     const day = new Date(now - d * 86_400_000)
@@ -40,53 +42,17 @@ for (const dev of devices) {
         const ts = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute, Math.floor(rnd() * 60)))
         if (ts.getTime() > now - 600_000) continue
         const big = rnd() < 0.08
-        rows.push({
-          turn_id: `seed:${sid}:${t}`, session_id: sid, ts: ts.toISOString(), model: model(),
-          input_tokens: 2 + Math.floor(rnd() * 14), output_tokens: Math.floor((big ? 9000 : 400) * (0.3 + rnd() * 2.2)),
-          cache_read_tokens: Math.floor(60_000 + rnd() * 700_000), cache_creation_tokens: Math.floor(rnd() * (big ? 120_000 : 15_000)),
-          duration_ms: Math.floor((big ? 120_000 : 9_000) * (0.4 + rnd() * 2)), is_subagent: rnd() < 0.07,
-        })
+        const attrs = [
+          kv('event.name', 'claude_code.api_request'), kv('session.id', sid), kv('prompt.id', `${sid}:${t}`), kv('request_id', `seed:${sid}:${t}`), kv('model', model()),
+          kv('input_tokens', 2 + Math.floor(rnd() * 14)), kv('output_tokens', Math.floor((big ? 9000 : 400) * (0.3 + rnd() * 2.2))),
+          kv('cache_read_tokens', Math.floor(60_000 + rnd() * 700_000)), kv('cache_creation_tokens', Math.floor(rnd() * (big ? 120_000 : 15_000))),
+          kv('duration_ms', Math.floor((big ? 120_000 : 9_000) * (0.4 + rnd() * 2))),
+        ]
+        if (rnd() < 0.07) attrs.push(kv('agent_id', 'seed-agent'))
+        records.push({ timeUnixNano: String(BigInt(ts.getTime()) * 1_000_000n), attributes: attrs })
       }
     }
   }
-  // some Codex use on the two work machines (the collector sends input without the cached part)
-  if (dev.name !== 'cloud') {
-    for (let d = 60; d >= 0; d--) {
-      if (rnd() > 0.45) continue
-      const day = new Date(now - d * 86_400_000)
-      const sid = `codex-${dev.name}-${d}`
-      let hour = pick(dev.workHours), minute = Math.floor(rnd() * 50)
-      for (let t = 0, n = 2 + Math.floor(rnd() * 10); t < n; t++) {
-        minute += 2 + Math.floor(rnd() * 12)
-        if (minute >= 60) { minute -= 60; hour = Math.min(23, hour + 1) }
-        const ts = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute, Math.floor(rnd() * 60)))
-        if (ts.getTime() > now - 600_000) continue
-        rows.push({
-          provider: 'codex', turn_id: `codex:${sid}:${t}`, session_id: sid, ts: ts.toISOString(), model: rnd() < 0.8 ? 'gpt-5-codex' : 'gpt-5',
-          input_tokens: Math.floor(2_000 + rnd() * 30_000), output_tokens: Math.floor(300 + rnd() * 3_500),
-          cache_read_tokens: Math.floor(20_000 + rnd() * 250_000), cache_creation_tokens: 0,
-          duration_ms: Math.floor(6_000 + rnd() * 90_000),
-        })
-      }
-    }
-  }
-  for (let i = 0; i < rows.length; i += 400) await post('/api/ingest', rows.slice(i, i + 400), { 'x-device-token': token })
-  tokens.push({ dev, token })
-  console.log(`${dev.name}: ${rows.length} turns`)
+  for (let i = 0; i < records.length; i += 1000) await post('/v1/logs', logs(records.slice(i, i + 1000)), { 'x-device-token': token })
+  console.log(`${dev.name}: ${records.length} calls`)
 }
-
-// A current reading of both subscription windows, as the mod sends after a turn (the history of past weeks
-// cannot be back-dated through the API; test/seed-limits.sql does that directly in the local database).
-const { token } = tokens[0]
-const now = Date.now()
-const nextWed = new Date(now); nextWed.setUTCHours(6, 0, 0, 0)
-while (nextWed.getUTCDay() !== 3 || nextWed.getTime() <= now) nextWed.setUTCDate(nextWed.getUTCDate() + 1)
-await post('/api/ingest', { limits: [
-  { kind: 'seven_day', percentUsed: 41.5, resetsAt: nextWed.toISOString() },
-  { kind: 'five_hour', percentUsed: 62.5, resetsAt: new Date(now + 2 * 3_600_000).toISOString() },
-] }, { 'x-device-token': token })
-await post('/api/ingest', { limits: [
-  { provider: 'codex', kind: 'seven_day', percentUsed: 22, resetsAt: nextWed.toISOString() },
-  { provider: 'codex', kind: 'five_hour', percentUsed: 35, resetsAt: new Date(now + 3 * 3_600_000).toISOString() },
-] }, { 'x-device-token': token })
-console.log('limits sent')

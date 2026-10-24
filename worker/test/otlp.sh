@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# End-to-end check of the OTLP receiver (POST /v1/logs) against `wrangler dev` (DEV_EMAIL set, fresh local D1: bun run db:local).
+# End-to-end check of the whole flow (add a device, OTLP in, dashboard API out, revoke) against `wrangler dev` (DEV_EMAIL set, fresh local D1: bun run db:local).
 set -u
 B=http://127.0.0.1:8787
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1 (got $2, want $3)"; fail=1; fi; }
 T=$(mktemp -d)
 
-CODE=$(curl -s -XPOST $B/api/admin/codes -d '{"name":"otlp-box"}' | sed -E 's/.*"code":"([A-F0-9]+)".*/\1/')
-TOKEN=$(curl -s -XPOST $B/api/link -d "{\"code\":\"$CODE\"}" | sed -E 's/.*"token":"([a-f0-9]+)".*/\1/')
+TOKEN=$(curl -s -XPOST $B/api/admin/devices -d '{"name":"otlp-box"}' | sed -E 's/.*"token":"([a-f0-9]+)".*/\1/')
+check "a device gets a 64-character token" "${#TOKEN}" 64
+check "a device needs a name" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/api/admin/devices -d '{"name":" "}')" 400
 
 # one OTLP/JSON logs payload: api_request calls (request id, prompt id, input, output, cache read, duration) + noise that must not be kept
 payload() { python3 - "$@" <<'PY'
@@ -33,8 +34,6 @@ check "two prompts = two turns; the calls of a prompt are added up" "$(sums)" "1
 check "the same payload again changes nothing" "$(post "$P1" >/dev/null; sums)" "18 127 3000 2 1600"
 
 # gzip body (exporters may compress), a call that joins an existing turn
-GZ=$(payload req_d,P2,1,4,50,200 | gzip -c)
-printf '%s' "$GZ" > /dev/null
 payload req_d,P2,1,4,50,200 | gzip -c > $T/body.gz
 code=$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/logs -H "x-device-token: $TOKEN" -H 'content-type: application/json' -H 'content-encoding: gzip' --data-binary @$T/body.gz)
 check "gzip accepted" "$code" 200

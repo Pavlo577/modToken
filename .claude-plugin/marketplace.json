@@ -1,7 +1,0 @@
-{
-  "name": "modtoken",
-  "owner": { "name": "Pavlo577" },
-  "plugins": [
-    { "name": "token-tracker", "source": "./", "description": "Reports your subscription's rate limits to your token-tracker site (turns are collected by the token-tracker program)." }
-  ]
-}

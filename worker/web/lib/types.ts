@@ -44,16 +44,6 @@ export interface SessionRow extends Counts {
   provider: string
 }
 
-/** One reading of a subscription window: GET /api/admin/limits */
-export interface LimitRow {
-  ts: string
-  device: string
-  kind: string // 'five_hour' | 'seven_day'
-  percent: number
-  resets_at: string | null
-  provider: string
-}
-
 export interface PriceEntry {
   match: string
   input: number
@@ -78,8 +68,6 @@ export interface DeviceRow {
   revoked: number
   created_at: string
   last_seen: string | null
-  /** 'subscription' if the device ever reported plan limits, else we cannot tell. */
-  billing: 'subscription' | 'unknown'
   /** agents that sent turns from this device */
   providers: string[]
 }

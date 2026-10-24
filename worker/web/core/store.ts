@@ -1,7 +1,7 @@
 // What was loaded for the shown period, cached requests and the regrouping by time zone.
 import * as S from '../lib/stats.ts'
 import { api } from '../lib/api.ts'
-import type { Bucket, LimitRow, Prices, SessionRow, Totals } from '../lib/types.ts'
+import type { Bucket, Prices, SessionRow, Totals } from '../lib/types.ts'
 import type { Period } from './range.ts'
 import { state } from './state.ts'
 import { iso, tz } from './time.ts'
@@ -12,7 +12,6 @@ interface Data {
   r: Period
   buckets: Bucket[]
   sessions: SessionRow[]
-  limits: LimitRow[]
 }
 
 /** Loaded data and lists shared by the tabs. */

@@ -15,7 +15,7 @@
     <nav class="pills" id="nav" aria-label="Розділи">
       <button data-tab="overview" aria-pressed="true">Огляд</button>
       <button data-tab="analytics" aria-pressed="false">Аналітика</button>
-      <button data-tab="money" aria-pressed="false">Вартість<span class="wide"> і ліміти</span></button>
+      <button data-tab="money" aria-pressed="false">Вартість</button>
       <button data-tab="sessions" aria-pressed="false">Сесії</button>
       <button data-tab="devices" aria-pressed="false">Пристрої</button>
     </nav>
@@ -127,14 +127,6 @@
 
   <section id="tab-money" class="tab hide">
     <div class="card">
-      <div class="card-head"><div><h2>Ліміти підписки</h2><p class="sub" id="limits-sub">Дані з останньої відповіді API на пристроях із підпискою</p></div></div>
-      <div id="limits"></div>
-    </div>
-    <div class="grid cols2">
-      <div class="card"><div class="card-head"><div><h2>Використання ліміту</h2><p class="sub">Найвищий відсоток за день</p></div><div class="legend"><span><i style="background:var(--out)"></i>7 днів</span><span><i style="background:var(--in)"></i>5 годин</span></div></div><div id="limits-chart"></div></div>
-      <div class="card"><div class="card-head"><div><h2>Ефективність підписки</h2><p class="sub">Скільки токенів і доларів API-вартості припадає на 1% тижневого ліміту</p></div></div><div id="efficiency"></div></div>
-    </div>
-    <div class="card">
       <div class="card-head"><div><h2>Оцінка вартості</h2><p class="sub" id="cost-sub"></p></div></div>
       <div class="summary" id="cost-summary"></div>
       <div class="legend" id="cost-legend" style="margin-bottom:10px"></div>
@@ -155,30 +147,17 @@
   <section id="tab-devices" class="tab hide">
     <div class="card">
       <h2>Додати пристрій</h2>
-      <p class="sub" style="margin-bottom:14px">Створи код, потім на пристрої виконай <b>/tracker-link КОД</b>. Код діє 10 хвилин і прив'язує лише один пристрій.</p>
-      <form id="new-code"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button class="primary" type="submit">Створити код</button></form>
-      <div id="code-box" class="hide"><div class="code-row"><div class="code" id="code"></div><button type="button" class="copy-btn" id="copy-code" aria-label="Копіювати код" title="Копіювати код"></button></div><div class="sub" id="code-note"></div></div>
-    </div>
-    <div class="card">
-      <h2>Хмарні сесії (claude.ai/code)</h2>
-      <p class="sub" style="margin-bottom:14px">Один раз на хмарне середовище: плагіни там не працюють, тому токени збирає хук, який ставить Setup script. Потім нічого робити не треба.</p>
-      <form id="cloud-form"><input id="cloud-name" value="cloud" maxlength="60" required aria-label="Назва пристрою"><button class="primary" type="submit">Створити токен для хмари</button></form>
-      <div id="cloud-box" class="hide">
-        <p class="sub" style="margin:16px 0 6px"><b>1.</b> У claude.ai/code → меню середовища → Edit → <b>Setup script</b> встав:</p>
-        <pre class="snip" id="cloud-script"></pre><button type="button" id="copy-script">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px"><b>2.</b> Там само, <b>Network secrets → Add secret</b>: Allowed website <code id="cloud-host"></code>, Custom headers: Name <code>x-device-token</code>, Prefix порожній, Value:</p>
-        <pre class="snip" id="cloud-token"></pre><button type="button" id="copy-token">Копіювати токен</button>
-        <p class="note">Токен показується один раз. Втратиш: створи новий і відклич старий пристрій нижче.</p>
+      <p class="sub" style="margin-bottom:14px">Пристрій це одне місце, де працює Claude Code: комп'ютер, сервер або хмарне середовище. Створи токен, встав налаштування експорту OpenTelemetry, перезапусти Claude Code.</p>
+      <form id="new-device"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button class="primary" type="submit">Створити токен</button></form>
+      <div id="setup-box" class="hide">
+        <p class="sub" style="margin:16px 0 6px"><b>1.</b> Додай це в <code>~/.claude/settings.json</code> (на Windows <code>%USERPROFILE%\.claude\settings.json</code>); якщо там уже є блок <code>env</code>, додай у нього ці ключі:</p>
+        <pre class="snip" id="setup-json"></pre><button type="button" id="copy-json">Копіювати</button>
+        <p class="sub" style="margin:16px 0 6px"><b>2.</b> Або як змінні середовища (shell, хмарне середовище claude.ai/code):</p>
+        <pre class="snip" id="setup-env"></pre><button type="button" id="copy-env">Копіювати</button>
+        <p class="note">Токен показується один раз і діє лише для надсилання даних. Втратиш: створи новий пристрій і відклич старий. Нові сесії Claude Code почнуть надсилати дані після перезапуску. У хмарному середовищі домен <code id="setup-host"></code> має бути в дозволених (Network access).</p>
       </div>
     </div>
     <div class="card"><h2 style="margin-bottom:6px">Мої пристрої</h2><div id="dev-list"></div></div>
-    <div class="card">
-      <h2>Імпорт старих даних</h2>
-      <p class="sub" style="margin:3px 0 14px">Підтягне історію з локальних логів Claude Code (до прив'язки пристрою) і Codex (уся). Файли читає твій браузер, на сервер іде лише кількість токенів, час і модель, текст розмов не передається. Повторний імпорт безпечний: дублікатів не буде.</p>
-      <form id="import-form"><select id="import-device" aria-label="Пристрій" required></select><input id="import-files" type="file" webkitdirectory multiple aria-label="Папка з логами"></form>
-      <p class="note">Вибери папку <b>~/.claude/projects</b> для Claude або <b>~/.codex/sessions</b> для Codex (на Windows <b>%USERPROFILE%\...</b>) і пристрій, якому вона належить. Для сервера без браузера на самому сервері виконай <code>/tracker-import</code>.</p>
-      <div id="import-status" class="sub" style="margin-top:10px"></div>
-    </div>
   </section>
 </div>
 <script type="module" src="app.js"></script>
