@@ -97,17 +97,34 @@ const adapterFor = (service: string) => ADAPTERS[service] ?? (service.startsWith
 export const MAX_RECORDS = 5000
 
 /** The calls in an OTLP logs payload and how many records were not one (other events, other services, empty requests). */
-export interface Seen { service: string; event: string; keys: string; lens: string; n: number }
+export interface Seen { service: string; event: string; keys: string; lens: string; sample: string; n: number }
 
 /** Attributes that may carry the text of the conversation. Only their LENGTH (and whether they look like a redaction placeholder) is ever reported. */
 const CONTENT_KEYS = ['prompt', 'prompt_text', 'response', 'tool_input', 'tool_parameters', 'tool_result', 'tool_output', 'error', 'body']
+/** Identity attributes: in a sample only their length is shown. */
+const MASKED_KEYS = ['user.email', 'user.id', 'user.account_uuid', 'user.account_id', 'organization.id', 'process.owner']
+/**
+ * One record as `name: value` for finding out what an exporter sends. Only identifier-like values (no spaces, up to 40 characters) and
+ * numbers are shown; identity attributes, conversation attributes and any prose are replaced by their length.
+ */
+export function sampleOf(a: Attrs, raw = false): string {
+  const out: Record<string, string | number | boolean> = {}
+  for (const [k, v] of [...a.entries()].sort(([x], [y]) => x.localeCompare(y))) {
+    const key = NAME(k)
+    if (raw) out[key] = typeof v === 'string' ? v.slice(0, 500) : v // the temporary raw mode (DEBUG_OTLP = 'raw'): nothing masked
+    else if (typeof v !== 'string') out[key] = v
+    else if (MASKED_KEYS.includes(k) || CONTENT_KEYS.includes(k)) out[key] = `<masked:${v.length}>`
+    else out[key] = /^[\w.:/+-]{0,40}$/.test(v) ? v : `<text:${v.length}>`
+  }
+  return JSON.stringify(out).slice(0, 6000)
+}
 const lensOf = (a: Attrs): string =>
   CONTENT_KEYS.flatMap(k => { const v = a.get(k); return typeof v === 'string' ? [`${k}=${v.length}${/^\W*redact/i.test(v) ? 'R' : ''}`] : [] }).join(',')
 
 /** What the exporter sent, by names only: the service, the event and the attribute NAMES (never a value), counted. For finding out why nothing was recognised. */
 const NAME = (v: string) => v.replace(/[^\w.:-]/g, '').slice(0, 80)
 
-export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: number; seen: Seen[] } | null {
+export function parseOtlpLogs(payload: unknown, sampleAll: boolean | 'raw' = false): { calls: ModelCall[]; ignored: number; seen: Seen[] } | null {
   const doc = payload as OtlpLogs
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.resourceLogs)) return null
   const calls: ModelCall[] = []
@@ -123,13 +140,13 @@ export function parseOtlpLogs(payload: unknown): { calls: ModelCall[]; ignored: 
         const call = adapter && rec ? adapter(attrs(rec.attributes), rec) : null
         if (call) calls.push(call)
         else ignored++
-        if (!call && rec && names.size < 50) {
+        if ((!call || sampleAll) && rec && names.size < 50) {
           const a = attrs(rec.attributes)
           const event = NAME(text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : ''))
           const key = `${NAME(service)}|${event}`
           const hit = names.get(key)
           if (hit) hit.n++
-          else names.set(key, { service: NAME(service), event, keys: [...a.keys()].map(NAME).sort().join(',').slice(0, 600), lens: lensOf(a), n: 1 })
+          else names.set(key, { service: NAME(service), event, keys: [...a.keys()].map(NAME).sort().join(',').slice(0, 600), lens: lensOf(a), sample: sampleOf(a, sampleAll === 'raw'), n: 1 })
         }
       }
     }

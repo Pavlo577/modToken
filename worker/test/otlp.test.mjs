@@ -1,7 +1,7 @@
 // The OTLP side of the Worker: how a payload becomes ModelCalls (src/otlp.ts, pure). The receiver itself is checked end to end in otlp.sh.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_RECORDS, parseOtlpLogs } from '../src/otlp.ts'
+import { MAX_RECORDS, parseOtlpLogs, sampleOf } from '../src/otlp.ts'
 
 const s = (key, v) => ({ key, value: { stringValue: v } })
 const i = (key, v) => ({ key, value: { intValue: String(v) } }) // OTLP/JSON: an int64 is a string
@@ -53,7 +53,7 @@ test('otlp: a request that cost nothing, negative or fractional numbers, other s
   const odd = record([]); odd.attributes = odd.attributes.map(a => (a.key === 'output_tokens' ? { key: 'output_tokens', value: { intValue: '-5' } } : a.key === 'duration_ms' ? { key: 'duration_ms', value: { doubleValue: 12.9 } } : a))
   const [c] = parseOtlpLogs(payload([odd])).calls
   assert.deepEqual([c.output_tokens, c.duration_ms], [0, 12])
-  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', lens: '', keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
+  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', lens: '', sample: parseOtlpLogs(payload([record()], 'some-other-agent')).seen[0].sample, keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
   assert.deepEqual(parseOtlpLogs({ resourceLogs: [] }), { calls: [], ignored: 0, seen: [] })
   for (const bad of [null, 5, 'x', {}, { resourceLogs: 'no' }]) assert.equal(parseOtlpLogs(bad), null)
 })
@@ -91,4 +91,27 @@ test('otlp: for conversation text only the length is reported, and whether it lo
   const { seen } = parseOtlpLogs(payload([rec]))
   assert.equal(seen[0].lens, 'prompt=13,prompt_text=10R,response=0')
   assert.equal(JSON.stringify(seen).includes('SECRET'), false)
+})
+
+test('otlp: a sample shows harmless values and only the length of identity, conversation and prose values', () => {
+  const rec = { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'claude_code.user_prompt'), s('model', 'claude-sonnet-5-5'), s('user.email', 'me@example.com'), s('organization.id', 'org-secret'),
+    s('prompt', 'SECRET PROMPT'), s('summary', 'some secret sentence with spaces'), s('tool_name', 'Bash'), i('prompt_length', 5)] }
+  const sample = JSON.parse(parseOtlpLogs(payload([rec])).seen[0].sample)
+  assert.equal(sample.model, 'claude-sonnet-5-5'); assert.equal(sample.tool_name, 'Bash'); assert.equal(sample.prompt_length, 5)
+  assert.equal(sample['user.email'], '<masked:14>'); assert.equal(sample.prompt, '<masked:13>'); assert.equal(sample.summary, '<text:32>')
+  const raw = JSON.stringify(sample)
+  for (const bad of ['me@example.com', 'org-secret', 'SECRET', 'secret sentence']) assert.equal(raw.includes(bad), false, bad)
+})
+
+test('otlp: recognised calls are sampled too, but only when asked (the preview debug mode)', () => {
+  assert.equal(parseOtlpLogs(payload([record()])).seen.length, 0)
+  const { seen, calls } = parseOtlpLogs(payload([record()]), true)
+  assert.equal(calls.length, 1); assert.equal(seen.length, 1); assert.equal(seen[0].event, 'claude_code.api_request')
+})
+
+test('otlp: the raw debug mode keeps the values (temporary, preview only); the default never does', () => {
+  const rec = { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'x_event'), s('user.email', 'me@example.com')] }
+  assert.ok(parseOtlpLogs(payload([rec]), 'raw').seen[0].sample.includes('me@example.com'))
+  assert.equal(parseOtlpLogs(payload([rec]), true).seen[0].sample.includes('me@example.com'), false)
+  assert.equal(parseOtlpLogs(payload([rec])).seen[0].sample.includes('me@example.com'), false)
 })

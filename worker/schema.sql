@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS otlp_seen (
   event TEXT NOT NULL,
   keys TEXT NOT NULL,
   lens TEXT NOT NULL DEFAULT '',
+  sample TEXT NOT NULL DEFAULT '',
   n INTEGER NOT NULL,
   last_seen TEXT NOT NULL,
   PRIMARY KEY (device_id, service, event)

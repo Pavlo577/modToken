@@ -74,7 +74,7 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   if (body === null) return text('payload too large', 413)
   let payload: unknown
   try { payload = JSON.parse(body) } catch { return text('bad request', 400) }
-  const parsed = parseOtlpLogs(payload)
+  const parsed = parseOtlpLogs(payload, env.DEBUG_OTLP === 'raw' ? 'raw' : env.DEBUG_OTLP === '1')
   if (!parsed) return text(`bad request (not OTLP logs, or more than ${MAX_RECORDS} records)`, 400)
 
   const now = new Date().toISOString()
@@ -83,9 +83,9 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   }
   for (const x of parsed.seen) {
     await env.DB.prepare(
-      `INSERT INTO otlp_seen (device_id, service, event, keys, lens, n, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (device_id, service, event) DO UPDATE SET n = n + excluded.n, keys = excluded.keys, lens = excluded.lens, last_seen = excluded.last_seen`,
-    ).bind(dev.id, x.service, x.event, x.keys, x.lens, x.n, now).run()
+      `INSERT INTO otlp_seen (device_id, service, event, keys, lens, sample, n, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (device_id, service, event) DO UPDATE SET n = n + excluded.n, keys = excluded.keys, lens = excluded.lens, sample = excluded.sample, last_seen = excluded.last_seen`,
+    ).bind(dev.id, x.service, x.event, x.keys, x.lens, env.DEBUG_OTLP === '1' || env.DEBUG_OTLP === 'raw' ? x.sample : '', x.n, now).run()
   }
   const cutoff = new Date(Date.now() - KEEP_CALLS_DAYS * 86_400_000).toISOString()
   await env.DB.batch([
