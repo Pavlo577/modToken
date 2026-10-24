@@ -144,6 +144,7 @@ async function load(): Promise<void> {
     data = { r, buckets, sessions, limits }
     const names = [...new Set(buckets.map(b => b.device))].sort()
     deviceNames = names
+    rememberDevices(names)
     if (state.device && !names.includes(state.device)) state.device = ''
     deviceMenu.set([{ value: '', label: 'Усі пристрої' }, ...names.map(n => ({ value: n, label: n }))], state.device)
     render()
@@ -300,7 +301,17 @@ function goMonth(month: string): void {
   state.anchor = month >= tz.today().slice(0, 7) ? '' : month + '-01'
   persist(); syncControls(); void load()
 }
-const devColor = (name: string): string => PALETTE[Math.max(0, deviceNames.indexOf(name)) % PALETTE.length]
+/** Every device ever seen here, so a device keeps its colour whatever period is shown. */
+const seenDevices: string[] = (() => {
+  try { return (JSON.parse(localStorage.getItem('tt-devices') || '[]') as string[]).filter(n => typeof n === 'string') } catch { return [] }
+})()
+const rememberDevices = (names: string[]): void => {
+  const before = seenDevices.length
+  for (const n of names) if (!seenDevices.includes(n)) seenDevices.push(n)
+  seenDevices.sort()
+  if (seenDevices.length !== before) { try { localStorage.setItem('tt-devices', JSON.stringify(seenDevices)) } catch { /* ignore */ } }
+}
+const devColor = (name: string): string => PALETTE[Math.max(0, seenDevices.indexOf(name)) % PALETTE.length]
 
 /** "When do you work": the grid fits the period (a day, a week, a month, a year or your own span). */
 function renderActivity(agg: S.Aggregate): void {
