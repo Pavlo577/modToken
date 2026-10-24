@@ -18,8 +18,8 @@
     ],
     "vars": {
       "TEAM_DOMAIN": "https://billowing-feather-dc63.cloudflareaccess.com",
-      // the Audience tag of the Cloudflare Access application that protects the Preview URLs (without it /api/admin/* answers 401)
-      "POLICY_AUD": "SET_AFTER_CREATING_THE_ACCESS_APP"
+      // the Audience tag of the Cloudflare Access application that covers the Preview URLs (same as production here)
+      "POLICY_AUD": "093672a00c66038093a36f747d866eb508b1d8e4be440a0e5b9a0c91313803a2"
     }
   }
 }
