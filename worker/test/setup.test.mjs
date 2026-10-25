@@ -1,7 +1,7 @@
 // The settings a device pastes: they point Claude Code's logs at /v1/logs as JSON, keep metrics and traces off and never ask for prompt text.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { cloudEnv, cloudScript, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -23,4 +23,14 @@ test('setup: settings.json and the shell variant carry the same values', () => {
   assert.equal(shell.length, Object.keys(json.env).length)
   assert.ok(shell.includes('export OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-device-token=tok'))
   assert.ok(shell.every(l => l.startsWith('export ')))
+})
+
+test('setup: the cloud variant puts the same values and the token into KEY=value lines, the setup script line holds no token', () => {
+  const lines = cloudEnv('https://x.test/', 'tok').split('\n')
+  assert.equal(lines.length, Object.keys(setupEnv('https://x.test', 'tok')).length + 1)
+  assert.ok(lines.includes('OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-device-token=tok'))
+  assert.ok(lines.includes('TRACKER_TOKEN=tok'))
+  assert.ok(lines.every(l => /^[A-Z_]+=\S+$/.test(l)))
+  assert.equal(cloudScript('https://x.test/').includes('tok'), false)
+  assert.ok(cloudScript('https://x.test/').endsWith('bash -s -- https://x.test'))
 })

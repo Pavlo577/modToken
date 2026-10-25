@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
-import { cloudScript, cloudTokenVar, settingsJson, shellEnv } from '../lib/setup.ts'
+import { cloudEnv, cloudScript, settingsJson, shellEnv } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 function deviceRow(d: DeviceRow): HTMLElement {
@@ -51,7 +51,7 @@ export function initDevices(): void {
       $('setup-json').textContent = settingsJson(location.origin, token)
       $('setup-env').textContent = shellEnv(location.origin, token)
       $('setup-cloud').textContent = cloudScript(location.origin)
-      $('setup-cloud-env').textContent = cloudTokenVar(token)
+      $('setup-cloud-env').textContent = cloudEnv(location.origin, token)
       $('setup-host').textContent = location.hostname
       $('setup-box').classList.remove('hide')
       name.value = ''
