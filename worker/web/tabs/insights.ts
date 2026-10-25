@@ -24,12 +24,17 @@ interface Session { session_id: string; surface: string; calls: number; first_ts
 interface Prompts { day: string; prompts: number; avg_len: N }
 interface Command { command: string | null; n: number }
 interface Mode { from_mode: string | null; to_mode: string | null; n: number }
+interface Compaction { trigger: string | null; success: string | null; n: number; avg_ms: N; avg_pre: N; avg_post: N; saved: N }
+interface Subagent { agent: string | null; runs: number; avg_ms: N; avg_tools: N; avg_tokens: N; async_runs: N; swapped: N }
+interface ApiError { kind: string; status: N; model: string | null; n: number; avg_attempts: N; avg_retry_ms: N }
+interface Skill { skill: string | null; trigger: string | null; source: string | null; n: number }
 interface Insights {
   available: boolean
   totals: { events: number; kinds: number; sessions: number; first_ts: string | null; last_ts: string | null }
   bySource: Source[]; bySurface: Surface[]; byModel: ModelRow[]; byDay: DayRow[]; latency: Latency[]
   tools: Tool[]; decisions: Decision[]; safety: Safety[]; hooks: Hook[]; mcp: Mcp[]; refusals: Refusal[]
   sessions: Session[]; prompts: Prompts[]; commands: Command[]; modes: Mode[]
+  compaction: Compaction[]; subagents: Subagent[]; errors: ApiError[]; skills: Skill[]
   unknownFields: { key: string; event: string }[]
 }
 
@@ -126,6 +131,15 @@ export async function renderInsights(): Promise<void> {
   const extra = [...bySource].map(([s, n]) => `${DECISION[s] ?? s}: ${fmt(n)}`).join(' · ')
   table($('ins-safety'), ['Перевірки безпеки', 'Клас', 'Рішення', 'Разів'], d.safety.map(s => [s.reason ?? 'невідомо', s.class ?? '—', s.decision ?? '—', fmt(s.n)]), 'Перевірки безпеки нічого не зупиняли')
   if (extra) $('ins-safety').append(el('p', { class: 'note' }, 'Хто вирішував: ' + extra + (d.modes.length ? '. Режими дозволів: ' + d.modes.map(m => `${m.from_mode} → ${m.to_mode} ×${m.n}`).join(', ') : '')))
+
+  table($('ins-subagents'), ['Тип', 'Запусків', 'Час', 'Інстр.', 'Контекст', 'У фоні'],
+    d.subagents.map(x => [x.agent ?? 'невідомо', fmt(x.runs), ms(x.avg_ms), x.avg_tools == null ? '—' : x.avg_tools.toFixed(1), fmt(x.avg_tokens == null ? null : Math.round(x.avg_tokens)), fmt(x.async_runs ?? 0)]), 'Субагенти не запускались')
+  const TRIGGER: Record<string, string> = { auto: 'автоматично', manual: 'вручну' }
+  table($('ins-compaction'), ['Запуск', 'Вдало', 'Разів', 'Час', 'До', 'Після', 'Зекономл.'],
+    d.compaction.map(c => [TRIGGER[c.trigger ?? ''] ?? c.trigger ?? '—', c.success === 'true' ? 'так' : c.success === 'false' ? 'ні' : '—', fmt(c.n), ms(c.avg_ms), fmt(c.avg_pre == null ? null : Math.round(c.avg_pre)), fmt(c.avg_post == null ? null : Math.round(c.avg_post)), fmt(c.saved)]), 'Стиснень не було')
+  table($('ins-errors'), ['Подія', 'Код', 'Модель', 'Разів', 'Спроб', 'Ретраї'],
+    d.errors.map(e => [e.kind === 'api_retries_exhausted' ? 'ретраї вичерпано' : 'помилка API', e.status ?? '—', e.model ?? '—', fmt(e.n), e.avg_attempts == null ? '—' : e.avg_attempts.toFixed(1), ms(e.avg_retry_ms)]), 'Помилок API не було')
+  table($('ins-skills'), ['Скіл', 'Як запущено', 'Звідки', 'Разів'], d.skills.map(k => [k.skill ?? '—', k.trigger ?? '—', k.source ?? '—', fmt(k.n)]), 'Скілів не запускалось')
 
   bars($('ins-surface'), d.bySurface.map((s, i) => ({ name: surfaceLabel(s.surface), value: usd(s.cost_micros), label: `${fmtUsd(usd(s.cost_micros))} · ${s.sessions} сес.`, title: `${fmt(s.calls)} запитів, вихідні ${fmt(s.output)}`, color: PALETTE[i % PALETTE.length] })))
 

@@ -84,8 +84,8 @@ function claudeCall(a: Attrs, rec: LogRecord): ModelCall | null {
     model: text(a, 'model') || 'unknown', input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write,
     duration_ms: count(a, 'duration_ms'),
     cost_micros: count(a, 'cost_usd_micros') || (typeof a.get('cost_usd') === 'number' ? Math.round((a.get('cost_usd') as number) * 1e6) : 0),
-    // `agent_id` is set on the events of sub-agents only (Claude Code 2.1.310+, monitoring docs); the main session has none.
-    is_subagent: text(a, 'agent_id') !== '',
+    // a sub-agent's call: `agent_id` is set on its events (Claude Code 2.1.310+), and the docs name `query_source` "subagent" for its requests; the main session has neither
+    is_subagent: text(a, 'agent_id') !== '' || text(a, 'query_source') === 'subagent',
   }
 }
 
@@ -143,7 +143,7 @@ export interface EventRow {
 }
 
 /** Attributes that are never kept: who the user is, and anything that may hold the text of the conversation. */
-const NEVER_KEPT = new Set([...MASKED_KEYS, ...CONTENT_KEYS, 'user.email', 'user.groups', 'identity.source'])
+const NEVER_KEPT = new Set([...MASKED_KEYS, ...CONTENT_KEYS, 'user.email', 'user.groups', 'identity.source', 'server_name', 'hook_matcher', 'hook_definitions', 'managed_settings.helper.path', 'managed_settings.settings'])
 /** Attributes that already have a column of their own. */
 const COLUMN_KEYS = new Set(['event.name', 'event.timestamp', 'session.id', 'prompt.id', 'terminal.type', 'service.name'])
 

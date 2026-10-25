@@ -15,10 +15,10 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
   const a = new Date(from).toISOString(), b = new Date(to).toISOString()
   const q = <T = Row>(sql: string): Promise<T[]> => env.EVENTS!.prepare(sql).bind(email, a, b).all<T>().then(r => r.results)
   const W = "user_email = ?1 AND ts >= ?2 AND ts < ?3"
-  const J = (k: string) => `json_extract(attrs, '$.${k}')`
+  const J = (k: string) => `json_extract(attrs, '$."${k}"')` // quoted: some names have dots
   const calls = `name = 'api_request'`
 
-  const [bySource, bySurface, byModel, byDay, latencyRows, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, totals] = await Promise.all([
+  const [bySource, bySurface, byModel, byDay, latencyRows, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, compaction, subagents, errors, skills, totals] = await Promise.all([
     q(`SELECT ${J('query_source')} AS source, COUNT(*) AS calls, SUM(${J('output_tokens')}) AS output, SUM(${J('input_tokens')} + ${J('cache_creation_tokens')}) AS fresh_input, SUM(${J('cache_read_tokens')}) AS cache_read, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY source ORDER BY cost_micros DESC`),
     q(`SELECT surface, COUNT(*) AS calls, COUNT(DISTINCT session_id) AS sessions, SUM(${J('output_tokens')}) AS output, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY surface ORDER BY cost_micros DESC`),
     q(`SELECT ${J('model')} AS model, ${J('speed')} AS speed, COUNT(*) AS calls, SUM(${J('output_tokens')}) AS output, SUM(${J('cache_read_tokens')}) AS cache_read, SUM(${J('input_tokens')} + ${J('cache_creation_tokens')}) AS fresh_input, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY model, speed ORDER BY cost_micros DESC`),
@@ -34,6 +34,10 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     q(`SELECT substr(ts, 1, 10) AS day, COUNT(*) AS prompts, AVG(${J('prompt_length')}) AS avg_len FROM events WHERE ${W} AND name = 'user_prompt' GROUP BY day ORDER BY day`),
     q(`SELECT ${J('command_name')} AS command, COUNT(*) AS n FROM events WHERE ${W} AND name = 'user_prompt' AND ${J('command_name')} IS NOT NULL GROUP BY command ORDER BY n DESC LIMIT 20`),
     q(`SELECT ${J('from_mode')} AS from_mode, ${J('to_mode')} AS to_mode, COUNT(*) AS n FROM events WHERE ${W} AND name = 'permission_mode_changed' GROUP BY from_mode, to_mode ORDER BY n DESC LIMIT 20`),
+    q(`SELECT ${J('trigger')} AS trigger, ${J('success')} AS success, COUNT(*) AS n, AVG(${J('duration_ms')}) AS avg_ms, AVG(${J('pre_tokens')}) AS avg_pre, AVG(${J('post_tokens')}) AS avg_post, SUM(${J('pre_tokens')} - ${J('post_tokens')}) AS saved FROM events WHERE ${W} AND name = 'compaction' GROUP BY trigger, success ORDER BY n DESC LIMIT 10`),
+    q(`SELECT ${J('agent_type')} AS agent, COUNT(*) AS runs, AVG(${J('duration_ms')}) AS avg_ms, AVG(${J('total_tool_uses')}) AS avg_tools, AVG(${J('total_tokens')}) AS avg_tokens, SUM(${J('is_async')}) AS async_runs, SUM(${J('model_swapped')}) AS swapped FROM events WHERE ${W} AND name = 'subagent_completed' GROUP BY agent ORDER BY runs DESC LIMIT 20`),
+    q(`SELECT name AS kind, ${J('status_code')} AS status, ${J('model')} AS model, COUNT(*) AS n, AVG(${J('total_attempts')}) AS avg_attempts, AVG(${J('total_retry_duration_ms')}) AS avg_retry_ms FROM events WHERE ${W} AND name IN ('api_error', 'api_retries_exhausted') GROUP BY kind, status, model ORDER BY n DESC LIMIT 20`),
+    q(`SELECT ${J('skill.name')} AS skill, ${J('invocation_trigger')} AS trigger, ${J('skill.source')} AS source, COUNT(*) AS n FROM events WHERE ${W} AND name = 'skill_activated' GROUP BY skill, trigger, source ORDER BY n DESC LIMIT 30`),
     q(`SELECT COUNT(*) AS events, COUNT(DISTINCT name) AS kinds, COUNT(DISTINCT session_id) AS sessions, MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM events WHERE ${W}`),
   ])
 
@@ -61,5 +65,5 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     return { model, calls: d.length, ttft_p50: pct(t, 50), ttft_p95: pct(t, 95), dur_p50: pct(d, 50), dur_p95: pct(d, 95), tps_p50: Math.round(pct(s, 50) * 10) / 10 }
   }).sort((x, y) => y.calls - x.calls)
 
-  return json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, unknownFields })
+  return json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, compaction, subagents, errors, skills, unknownFields })
 }

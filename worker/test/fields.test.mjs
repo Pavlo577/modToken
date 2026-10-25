@@ -40,9 +40,19 @@ test('fields: the counted fields of api_request are the ones the counting really
   }
   const [c] = parseOtlpLogs({ resourceLogs: [{ resource: { attributes: [s('service.name', 'claude-code')] }, scopeLogs: [{ logRecords: [rec] }] }] }).calls
   assert.deepEqual([c.input_tokens, c.output_tokens, c.cache_read_tokens, c.cache_creation_tokens, c.duration_ms, c.cost_micros, c.model, c.call_id, c.is_subagent], [11, 22, 33, 44, 55, 66, 'M', 'REQ', true])
-  for (const key of ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'duration_ms', 'cost_usd_micros', 'cost_usd', 'model', 'request_id', 'agent_id']) {
+  for (const key of ['input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'duration_ms', 'cost_usd_micros', 'cost_usd', 'model', 'request_id', 'agent_id', 'query_source']) {
     assert.equal(FIELDS.find(x => x.key === key)?.handling, 'counted', key)
   }
+})
+
+test('fields: a request whose query_source is subagent is a sub-agent call, a main-thread one is not', () => {
+  const call = qs => parseOtlpLogs({ resourceLogs: [{ resource: { attributes: [s('service.name', 'claude-code')] }, scopeLogs: [{ logRecords: [{ timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'api_request'), s('request_id', 'R' + qs), i('input_tokens', 1), i('output_tokens', 1), s('query_source', qs)] }] }] }] }).calls[0]
+  assert.equal(call('subagent').is_subagent, true)
+  assert.equal(call('repl_main_thread').is_subagent, false)
+})
+
+test('fields: the keys that only appear with tool details on are never stored, even with a harmless value', () => {
+  for (const key of ['server_name', 'hook_matcher', 'hook_definitions', 'managed_settings.helper.path', 'tool_parameters', 'tool_input', 'error']) assert.deepEqual(safeAttrs(new Map([[key, 'abc']])), {}, key)
 })
 
 test('fields: docs/OTLP-fields.md is the generated one (run: bun run fields)', () => {

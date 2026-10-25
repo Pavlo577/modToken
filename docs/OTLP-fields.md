@@ -26,6 +26,18 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `user.account_uuid` | id | the account uuid | identity |
 | `user.id` | id | anonymous id of this installation (differs per machine) | identity |
 | `organization.id` | id | the organization uuid | identity |
+| `wsl.version` | string | WSL version, only when running on Windows Subsystem for Linux *(only: WSL)* *(documented only)* | stored |
+
+## `api_error`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `model` | string | model id | counted |
+| `speed` | string | normal or fast | stored |
+| `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
+| `attempt` | int | which attempt was refused | stored |
+| `status_code` | int | HTTP status code of the failure (absent for non-HTTP errors) *(documented only)* | stored |
+| `error` | string | the error message (may hold text) *(documented only)* | content |
 
 ## `api_refusal`
 | field | type | meaning | handling |
@@ -34,7 +46,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `speed` | string | normal or fast | stored |
 | `effort` | string | thinking effort setting (medium ...) | stored |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), generate_session_title, away_summary ... | stored |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
 | `attempt` | int | which attempt was refused | stored |
 | `has_category` | bool | the refusal names a category | stored |
 | `has_explanation` | bool | the refusal carries an explanation | stored |
@@ -58,19 +70,63 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `cost_usd_micros` | int | the same in millionths of a dollar | counted |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
 | `client_request_id` | id | client-side id of the request | stored |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), generate_session_title, away_summary ... | stored |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
 | `agent_id` | id | set on sub-agent calls only; makes the call a sub-agent call *(documented only)* | counted |
 | `parent_agent_id` | id | the agent that started a sub-agent *(documented only)* | stored |
+
+## `api_retries_exhausted`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `model` | string | model id | counted |
+| `speed` | string | normal or fast | stored |
+| `status_code` | int | HTTP status code of the failure (absent for non-HTTP errors) *(documented only)* | stored |
+| `total_attempts` | int | attempts made before giving up *(documented only)* | stored |
+| `total_retry_duration_ms` | int | wall-clock time across all attempts *(documented only)* | stored |
+| `error` | string | the error message (may hold text) *(documented only)* | content |
 
 ## `assistant_response`
 | field | type | meaning | handling |
 |---|---|---|---|
 | `model` | string | model id | counted |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), generate_session_title, away_summary ... | stored |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
 | `message.uuid` | id | id of the message | stored |
 | `response` | string | the text of the answer (arrives as <REDACTED>) | content |
 | `response_length` | int | length of the answer in characters | stored |
+
+## `at_mention`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `success` | bool | the tool finished without an error | stored |
+| `mention_type` | string | file, directory, agent, mcp_resource or peer *(documented only)* | stored |
+
+## `auth`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `success` | bool | the tool finished without an error | stored |
+| `status_code` | int | HTTP status code of the failure (absent for non-HTTP errors) *(documented only)* | stored |
+| `action` | string | login or logout *(documented only)* | stored |
+| `auth_method` | string | oauth ... *(documented only)* | stored |
+| `error_category` | string | kind of failure (never the message) *(documented only)* | stored |
+
+## `compaction`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `duration_ms` | int | how long the call / tool / connection took | counted |
+| `success` | bool | the tool finished without an error | stored |
+| `trigger` | string | what caused it: compaction auto or manual; a mode change shift_tab, exit_plan_mode, auto_gate_denied *(documented only)* | stored |
+| `pre_tokens` | int | approximate tokens before the compaction *(documented only)* | stored |
+| `post_tokens` | int | approximate tokens after the compaction *(documented only)* | stored |
+| `precompute_reuse` | string | whether a summary prepared in the background was reused (hit, miss_*) *(documented only)* | stored |
+| `error` | string | the error message (may hold text) *(documented only)* | content |
+
+## `feedback_survey`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `event_type` | string | appeared, responded ... *(documented only)* | stored |
+| `appearance_id` | id | ties the events of one survey *(documented only)* | stored |
+| `survey_type` | string | which survey *(documented only)* | stored |
+| `enabled_via_override` | bool | the survey override variable is set *(documented only)* | stored |
 
 ## `hook_execution_complete`
 | field | type | meaning | handling |
@@ -91,6 +147,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `system_message_chars` | int | length of the system message the hooks added | stored |
 | `additional_context_chars` | int | length of the context the hooks added | stored |
 | `initial_user_message_chars` | int | length of the first message the hooks added | stored |
+| `hook_definitions` | string | the hook configuration as JSON (only with tool details and tracing on) *(documented only)* | content |
 
 ## `hook_execution_start`
 | field | type | meaning | handling |
@@ -101,6 +158,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `num_hooks` | int | hooks for this event | stored |
 | `managed_only` | bool | only managed hooks are allowed | stored |
 | `safe_mode` | bool | safe mode is on | stored |
+| `hook_definitions` | string | the hook configuration as JSON (only with tool details and tracing on) *(documented only)* | content |
 
 ## `hook_registered`
 | field | type | meaning | handling |
@@ -109,6 +167,13 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `hook_source` | string | where it is defined (merged, settings ...) | stored |
 | `hook_type` | string | command, prompt ... | stored |
 | `safe_mode` | bool | safe mode is on | stored |
+| `hook_matcher` | string | the matcher of the hook (only with tool details on) *(documented only)* | content |
+
+## `internal_error`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `error_code` | string | why a connection failed (ENDPOINT_NOT_FOUND ...) | stored |
+| `error_name` | string | the error class name (TypeError ...) *(documented only)* | stored |
 
 ## `managed_settings_resolved`
 | field | type | meaning | handling |
@@ -117,6 +182,9 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `managed_settings.helper.state` | string | state of the helper | stored |
 | `managed_settings.source_behavior` | string | which settings source wins (first-wins ...) | stored |
 | `managed_settings.trigger` | string | what caused the read (startup ...) | stored |
+| `error.type` | string | why a managed policy stopped the session *(documented only)* | stored |
+| `managed_settings.helper.entry` | string | policyHelper when a helper was selected *(documented only)* | stored |
+| `managed_settings.helper.path` | string | the configured path of the policy helper *(documented only)* | content |
 
 ## `mcp_server_connection`
 | field | type | meaning | handling |
@@ -129,12 +197,24 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `transport_type` | string | http, ws-ide, claudeai-proxy ... | stored |
 | `server_scope` | string | dynamic, claudeai ... | stored |
 | `is_plugin` | bool | the server comes from a plugin | stored |
+| `error` | string | the error message (may hold text) *(documented only)* | content |
+| `server_name` | string | the configured MCP server name (only with tool details on) *(documented only)* | content |
 
 ## `permission_mode_changed`
 | field | type | meaning | handling |
 |---|---|---|---|
 | `from_mode` | string | the permission mode before | stored |
 | `to_mode` | string | the permission mode after | stored |
+| `trigger` | string | what caused it: compaction auto or manual; a mode change shift_tab, exit_plan_mode, auto_gate_denied *(documented only)* | stored |
+
+## `plugin_installed`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `plugin.name` | string | the plugin | stored |
+| `marketplace.name` | string | the marketplace it came from | stored |
+| `marketplace.is_official` | bool | the marketplace is an official one *(documented only)* | stored |
+| `install.trigger` | string | cli or ui *(documented only)* | stored |
+| `plugin.version` | string | plugin version *(documented only)* | stored |
 
 ## `plugin_loaded`
 | field | type | meaning | handling |
@@ -151,6 +231,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `agent_path_count` | int | agents in the plugin | stored |
 | `command_path_count` | int | commands in the plugin | stored |
 | `skill_path_count` | int | skills in the plugin | stored |
+| `plugin.version` | string | plugin version *(documented only)* | stored |
 
 ## `retention_sweep`
 | field | type | meaning | handling |
@@ -166,6 +247,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `result` | string | complete ... | stored |
 | `used_default` | bool | the default period was used | stored |
 | `transcripts_exempted_desktop` | int | transcripts the Claude app kept | stored |
+| `skip_reason` | string | why the sweep was paused (only when result is skipped) *(documented only)* | stored |
 
 ## `safety_event`
 | field | type | meaning | handling |
@@ -182,6 +264,37 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `tool_class` | string | file, shell ... | stored |
 | `sandbox_enabled` | bool | the sandbox was on | stored |
 | `sandbox_violation_count` | int | sandbox violations | stored |
+| `hook_event` | string | the event the hook is for (Stop ...) | stored |
+| `rule_source` | string | settings source of the rule involved (userSettings, policySettings ...) *(documented only)* | stored |
+| `grant_scope` | string | once or session, for a prompt approved without saving a rule *(documented only)* | stored |
+| `circuit_breaker` | string | the built-in safety check (dangerousRemoval, outsideReadsBlocked ...) *(documented only)* | stored |
+| `classifier_category` | string | the rule behind an auto mode block (only with tool details on) *(documented only)* | stored |
+
+## `skill_activated`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `plugin.name` | string | the plugin | stored |
+| `marketplace.name` | string | the marketplace it came from | stored |
+| `skill.name` | string | the skill; user-defined and third-party skills appear as "custom_skill" *(documented only)* | stored |
+| `invocation_trigger` | string | user-slash, claude-proactive or nested-skill *(documented only)* | stored |
+| `skill.source` | string | where the skill was loaded from (bundled, userSettings, projectSettings, plugin) *(documented only)* | stored |
+| `skill.kind` | string | workflow when the skill is a workflow skill *(documented only)* | stored |
+
+## `subagent_completed`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `duration_ms` | int | how long the call / tool / connection took | counted |
+| `model` | string | model id | counted |
+| `plugin.name` | string | the plugin | stored |
+| `plugin_id_hash` | id | hash of the plugin id | stored |
+| `agent_type` | string | the sub-agent type (custom agents appear as "custom") *(documented only)* | stored |
+| `agent.source` | string | where the agent definition came from (built-in, plugin, userSettings ...) *(documented only)* | stored |
+| `is_built_in` | bool | a built-in sub-agent *(documented only)* | stored |
+| `is_async` | bool | it ran in the background *(documented only)* | stored |
+| `total_tokens` | int | tokens of the sub-agent's final request (its context size at the end, not a sum) *(documented only)* | stored |
+| `total_tool_uses` | int | tool calls the sub-agent made in the whole run *(documented only)* | stored |
+| `final_model` | string | the model that produced the final answer (differs from model after a switch) *(documented only)* | stored |
+| `model_swapped` | bool | more than one model served the sub-agent *(documented only)* | stored |
 
 ## `tool_decision`
 | field | type | meaning | handling |
@@ -194,6 +307,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `source` | string | who decided: config, user_reject ... | stored |
 | `permission_mode` | string | the permission mode (default, auto ...) | stored |
 | `classifier_verdict` | string | what the safety classifier said (allow ...) | stored |
+| `tool_parameters` | string | commands, server and tool names (only with tool details on) *(documented only)* | content |
 
 ## `tool_result`
 | field | type | meaning | handling |
@@ -207,6 +321,8 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `tool_result_size_bytes` | int | size of the tool result (not its content) | stored |
 | `decision_source` | string | who allowed the run | stored |
 | `decision_type` | string | accept or reject | stored |
+| `tool_parameters` | string | commands, server and tool names (only with tool details on) *(documented only)* | content |
+| `tool_input` | string | file paths, URLs and other arguments (only with tool details on) *(documented only)* | content |
 
 ## `user_prompt`
 | field | type | meaning | handling |
@@ -220,4 +336,4 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 
 ## Totals
 
-117 fields: 10 counted, 6 columns, 92 stored, 6 identity (never kept), 3 content (never kept).
+163 fields: 11 counted, 6 columns, 130 stored, 6 identity (never kept), 10 content (never kept).

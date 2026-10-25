@@ -77,6 +77,18 @@ post "$(cat <<'JSON'
 JSON
 )" > /dev/null
 check "the cost the agent states is stored with the turn (micros)" "$(npx wrangler d1 execute modtoken --local --json --command "SELECT cost_micros AS n FROM token_events WHERE session_id = 'sess-cost'" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])')" 1234
+post "$(python3 - <<'PY'
+import json, time
+now = time.time_ns()
+def kv(k, v): return {"key": k, "value": {"stringValue": str(v)}}
+recs = [
+  {"timeUnixNano": str(now), "attributes": [kv("event.name", "claude_code.compaction"), kv("session.id", "sess-c"), kv("trigger", "auto"), kv("success", "true"), kv("pre_tokens", 150000), kv("post_tokens", 20000), kv("duration_ms", 9000)]},
+  {"timeUnixNano": str(now + 1), "attributes": [kv("event.name", "claude_code.subagent_completed"), kv("session.id", "sess-c"), kv("agent_type", "Explore"), kv("total_tool_uses", 12), kv("duration_ms", 30000)]},
+]
+print(json.dumps({"resourceLogs": [{"resource": {"attributes": [kv("service.name", "claude-code")]}, "scopeLogs": [{"logRecords": recs}]}]}))
+PY
+)" > /dev/null
+check "compaction and sub-agent events reach their cards" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["compaction"][0]["saved"], d["subagents"][0]["agent"], d["subagents"][0]["runs"])')" "130000 Explore 1"
 check "a field that is not in the registry is reported as new" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; print([x["key"] for x in json.load(sys.stdin)["unknownFields"]])')" "['brand_new_field']"
 check "the insights API answers" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["available"], d["tools"][0]["tool"], d["tools"][0]["runs"])')" "True Bash 3"
 
