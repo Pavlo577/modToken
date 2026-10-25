@@ -60,3 +60,6 @@ type ModelCall = {
 
 ## Field registry
 All known fields and what happens to each are in `worker/src/otlp-fields.ts`; the generated reference is `docs/OTLP-fields.md`.
+
+## statusLine log (subscription limits)
+OTLP carries no subscription limits. Claude Code's `statusLine` command is given a JSON input; to find out which fields it holds, `worker/scripts/statusline-probe.mjs` can POST it to `/v1/statusline` (header `x-device-token`; env `TRACKER_ORIGIN`, `TRACKER_TOKEN`). The Worker keeps only the **shape** of it (table `statusline_seen`, one row per device): key paths, numbers, flags and ISO times as they are, any other string by its length. Read it at `GET /api/admin/statusline`.

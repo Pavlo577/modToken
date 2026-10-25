@@ -13,7 +13,7 @@ const EVENT_CHUNK = 50
 const KEEP_CALLS_DAYS = 14 // how long a counted call is remembered (an exporter retries within minutes)
 
 /** The device behind the token in `x-device-token` or `Authorization: Bearer`, if it is not revoked. */
-async function authDevice(req: Request, env: Env) {
+export async function authDevice(req: Request, env: Env) {
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.get('authorization') ?? '')?.[1]
   const token = req.headers.get('x-device-token') ?? bearer ?? ''
   if (!token) return null

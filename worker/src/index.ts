@@ -2,6 +2,7 @@
 import { admin } from './admin/index.ts'
 import type { Env } from './env.ts'
 import { otlpIgnored, otlpLogs } from './otlp-ingest.ts'
+import { statuslineLog } from './statusline.ts'
 import { text } from './util.ts'
 
 export type { Env }
@@ -12,6 +13,7 @@ export default {
     // OpenTelemetry (OTLP/HTTP, JSON): docs/OTLP.md
     if (url.pathname === '/v1/logs' && req.method === 'POST') return otlpLogs(req, env)
     if ((url.pathname === '/v1/metrics' || url.pathname === '/v1/traces') && req.method === 'POST') return otlpIgnored(req, env)
+    if (url.pathname === '/v1/statusline' && req.method === 'POST') return statuslineLog(req, env) // what statusLine is given, shape only
     if (url.pathname.startsWith('/api/admin/')) return admin(req, env, url)
     if (url.pathname.startsWith('/api/')) return text('not found', 404)
     return env.ASSETS.fetch(req)
