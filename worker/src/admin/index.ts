@@ -3,6 +3,7 @@ import { accessEmail } from '../auth.ts'
 import type { Env } from '../env.ts'
 import { json, text } from '../util.ts'
 import type { Ctx, Routes } from './context.ts'
+import { checkRoutes } from './check.ts'
 import { dataRoutes } from './data.ts'
 import { deviceRoutes } from './devices.ts'
 import { historyRoutes } from './history.ts'
@@ -12,7 +13,7 @@ import { statsRoutes } from './stats.ts'
 
 const me: Routes = async ({ req, email, path }) => (path === '/me' && req.method === 'GET' ? json({ email }) : null)
 
-const GROUPS: Routes[] = [me, deviceRoutes, historyRoutes, dataRoutes, statsRoutes, insightRoutes, modStatsRoutes]
+const GROUPS: Routes[] = [me, deviceRoutes, historyRoutes, dataRoutes, statsRoutes, insightRoutes, modStatsRoutes, checkRoutes]
 
 export async function admin(req: Request, env: Env, url: URL): Promise<Response> {
   const email = await accessEmail(req, env)

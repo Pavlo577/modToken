@@ -101,3 +101,21 @@ CREATE TABLE IF NOT EXISTS mod_turns (
   PRIMARY KEY (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS mod_turns_user_idx ON mod_turns (user_email, ts);
+
+-- Diagnostics: see migrations/0012_check_turns.sql.
+CREATE TABLE IF NOT EXISTS check_turns (
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  user_email TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL,
+  cache_creation_tokens INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  is_subagent INTEGER NOT NULL,
+  PRIMARY KEY (device_id, turn_id)
+);
+CREATE INDEX IF NOT EXISTS check_turns_user_idx ON check_turns (user_email, ts);

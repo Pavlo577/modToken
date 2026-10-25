@@ -74,3 +74,30 @@ export async function renderModStats(r: Period): Promise<void> {
         ...[fmt(x.sessions), fmt(x.turns), fmt(x.output), fmt(x.input), fmt(x.cache_read), x.cost_micros ? fmtUsd(x.cost_micros / 1e6) : '—'].map(v => el('td', {}, v))))))
     : el('div', { class: 'empty' }, 'Немає сесій із проєктом за цей період'))
 }
+
+interface CheckSide { input: number; output: number; cache_read: number; cache_creation: number; turns: number }
+interface Check { available: boolean; sessions: { device: string; session_id: string; first_ts: string; mod: CheckSide | null; otlp: CheckSide | null }[] }
+
+/** The otlp-check card: shown only while the diagnostics mod sends anything. */
+export async function renderCheck(r: Period): Promise<void> {
+  let d: Check
+  try { d = await get<Check>('/check?' + q(r.from, r.to)) } catch { $('check-card').classList.add('hide'); return }
+  $('check-card').classList.toggle('hide', !d.available)
+  if (!d.available) return
+  const both = d.sessions.filter(s => s.mod && s.otlp)
+  const sum = (k: keyof CheckSide, side: 'mod' | 'otlp') => both.reduce((a, s) => a + (s[side]?.[k] ?? 0), 0)
+  const diff = (a: number, b: number) => (b ? `${a >= b ? '+' : ''}${fmtPct((a - b) / b, 1)}` : a ? 'лише в моді' : '0')
+  line($('check-sum'), [
+    ['Сесій', `в обох ${fmt(both.length)} · лише в моді ${fmt(d.sessions.filter(s => !s.otlp).length)} · лише в OTLP ${fmt(d.sessions.filter(s => !s.mod).length)}`],
+    ...(['output', 'input', 'cache_read', 'cache_creation'] as const).map((k): [string, string] => [
+      { output: 'Вихідні', input: 'Вхідні', cache_read: 'З кешу', cache_creation: 'Запис у кеш' }[k],
+      `мод ${fmt(sum(k, 'mod'))} · OTLP ${fmt(sum(k, 'otlp'))} · різниця ${diff(sum(k, 'mod'), sum(k, 'otlp'))}`]),
+  ])
+  const cell = (s: CheckSide | null, k: keyof CheckSide) => (s ? fmt(s[k]) : '—')
+  $('check-table').replaceChildren(el('table', {},
+    el('thead', {}, el('tr', {}, ...['Сесія', 'Пристрій', 'Ходів мод/OTLP', 'Вихідні мод', 'Вихідні OTLP', 'Різниця', 'З кешу мод', 'З кешу OTLP'].map((h, i) => el('th', { class: i ? '' : 'l' }, h)))),
+    el('tbody', {}, ...d.sessions.slice(0, 40).map(s => el('tr', {},
+      el('td', { class: 'l', title: s.session_id }, s.session_id.slice(0, 8)),
+      ...[s.device, `${cell(s.mod, 'turns')}/${cell(s.otlp, 'turns')}`, cell(s.mod, 'output'), cell(s.otlp, 'output'),
+        s.mod && s.otlp ? diff(s.mod.output, s.otlp.output) : s.mod ? 'лише в моді' : 'лише в OTLP', cell(s.mod, 'cache_read'), cell(s.otlp, 'cache_read')].map(v => el('td', {}, v)))))))
+}

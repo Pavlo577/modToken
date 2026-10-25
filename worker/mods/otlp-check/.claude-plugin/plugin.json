@@ -1,0 +1,1 @@
+{ "name": "otlp-check", "version": "0.1.0", "description": "Diagnostics: sends each turn's token counts as the session sees them, to compare with what OpenTelemetry counted (numbers only, never counted twice)" }
