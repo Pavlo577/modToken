@@ -15,6 +15,11 @@ Token usage of AI agents (Claude Code now; Codex, Gemini and Mistral through the
 ## Add a device
 Dashboard → **Пристрої** → name → **Створити токен**. Paste the shown block into `~/.claude/settings.json` (or set the shown variables in a shell or in a claude.ai/code environment, whose Network access must allow the site) and restart Claude Code. New sessions start sending after that.
 
+### History and its limits
+- **Import of local history**: Devices tab → *Імпорт історії*: pick the device and the folder `~/.claude/projects`. The logs are read in the browser; only numbers, the model name and ids are sent (`POST /api/admin/import`, one turn per assistant message, idempotent). Turns from the time the device already reports through OTLP are skipped, so nothing is counted twice.
+- **Since when OTLP counts**: `devices.otlp_since` (migration `0007_otlp_since.sql`) is the first OTLP call of a device. Charts draw a dashed vertical line there: tokens before it (imported or from an older collector) may be incomplete.
+- **Calendars and the pager** do not go further back than the month of the oldest turn (`GET /api/admin/bounds`) and stop at the current month.
+
 Privacy: the counting keeps only token counts, model, ids, times and the cost the agent states. The events database keeps, per event, only numbers, flags and short identifier-like words (tool names, durations, sizes, status codes); never who the user is, prompt or answer text, or anything with spaces or an address (`safeAttrs` in `worker/src/otlp.ts`, tested). Prompt text is never requested (`OTEL_LOG_USER_PROMPTS` is not set). Claude Code attaches `user.email` and account ids to its events and offers no switch for the email; the Worker drops them on arrival and stores nothing of them.
 
 ## Develop (from `worker/`)

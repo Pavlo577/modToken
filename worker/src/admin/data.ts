@@ -3,6 +3,11 @@ import { json } from '../util.ts'
 import type { Routes } from './context.ts'
 
 export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
+  if (path === '/bounds' && req.method === 'GET') {
+    // the oldest turn: the calendars do not go further back than its month
+    const r = await env.DB.prepare('SELECT MIN(ts) AS first FROM token_events WHERE user_email = ?').bind(email).first<{ first: string | null }>()
+    return json({ first: r?.first ?? null })
+  }
   if (['/buckets', '/turns', '/sessions'].includes(path) && req.method === 'GET') {
     // [from, to) in UTC; the page groups by the viewer's own time zone, so the server only slices by time.
     const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000

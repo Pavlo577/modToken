@@ -73,6 +73,8 @@ export interface DeviceRow {
   revoked: number
   created_at: string
   last_seen: string | null
+  /** when OTLP started to count this device's tokens; earlier numbers may be incomplete */
+  otlp_since: string | null
   /** agents that sent turns from this device */
   providers: string[]
 }

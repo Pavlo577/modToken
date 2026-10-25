@@ -214,6 +214,15 @@
         <p class="note">Токен показується один раз і діє лише для надсилання даних. Втратиш: створи новий пристрій і відклич старий. Нові сесії Claude Code почнуть надсилати дані після перезапуску. У хмарному середовищі домен <code id="setup-host"></code> має бути в дозволених (Network access).</p>
       </div>
     </div>
+    <div class="card">
+      <h2>Імпорт історії</h2>
+      <p class="sub" style="margin-bottom:14px">Додай токени зі старих сесій Claude Code, які були до підключення OpenTelemetry. Файли читаються лише в браузері; на сервер йдуть тільки числа, назва моделі та id, без тексту розмов. Повторний імпорт нічого не дублює.</p>
+      <div class="row"><select id="hist-device" aria-label="Пристрій"></select>
+        <input id="hist-files" type="file" webkitdirectory multiple accept=".jsonl" aria-label="Папка з логами">
+        <button class="primary" type="button" id="hist-go" disabled>Імпортувати</button></div>
+      <p class="note">Вибери папку <code>~/.claude/projects</code> (на Windows <code>%USERPROFILE%\.claude\projects</code>). Те, що вже надходить через OTLP, пропускається.</p>
+      <p class="sub" id="hist-status" role="status"></p>
+    </div>
     <div class="card"><h2 style="margin-bottom:6px">Мої пристрої</h2><div id="dev-list"></div></div>
   </section>
 </div>

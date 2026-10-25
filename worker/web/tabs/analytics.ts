@@ -4,6 +4,7 @@ import { COLORS } from '../charts/base.ts'
 import { donut } from '../charts/donut.ts'
 import { lineChart } from '../charts/line.ts'
 import { PALETTE, providerColor, providerLabel } from '../core/palette.ts'
+import { otlpMarker } from '../core/bounds.ts'
 import { aggregate, store } from '../core/store.ts'
 import { $, el } from '../lib/dom.ts'
 import { dayLabel, dayLong, fmt, fmtPct, fmtUsd } from '../lib/format.ts'
@@ -17,7 +18,7 @@ export function renderAnalytics(agg: S.Aggregate): void {
   lineChart($('cache-chart'), {
     labels: active.map(([d]) => dayLabel(d)), height: 200, yMax: 100, yMin: hits.length ? Math.max(0, Math.floor((Math.min(...hits) - 2) / 5) * 5) : 0,
     series: [{ label: 'З кешу', color: COLORS.cache, values: hits, fmt: v => v.toFixed(1) + '%' }],
-    yFmt: v => +v.toFixed(1) + '%', tipTitle: i => dayLong(active[i][0]),
+    yFmt: v => +v.toFixed(1) + '%', tipTitle: i => dayLong(active[i][0]), marker: otlpMarker(active.map(([d]) => d), false),
   })
 
   const models = [...agg.models].sort((a, b) => b[1].output - a[1].output)

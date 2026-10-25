@@ -8,6 +8,18 @@ export const HEAT = ['#2b2522', '#5b3418', '#8f4c14', '#cc640f', '#ff7a1a']
 /** Level 0-4 of a colour: faint to full, over the empty-cell grey. */
 export const shade = (color: string, level: number): string => (level <= 0 ? HEAT[0] : `color-mix(in srgb, ${color} ${[0, 35, 55, 78, 100][level]}%, ${HEAT[0]})`)
 
+/** A vertical line at `at` (in columns from the left edge: 2.5 = the middle of the third), with an explanation on hover. */
+export interface Marker { at: number; title: string }
+
+/** Draws the line and its caption; `x` is where the line goes, `left` is the left edge of the plot. */
+export function drawMarker(root: Element, x: number, top: number, bottom: number, left: number, m: Marker): void {
+  const near = x - left < 150 // no room on the left for the caption
+  root.append(
+    svg('line', { x1: x, x2: x, y1: top, y2: bottom, class: 'mark' }, svg('title', {}, m.title)),
+    svg('text', { x: near ? x + 5 : x - 5, y: top + 10, class: 'mark-t', 'text-anchor': near ? 'start' : 'end' }, near ? 'повні дані (OTLP) →' : '← можуть бути неповні', svg('title', {}, m.title)),
+  )
+}
+
 /** A label, a formatted value and an optional colour dot: one row of a tooltip. */
 export type TipRow = [label: string, value: string, color?: string]
 

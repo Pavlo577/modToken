@@ -1,6 +1,7 @@
 // The controls bar and the tab strip: reflect the state in the page and react to clicks.
 import * as S from '../lib/stats.ts'
 import { actions } from '../core/actions.ts'
+import { firstDay } from '../core/bounds.ts'
 import { providerLabel } from '../core/palette.ts'
 import { load } from '../core/load.ts'
 import { currentRange } from '../core/range.ts'
@@ -73,14 +74,17 @@ export function syncControls(): void {
     const r = currentRange()
     $('pg-label').textContent = r.label
     $<HTMLButtonElement>('pg-next').disabled = r.toDay >= r.today
+    $<HTMLButtonElement>('pg-prev').disabled = r.fromDay <= firstDay() // nothing older than the first turn
   }
   const today = tz.today()
+  for (const id of ['from', 'to']) { const i = $<HTMLInputElement>(id); i.min = firstDay(); i.max = today }
   $<HTMLInputElement>('from').value = state.from || S.addDays(today, -29)
   $<HTMLInputElement>('to').value = state.to || today
 }
 
 /** Moves the shown week / month / year back or forward by one. */
 const step = (dir: -1 | 1): void => {
+  if (dir < 0 && currentRange().fromDay <= firstDay()) return
   const at = state.anchor || tz.today()
   if (state.range === 'week') state.anchor = S.addDays(at, 7 * dir)
   else if (state.range === 'month') state.anchor = dir < 0 ? S.addDays(at.slice(0, 7) + '-01', -1) : S.addDays(lastOfMonth(at.slice(0, 7)), 1)

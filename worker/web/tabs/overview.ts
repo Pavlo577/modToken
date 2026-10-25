@@ -7,6 +7,7 @@ import type { Series } from '../charts/base.ts'
 import { calendarHeatmap } from '../charts/calendar.ts'
 import { lineChart } from '../charts/line.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
+import { otlpMarker } from '../core/bounds.ts'
 import { rangeTitle } from '../core/range.ts'
 import { state } from '../core/state.ts'
 import { ZERO, aggregate, compareAvailable, fixedScaleAvailable, get, need, q, store } from '../core/store.ts'
@@ -113,7 +114,7 @@ export function renderMain(agg: S.Aggregate): void {
   const cacheAlone = !compare && state.metric === 'all' && !secondary && series.length === 1 && series[0].label === CACHE[0] // its own size, not the reference's
   const yMax = state.fixedScale && fixedScaleAvailable() && !logScale && !cacheAlone ? fixedTop(keys, hourly) : undefined
   const opts = {
-    labels, series, secondary, yFmt, yMax, height: mainHeight(), logScale,
+    labels, series, secondary, yFmt, yMax, height: mainHeight(), logScale, marker: otlpMarker(keys, hourly),
     tipTitle: (i: number): string => (hourly ? `${dayLong(r.fromDay)}, ${keys[i].slice(11)}:00` : dayLong(keys[i])),
     extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)]],
   }

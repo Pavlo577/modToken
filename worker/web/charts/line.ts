@@ -1,8 +1,8 @@
 // Line chart.
 import { responsive, svg } from '../lib/dom.ts'
 import { fmtAxis } from '../lib/format.ts'
-import { clipNote, empty, place, tipOf } from './base.ts'
-import type { Host, Series, TipRow } from './base.ts'
+import { clipNote, drawMarker, empty, place, tipOf } from './base.ts'
+import type { Host, Marker, Series, TipRow } from './base.ts'
 import { evenLabels, logAxis, niceMax, sharedMax, smooth, ticks } from './scale.ts'
 
 export interface LineOptions {
@@ -19,6 +19,8 @@ export interface LineOptions {
   secondary?: Series
   /** Logarithmic axis: values of very different size (the cache) all stay readable, nothing is clipped. */
   logScale?: boolean
+  /** A vertical line: data before it may be incomplete. */
+  marker?: Marker
 }
 
 /** Lines over evenly spaced categories (days or hours), with a crosshair and a tooltip. */
@@ -61,6 +63,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
       if (pts.length === 1) root.append(svg('circle', { cx: pts[0][0], cy: pts[0][1], r: 4, fill: s.color }))
     })
     if (sec && !lg && secTop > max) clipNote(root, m.l + 6, m.t + 12, sec)
+    if (opts.marker) drawMarker(root, labels.length === 1 ? x(0) : Math.min(m.l + iw, Math.max(m.l, x(opts.marker.at - 0.5))), m.t, m.t + ih, m.l, opts.marker)
     const cross = svg('line', { y1: m.t, y2: m.t + ih, class: 'cross', style: 'display:none' })
     const dots = plot.map(({ s }) => svg('circle', { r: 5, fill: '#14110f', stroke: s.color, 'stroke-width': 2.5, style: 'display:none' }))
     root.append(cross, ...dots)

@@ -2,6 +2,7 @@
 import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
+import { fillHistoryDevices, initHistory } from './history.ts'
 import { settingsJson, shellEnv } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
@@ -23,10 +24,12 @@ function deviceRow(d: DeviceRow): HTMLElement {
 export async function loadDevices(): Promise<DeviceRow[]> {
   const list = await api<DeviceRow[]>('/devices')
   $('dev-list').replaceChildren(...(list.length ? list.map(deviceRow) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
+  fillHistoryDevices(list)
   return list
 }
 
 export function initDevices(): void {
+  initHistory()
   const copy = (id: string, btn: HTMLElement) => async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText($(id).textContent ?? '')

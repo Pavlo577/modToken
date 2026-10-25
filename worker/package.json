@@ -10,7 +10,7 @@
     "prices": "node scripts/update-prices.mjs",
     "fields": "node scripts/fields-doc.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web",
-    "test": "node --test test/prices.test.mjs test/stats.test.mjs test/otlp.test.mjs test/fields.test.mjs test/setup.test.mjs"
+    "test": "node --test test/prices.test.mjs test/stats.test.mjs test/otlp.test.mjs test/fields.test.mjs test/setup.test.mjs test/history.test.mjs"
   },
   "dependencies": {
     "jose": "^6.0.0"

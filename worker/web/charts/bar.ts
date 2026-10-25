@@ -1,8 +1,8 @@
 // Bar chart.
 import { responsive, svg } from '../lib/dom.ts'
 import { fmtAxis } from '../lib/format.ts'
-import { clipNote, empty, place, tipOf } from './base.ts'
-import type { Host, Series, TipRow } from './base.ts'
+import { clipNote, drawMarker, empty, place, tipOf } from './base.ts'
+import type { Host, Marker, Series, TipRow } from './base.ts'
 import { evenLabels, logAxis, niceMax, sharedMax, smooth, ticks } from './scale.ts'
 
 export interface BarOptions {
@@ -18,6 +18,8 @@ export interface BarOptions {
   logScale?: boolean
   /** A fixed top of the value axis (otherwise fitted to the data). */
   yMax?: number
+  /** A vertical line: data before it may be incomplete. */
+  marker?: Marker
 }
 
 /** Stacked bars over categories, rounded on top, with a tooltip. */
@@ -78,6 +80,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
     root.append(...groups.map(([g]) => g))
     if (sec && !lg && labels.length > 1) root.append(svg('path', { d: smooth(sec.values.map((v, i): [number, number] => [m.l + slotW * (i + 0.5), ys(v)])), fill: 'none', stroke: sec.color, 'stroke-width': 1.7, 'stroke-opacity': 0.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw', style: 'pointer-events:none' }))
     if (sec && !lg && secTop > max) clipNote(root, m.l + 6, m.t + 12, sec)
+    if (opts.marker) drawMarker(root, m.l + slotW * Math.min(opts.marker.at, labels.length), m.t, m.t + ih, m.l, opts.marker)
     place(container, root)
     const tip = tipOf(host)
     groups.forEach(([g, cx, top], i) => {

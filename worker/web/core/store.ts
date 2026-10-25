@@ -1,7 +1,7 @@
 // What was loaded for the shown period, cached requests and the regrouping by time zone.
 import * as S from '../lib/stats.ts'
 import { api } from '../lib/api.ts'
-import type { Bucket, Prices, SessionRow, Totals } from '../lib/types.ts'
+import type { Bucket, DeviceRow, Prices, SessionRow, Totals } from '../lib/types.ts'
 import type { Period } from './range.ts'
 import { state } from './state.ts'
 import { iso, tz } from './time.ts'
@@ -15,7 +15,8 @@ interface Data {
 }
 
 /** Loaded data and lists shared by the tabs. */
-export const store: { data: Data | null; prices: Prices | null; deviceNames: string[]; providers: string[] } = { data: null, prices: null, deviceNames: [], providers: [] }
+export const store: { data: Data | null; prices: Prices | null; deviceNames: string[]; providers: string[]; first: string | null; devices: DeviceRow[] } =
+  { data: null, prices: null, deviceNames: [], providers: [], first: null, devices: [] }
 
 const memo = new Map<string, { t: number; v: unknown }>()
 

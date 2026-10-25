@@ -1,6 +1,6 @@
 // Loads the data of the shown period (with grey placeholders when it is slow) and hands it to the tabs.
 import { $, el, skeleton, skeletonTile } from '../lib/dom.ts'
-import type { Bucket, SessionRow } from '../lib/types.ts'
+import type { Bucket, DeviceRow, SessionRow } from '../lib/types.ts'
 import { SKELETON_AFTER_MS, mainHeight } from '../ui/layout.ts'
 import { actions } from './actions.ts'
 import { rememberDevices } from './palette.ts'
@@ -17,10 +17,14 @@ export async function load(): Promise<void> {
   const r = currentRange()
   const histFrom = r.prevFrom
   try {
-    const [buckets, sessions] = await Promise.all([
+    const [buckets, sessions, bounds, devices] = await Promise.all([
       get<Bucket[]>('/buckets?' + q(histFrom, r.to)),
       get<SessionRow[]>('/sessions?' + q(r.from, r.to)),
+      get<{ first: string | null }>('/bounds'),
+      get<DeviceRow[]>('/devices'),
     ])
+    store.first = bounds.first
+    store.devices = devices
     clearTimeout(slow)
     store.data = { r, buckets, sessions }
     const names = [...new Set(buckets.map(b => b.device))].sort()

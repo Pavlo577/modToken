@@ -1,6 +1,6 @@
 # Token Tracker (OTLP): notes for agents working here
 
-A tracker of AI-agent token usage from many devices, built only on OpenTelemetry: a Cloudflare Worker + D1 + a static dashboard (`worker/`), and `docs/OTLP.md` for the data. No collector program, mod or hook (the older design lives on the `claude` / `dev` branches). User-facing text is Ukrainian; code, comments and docs are English.
+A tracker of AI-agent token usage from many devices, built only on OpenTelemetry: a Cloudflare Worker + D1 + a static dashboard (`worker/`), and `docs/OTLP.md` for the data. No collector program, mod or hook (the older design lives on the `claude` / `dev` branches). The one exception to "data only from OTLP" is the history import in the dashboard: it parses Claude Code's local logs **in the browser** (`src/history.ts`) and sends numbers only; never move that parsing to the server. User-facing text is Ukrainian; code, comments and docs are English.
 
 ## Rules
 - **Only numbers are kept**: token counts, timestamps, model names, ids. Never store, print or log prompts, answers, tool output, `cwd`, file contents, emails or account ids. The one thing that cannot be avoided, decided by the user: Claude Code adds `user.email` and account ids to its events; the Worker drops them on arrival (`worker/src/otlp.ts`: an allow-list, not a block-list) and the tests check it.

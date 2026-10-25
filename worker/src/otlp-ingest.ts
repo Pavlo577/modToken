@@ -107,7 +107,9 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   }
   await storeEvents(env, dev, parsed.events)
   const cutoff = new Date(Date.now() - KEEP_CALLS_DAYS * 86_400_000).toISOString()
+  const since = parsed.calls.reduce<string | null>((m, c) => (m === null || c.ts < m ? c.ts : m), null) // earliest call of this request
   await env.DB.batch([
+    env.DB.prepare('UPDATE devices SET otlp_since = MIN(COALESCE(otlp_since, ?1), ?1) WHERE id = ?2 AND ?1 IS NOT NULL').bind(since, dev.id),
     env.DB.prepare('DELETE FROM otlp_calls WHERE rowid IN (SELECT rowid FROM otlp_calls WHERE seen_at < ? LIMIT 200)').bind(cutoff),
     env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(now, dev.id),
   ])

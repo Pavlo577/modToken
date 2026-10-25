@@ -240,3 +240,5 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .summary-row { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13.5px; align-items: baseline; }
 .summary-row b { min-width: 140px; }
 .summary-row span { color: var(--text-2); font-variant-numeric: tabular-nums; }
+svg .mark { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 4; }
+svg .mark-t { fill: var(--muted); font-size: 10.5px; font-family: var(--font); }

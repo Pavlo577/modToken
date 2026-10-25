@@ -8,8 +8,9 @@ import { actions } from '../core/actions.ts'
 import { load } from '../core/load.ts'
 import { devColor } from '../core/palette.ts'
 import { persist, state } from '../core/state.ts'
+import { currentMonth, firstMonth, inReach } from '../core/bounds.ts'
 import { ZERO, aggregate, get, need, q, store } from '../core/store.ts'
-import { monthName, pad, tz, weekday } from '../core/time.ts'
+import { lastOfMonth, monthName, pad, tz, weekday } from '../core/time.ts'
 import { $, el, skeleton } from '../lib/dom.ts'
 import { DOW, dayLong, fmt, fmtUsd } from '../lib/format.ts'
 import type { Totals, TurnRow } from '../lib/types.ts'
@@ -65,7 +66,7 @@ export function renderActivity(agg: S.Aggregate): void {
     const days = new Map<string, HeatCell>()
     for (const [d, t] of agg.days) days.set(d, tinted({ value: t.output, text: fmt(t.output), tip: totalsTip(t.output, S.freshInput(t), t.turns) }, leader(a => a.days.get(d)?.output)))
     monthCalendars(box, {
-      from: r.fromDay, to: r.toDay, days, addDays: S.addDays,
+      from: r.fromDay < firstMonth() + '-01' ? firstMonth() + '-01' : r.fromDay, to: r.toDay > lastOfMonth(currentMonth()) ? lastOfMonth(currentMonth()) : r.toDay, days, addDays: S.addDays,
       dayOfWeek: d => tz.parts(tz.startOfDay(d) + 12 * 3_600_000).dow,
       monthTitle: m => `${monthName(m)} ${m.slice(0, 4)}`,
       showTitle: state.range !== 'month', // the pager already names the month
@@ -146,7 +147,7 @@ export function renderActivity(agg: S.Aggregate): void {
     const byDevice = new Map([...per].map(([n, a]) => [n, sumByMonth(a)] as const))
     const list: string[] = []
     for (let d = r.fromDay; d <= r.toDay; d = S.addDays(d, 1)) if (!list.length || list[list.length - 1] !== d.slice(0, 7)) list.push(d.slice(0, 7))
-    monthTiles(box, list.map(m => {
+    monthTiles(box, list.filter(inReach).map(m => {
       const t = months.get(m)
       const name = `${new Intl.DateTimeFormat('uk-UA', { month: 'short', timeZone: 'UTC' }).format(Date.parse(m + '-15T12:00:00Z')).replace('.', '')} ${m.slice(0, 4)}`
       let best = '', max = 0
