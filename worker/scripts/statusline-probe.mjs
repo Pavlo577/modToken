@@ -1,6 +1,6 @@
 // Probe for Claude Code's statusLine input. Writes only the SHAPE of the input to
 // ~/.claude/statusline-probe.log: keys, numbers and booleans as values, strings as length only.
-// If TRACKER_ORIGIN and TRACKER_TOKEN are set, the input is also POSTed to <origin>/v1/statusline (the Worker keeps the shape only, see src/statusline.ts).
+// If it knows where (see below), the input is also POSTed to <origin>/v1/statusline (the Worker keeps the shape only, see src/statusline.ts).
 // Prints a short line for the status bar. Remove it after the check.
 import { appendFileSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -16,7 +16,11 @@ const walk = (v, p) => {
 };
 try { walk(JSON.parse(raw), ""); } catch { flat._parse_error = raw.length; }
 try { appendFileSync(join(homedir(), ".claude", "statusline-probe.log"), JSON.stringify({ t: new Date().toISOString(), ...flat }) + "\n"); } catch {}
-const { TRACKER_ORIGIN: origin, TRACKER_TOKEN: token } = process.env;
+// Where to send: TRACKER_ORIGIN / TRACKER_TOKEN, else the device's own OTLP settings (the logs endpoint's origin, the x-device-token header).
+const env = process.env;
+let origin = env.TRACKER_ORIGIN;
+try { origin ||= new URL(env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT || env.OTEL_EXPORTER_OTLP_ENDPOINT).origin; } catch {}
+const token = env.TRACKER_TOKEN || /(?:^|,)\s*x-device-token=([^,\s]+)/.exec(env.OTEL_EXPORTER_OTLP_LOGS_HEADERS || env.OTEL_EXPORTER_OTLP_HEADERS || "")?.[1];
 if (origin && token) {
   try {
     await fetch(origin.replace(/\/$/, "") + "/v1/statusline", { method: "POST", headers: { "content-type": "application/json", "x-device-token": token }, body: raw, signal: AbortSignal.timeout(3000) });
