@@ -25,12 +25,13 @@ test('setup: settings.json and the shell variant carry the same values', () => {
   assert.ok(shell.every(l => l.startsWith('export ')))
 })
 
-test('setup: the cloud variant puts the same values and the token into KEY=value lines, the setup script line holds no token', () => {
+test('setup: the cloud variant is the minimum OTLP set plus the mod folder; the setup script line holds no token', () => {
   const lines = cloudEnv('https://x.test/', 'tok').split('\n')
-  assert.equal(lines.length, Object.keys(setupEnv('https://x.test', 'tok')).length + 1)
-  assert.ok(lines.includes('OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-device-token=tok'))
-  assert.ok(lines.includes('TRACKER_TOKEN=tok'))
-  assert.ok(lines.every(l => /^[A-Z_]+=\S+$/.test(l)))
-  assert.equal(cloudScript('https://x.test/').includes('tok'), false)
-  assert.ok(cloudScript('https://x.test/').endsWith('bash -s -- https://x.test'))
+  assert.deepEqual(lines, [
+    'CLAUDE_CODE_ENABLE_TELEMETRY=1', 'OTEL_LOGS_EXPORTER=otlp', 'OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json',
+    'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://x.test/v1/logs', 'OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-device-token=tok',
+    'CLAUDE_CODE_PLUGIN_DIRS=/root/.claude/mods/limits-probe',
+  ])
+  assert.equal(cloudScript().includes('tok'), false)
+  assert.ok(cloudScript().endsWith('| bash'))
 })

@@ -17,8 +17,13 @@ export const shellEnv = (origin: string, token: string): string =>
   Object.entries(setupEnv(origin, token)).map(([k, v]) => `export ${k}=${/^[\w./:=-]+$/.test(v) ? v : JSON.stringify(v)}`).join('\n')
 
 // A cloud session (claude.ai/code) is a fresh container each time. Its "Setup script" cannot read the environment's saved variables, so it only
-// installs the statusLine probe (scripts/cloud-setup.sh); the OTLP settings and the token go into "Environment variables" as KEY=value lines.
+// installs the mod (scripts/cloud-setup.sh); the OTLP settings, the token and CLAUDE_CODE_PLUGIN_DIRS go into "Environment variables" as KEY=value lines.
+// The minimum: metrics and traces are off unless an exporter is named, and the mod reads the site and the token from the OTLP variables.
 export const CLOUD_SCRIPT_URL = 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts/cloud-setup.sh'
-export const cloudScript = (origin: string): string => `curl -fsSL ${CLOUD_SCRIPT_URL} | bash -s -- ${origin.replace(/\/$/, '')}`
-export const cloudEnv = (origin: string, token: string): string =>
-  Object.entries({ ...setupEnv(origin, token), TRACKER_TOKEN: token }).map(([k, v]) => `${k}=${v}`).join('\n')
+export const CLOUD_MOD_DIR = '/root/.claude/mods/limits-probe'
+export const cloudScript = (): string => `curl -fsSL ${CLOUD_SCRIPT_URL} | bash`
+export function cloudEnv(origin: string, token: string): string {
+  const { CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_LOGS_EXPORTER, OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, OTEL_EXPORTER_OTLP_LOGS_HEADERS } = setupEnv(origin, token)
+  return Object.entries({ CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_LOGS_EXPORTER, OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, OTEL_EXPORTER_OTLP_LOGS_HEADERS, CLAUDE_CODE_PLUGIN_DIRS: CLOUD_MOD_DIR })
+    .map(([k, v]) => `${k}=${v}`).join('\n')
+}

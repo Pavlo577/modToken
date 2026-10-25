@@ -50,7 +50,7 @@ export function initDevices(): void {
       const { token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value }) })
       $('setup-json').textContent = settingsJson(location.origin, token)
       $('setup-env').textContent = shellEnv(location.origin, token)
-      $('setup-cloud').textContent = cloudScript(location.origin)
+      $('setup-cloud').textContent = cloudScript()
       $('setup-cloud-env').textContent = cloudEnv(location.origin, token)
       $('setup-host').textContent = location.hostname
       $('setup-box').classList.remove('hide')
