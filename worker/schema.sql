@@ -56,15 +56,6 @@ CREATE TABLE IF NOT EXISTS otlp_seen (
   PRIMARY KEY (device_id, service, event)
 );
 
--- A log of what Claude Code's statusLine command is given (POST /v1/statusline): the last SHAPE per device (key paths, numbers, flags, ISO times; other strings by length only).
-CREATE TABLE IF NOT EXISTS statusline_seen (
-  device_id TEXT NOT NULL PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
-  n INTEGER NOT NULL,
-  keys TEXT NOT NULL,
-  sample TEXT NOT NULL,
-  last_seen TEXT NOT NULL
-);
-
 -- Snapshots of the subscription's rate-limit windows (five_hour, seven_day), sent by the token-tracker mod (POST /v1/limits): OTLP carries none.
 -- Only a changed reading is stored. The same table as the older mod version used, so a database that has it keeps its rows.
 CREATE TABLE IF NOT EXISTS plan_limits (

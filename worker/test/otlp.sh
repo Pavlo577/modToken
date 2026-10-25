@@ -112,13 +112,6 @@ check "a turn from when the device already reports through OTLP is skipped" "$(i
 check "the moment OTLP started counting is recorded per device" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; d={x["name"]:x["otlp_since"] for x in json.load(sys.stdin)}; print(bool(d["otlp-box"]), d["hist-box"])')" "True None"
 check "the oldest turn bounds the calendars" "$(curl -s $B/api/admin/bounds | python3 -c 'import sys,json; print(json.load(sys.stdin)["first"] <= "2026-01-05T10:00:00.000Z")')" True
 check "importing turns from before OTLP started still works, later ones are skipped" "$(imp $DEV '[{"id":"msg_old","session":"s9","ts":"2025-01-01T00:00:00.000Z","model":"m","input":1,"output":1,"cache_read":0,"cache_creation":0,"sub":false}]' | python3 -c 'import sys,json; print(json.load(sys.stdin)["added"])')" 1
-SL='{"cwd":"/home/SECRETUSER/proj","model":{"id":"SECRET-model"},"rate_limits":{"five_hour":{"used_percentage":42.5,"resets_at":"2026-10-25T23:00:00Z"}}}'
-sl() { curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/statusline -H "x-device-token: $1" -H 'content-type: application/json' --data-binary "$SL"; }
-check "statusline: a device token is needed" "$(sl wrong)" 401
-check "statusline: a log entry is accepted" "$(sl $TOKEN)" 200
-sl $TOKEN >/dev/null
-check "statusline: counted, with the shape of the input" "$(curl -s $B/api/admin/statusline | python3 -c 'import sys,json; d=json.load(sys.stdin)[0]; print(d["device"], d["n"], d["sample"]["rate_limits.five_hour.used_percentage"])')" "otlp-box 2 42.5"
-check "statusline: no text of the input is kept" "$(curl -s $B/api/admin/statusline | grep -c SECRET)" 0
 lim() { curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/limits -H "x-device-token: $1" -H 'content-type: application/json' --data-binary "$2"; }
 L1='{"limits":[{"kind":"five_hour","percentUsed":38,"resetsAt":"2026-10-26T01:40:00.000Z"},{"kind":"seven_day","percentUsed":11}],"cwd":"/home/SECRETUSER"}'
 check "limits: a device token is needed" "$(lim wrong "$L1")" 401

@@ -20,14 +20,6 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
     return json({ token: await createDevice(env, email, name), device: name })
   }
 
-  if (path === '/statusline' && req.method === 'GET') {
-    const { results } = await env.DB.prepare(
-      `SELECT d.name AS device, s.n, s.last_seen, s.keys, s.sample FROM statusline_seen s JOIN devices d ON d.id = s.device_id
-       WHERE d.user_email = ? ORDER BY s.last_seen DESC`,
-    ).bind(email).all<{ sample: string }>()
-    return json(results.map(r => ({ ...r, sample: JSON.parse(r.sample) })))
-  }
-
   const dev = path.match(/^\/devices\/([0-9a-f-]{36})$/)
   if (dev && req.method === 'DELETE') {
     await env.DB.prepare('UPDATE devices SET revoked = 1 WHERE id = ? AND user_email = ?').bind(dev[1], email).run()
