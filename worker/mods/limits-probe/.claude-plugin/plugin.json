@@ -1,0 +1,1 @@
+{ "name": "limits-probe", "version": "0.1.0", "description": "Probe: reads the subscription rate-limit windows and posts their numbers to the tracker's /v1/statusline log" }
