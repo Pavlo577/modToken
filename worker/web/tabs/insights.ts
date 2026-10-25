@@ -30,6 +30,7 @@ interface Insights {
   bySource: Source[]; bySurface: Surface[]; byModel: ModelRow[]; byDay: DayRow[]; latency: Latency[]
   tools: Tool[]; decisions: Decision[]; safety: Safety[]; hooks: Hook[]; mcp: Mcp[]; refusals: Refusal[]
   sessions: Session[]; prompts: Prompts[]; commands: Command[]; modes: Mode[]
+  unknownFields: { key: string; event: string }[]
 }
 
 const usd = (micros: N): number => (micros ?? 0) / 1e6
@@ -140,5 +141,7 @@ export async function renderInsights(): Promise<void> {
   table($('ins-mcp'), ['Статус', 'Помилка', 'Транспорт', 'Разів', 'Сер. час'],
     d.mcp.map(m => [m.status ?? '—', m.error ?? '—', m.transport ?? '—', fmt(m.n), ms(m.avg_ms)]), 'MCP-серверів не було')
   table($('ins-refusals'), ['Відмови моделі', 'Крок запасного', 'Разів'], d.refusals.map(x => [x.model ?? '—', x.hop == null ? '—' : String(x.hop), fmt(x.n)]), 'Модель не відмовляла')
+  $('ins-unknown').classList.toggle('hide', !d.unknownFields.length)
+  $('ins-unknown-list').replaceChildren(...d.unknownFields.map(x => el('span', { class: 'tag', title: `подія ${x.event}` }, x.key)))
   $('ins-note').textContent = `У базі подій за цей період: ${fmt(d.totals.events)} подій ${d.totals.kinds} видів. Дані зберігаються 90 днів. Тексту повідомлень, пошти й ідентифікаторів тут немає.`
 }

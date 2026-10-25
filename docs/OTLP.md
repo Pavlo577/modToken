@@ -57,3 +57,6 @@ type ModelCall = {
 
 ## Cost and the events database
 `ModelCall.cost_micros` is the agent's own price estimate of a call (`cost_usd_micros`; `cost_usd` converted); it is added up per turn in `token_events.cost_micros`, and the dashboard prefers it to pricing the tokens itself (`prices.json` stays the fallback). Every record of a known service also goes to the second database as an `events` row: time, name, service, session, prompt, surface (`terminal.type`) as columns and the harmless attributes as JSON. Fields and their meaning: `docs/OTLP-fields.md`.
+
+## Field registry
+All known fields and what happens to each are in `worker/src/otlp-fields.ts`; the generated reference is `docs/OTLP-fields.md`.

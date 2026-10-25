@@ -1,4 +1,5 @@
 // Admin route that hands the statistics page its aggregates, computed from the events database (every event with its harmless attributes).
+import { FIELD_KEYS } from '../otlp-fields.ts'
 import { json } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -36,6 +37,14 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     q(`SELECT COUNT(*) AS events, COUNT(DISTINCT name) AS kinds, COUNT(DISTINCT session_id) AS sessions, MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM events WHERE ${W}`),
   ])
 
+  // fields that arrive but are not in the registry (src/otlp-fields.ts) yet: from the stored attributes and from the names the diagnostics saw
+  const unknown = new Map<string, string>()
+  const stored = await env.EVENTS.prepare(`SELECT DISTINCT e.name AS event, j.key AS key FROM events e, json_each(e.attrs) j WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3`).bind(email, a, b).all<{ event: string; key: string }>().then(r => r.results).catch(() => [])
+  for (const x of stored) if (!FIELD_KEYS.has(x.key)) unknown.set(x.key, x.event)
+  const seen = await env.DB.prepare('SELECT event, keys FROM otlp_seen WHERE device_id IN (SELECT id FROM devices WHERE user_email = ?)').bind(email).all<{ event: string; keys: string }>().then(r => r.results).catch(() => [])
+  for (const x of seen) for (const k of x.keys.split(',')) if (k && !FIELD_KEYS.has(k) && !unknown.has(k)) unknown.set(k, x.event)
+  const unknownFields = [...unknown].map(([key, event]) => ({ key, event })).sort((x, y) => x.key.localeCompare(y.key))
+
   const byModelLatency = new Map<string, { ttft: number[]; dur: number[]; tps: number[] }>()
   for (const r of latencyRows) {
     const m = String(r.model ?? 'unknown'), e = byModelLatency.get(m) ?? { ttft: [], dur: [], tps: [] }
@@ -52,5 +61,5 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     return { model, calls: d.length, ttft_p50: pct(t, 50), ttft_p95: pct(t, 95), dur_p50: pct(d, 50), dur_p95: pct(d, 95), tps_p50: Math.round(pct(s, 50) * 10) / 10 }
   }).sort((x, y) => y.calls - x.calls)
 
-  return json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes })
+  return json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, unknownFields })
 }
