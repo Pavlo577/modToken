@@ -54,3 +54,6 @@ type ModelCall = {
 
 **What OTLP does not carry:** the subscription limits (Claude Code exports none) and any history from before the exporter was switched on. Delivery is best effort: exporters batch (Claude Code: metrics every 60 s, logs every 5 s) and there is no local queue, so a short outage loses the calls of that moment; the dashboard counts what arrived.
 
+
+## Cost and the events database
+`ModelCall.cost_micros` is the agent's own price estimate of a call (`cost_usd_micros`; `cost_usd` converted); it is added up per turn in `token_events.cost_micros`, and the dashboard prefers it to pricing the tokens itself (`prices.json` stays the fallback). Every record of a known service also goes to the second database as an `events` row: time, name, service, session, prompt, surface (`terminal.type`) as columns and the harmless attributes as JSON. Fields and their meaning: `docs/OTLP-fields.md`.

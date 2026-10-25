@@ -9,8 +9,13 @@ export interface Counts {
   turns: number
 }
 
+/** The agent's own price estimate in millionths of a dollar; 0 when any turn of the group lacks it (the page then prices the tokens itself). */
+export interface OwnCost {
+  cost_micros?: number
+}
+
 /** Hourly UTC bucket per device and model: GET /api/admin/buckets */
-export interface Bucket extends Counts {
+export interface Bucket extends Counts, OwnCost {
   h: string // 'YYYY-MM-DDTHH' (UTC)
   device: string
   model: string
@@ -35,7 +40,7 @@ export interface TurnRow {
 }
 
 /** One session: GET /api/admin/sessions */
-export interface SessionRow extends Counts {
+export interface SessionRow extends Counts, OwnCost {
   session_id: string
   device: string
   first_ts: string

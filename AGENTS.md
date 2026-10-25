@@ -4,6 +4,7 @@ A tracker of AI-agent token usage from many devices, built only on OpenTelemetry
 
 ## Rules
 - **Only numbers are kept**: token counts, timestamps, model names, ids. Never store, print or log prompts, answers, tool output, `cwd`, file contents, emails or account ids. The one thing that cannot be avoided, decided by the user: Claude Code adds `user.email` and account ids to its events; the Worker drops them on arrival (`worker/src/otlp.ts`: an allow-list, not a block-list) and the tests check it.
+- The events database (`EVENTS`) keeps every event's attributes through `safeAttrs` only: numbers, flags and identifier-like words, never identity or text. Do not widen that filter; add a test with a planted secret if you touch it.
 - A new agent is a new adapter in `worker/src/otlp.ts` (`ADAPTERS`, keyed by `service.name`) that returns `ModelCall`s, a test with a synthetic payload that plants a secret word and checks it never reaches the result, and a row in `docs/OTLP.md`. Event and attribute names must come from the agent's own documentation or a real payload, never a guess.
 - Never commit secrets, device tokens or real session data. Test fixtures are synthetic.
 - Push to `main` (it goes live) only when the user says so. Applying `migrations/*.sql` to the production database needs the user's explicit confirmation.

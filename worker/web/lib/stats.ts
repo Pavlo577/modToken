@@ -1,6 +1,6 @@
 // Pure functions behind the dashboard: time zones, grouping, cost.
 // No DOM here, so all of it is tested in Node (test/stats.test.mjs).
-import type { Bucket, Counts, PriceEntry, Prices, SessionRow, Totals } from './types.ts'
+import type { Bucket, Counts, OwnCost, PriceEntry, Prices, SessionRow, Totals } from './types.ts'
 
 const DAY = 86_400_000
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -83,9 +83,10 @@ export function priceFor(model: string, prices: Prices | null): PriceEntry | nul
   return best
 }
 
-type Usage = Partial<Pick<Counts, 'input' | 'output' | 'cache_read' | 'cache_creation'>>
+type Usage = Partial<Pick<Counts, 'input' | 'output' | 'cache_read' | 'cache_creation'>> & OwnCost
 
 export function costOf(row: Usage, model: string | null, prices: Prices | null): number | null {
+  if ((row.cost_micros ?? 0) > 0) return (row.cost_micros as number) / 1e6 // the agent's own figure wins when it gave one for every turn
   const p = model ? priceFor(model, prices) : null
   if (!p) return null
   return ((row.input || 0) * p.input + (row.output || 0) * p.output + (row.cache_read || 0) * p.cache_read + (row.cache_creation || 0) * p.cache_write) / 1e6

@@ -1,6 +1,6 @@
 // The dashboard state (what the viewer chose), kept in localStorage; the open tab also lives in the address.
 
-export type Tab = 'overview' | 'analytics' | 'money' | 'sessions' | 'devices'
+export type Tab = 'overview' | 'analytics' | 'insights' | 'money' | 'sessions' | 'devices'
 
 export type View = 'line' | 'bars' | 'cal'
 
@@ -44,7 +44,7 @@ try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<St
 
 const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
 
-const TABS: Tab[] = ['overview', 'analytics', 'money', 'sessions', 'devices']
+const TABS: Tab[] = ['overview', 'analytics', 'insights', 'money', 'sessions', 'devices']
 
 export const asTab = (v: unknown): Tab | null => (TABS as unknown[]).includes(v) ? (v as Tab) : null
 

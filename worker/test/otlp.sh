@@ -54,6 +54,31 @@ check "metrics are accepted and dropped" "$(curl -s -o /dev/null -w '%{http_code
 check "metrics without a token: 401" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/metrics -H 'content-type: application/json' --data-binary '{}')" 401
 check "an empty request is fine" "$(post '{"resourceLogs":[]}')" 200
 
+# the events database: the harmless attributes of every event are kept, nothing about the user or the conversation
+post "$(python3 - <<'PY'
+import json, time
+now = time.time_ns()
+def kv(k, v): return {"key": k, "value": ({"intValue": str(v)} if isinstance(v, int) else {"stringValue": v})}
+recs = [{"timeUnixNano": str(now + i), "attributes": [kv("event.name", "claude_code.tool_result"), kv("session.id", "sess-ev"), kv("prompt.id", "pe"), kv("terminal.type", "pycharm"), kv("event.sequence", i),
+  kv("tool_name", "Bash"), kv("success", "true"), kv("duration_ms", "250"), kv("user.email", "secret.person@example.com"), kv("organization.id", "org-secret"), kv("process.owner", "secretuser"),
+  kv("prompt", "TOP SECRET PROMPT"), kv("summary", "a secret sentence with spaces"), kv("contact", "secret.person@example.com")]} for i in range(3)]
+print(json.dumps({"resourceLogs": [{"resource": {"attributes": [kv("service.name", "claude-code")]}, "scopeLogs": [{"logRecords": recs}]}]}))
+PY
+)" > /dev/null
+post "$(cat <<'JSON'
+{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"claude-code"}}]},"scopeLogs":[{"logRecords":[{"timeUnixNano":"1761300000000000000","attributes":[{"key":"event.name","value":{"stringValue":"claude_code.tool_result"}},{"key":"session.id","value":{"stringValue":"sess-ev"}},{"key":"event.sequence","value":{"intValue":"0"}},{"key":"tool_name","value":{"stringValue":"Bash"}}]}]}]}]}
+JSON
+)" > /dev/null
+EV() { npx wrangler d1 execute modtoken-events --local --json --command "$1" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])'; }
+check "tool events were stored" "$(EV "SELECT COUNT(*) AS n FROM events WHERE name = 'tool_result' AND session_id = 'sess-ev'")" 3
+check "no email, identity, text or prose in any stored attribute" "$(EV "SELECT COUNT(*) AS n FROM events WHERE attrs LIKE '%secret%' OR attrs LIKE '%SECRET%' OR attrs LIKE '%@%' OR attrs LIKE '%org-%'")" 0
+post "$(cat <<'JSON'
+{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"claude-code"}}]},"scopeLogs":[{"logRecords":[{"timeUnixNano":"1761300001000000000","attributes":[{"key":"event.name","value":{"stringValue":"claude_code.api_request"}},{"key":"session.id","value":{"stringValue":"sess-cost"}},{"key":"prompt.id","value":{"stringValue":"pc"}},{"key":"request_id","value":{"stringValue":"req_cost_1"}},{"key":"model","value":{"stringValue":"claude-sonnet-5-5"}},{"key":"input_tokens","value":{"intValue":"5"}},{"key":"output_tokens","value":{"intValue":"7"}},{"key":"cost_usd_micros","value":{"intValue":"1234"}}]}]}]}]}
+JSON
+)" > /dev/null
+check "the cost the agent states is stored with the turn (micros)" "$(npx wrangler d1 execute modtoken --local --json --command "SELECT cost_micros AS n FROM token_events WHERE session_id = 'sess-cost'" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])')" 1234
+check "the insights API answers" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["available"], d["tools"][0]["tool"], d["tools"][0]["runs"])')" "True Bash 3"
+
 # a revoked device is refused
 DEV=$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; print([d["id"] for d in json.load(sys.stdin) if d["name"]=="otlp-box"][0])')
 check "the device saw data (last_seen)" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; print([bool(d["last_seen"]) for d in json.load(sys.stdin) if d["name"]=="otlp-box"][0])')" True

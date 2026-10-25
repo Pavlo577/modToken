@@ -5,11 +5,12 @@ import { json, text } from '../util.ts'
 import type { Ctx, Routes } from './context.ts'
 import { dataRoutes } from './data.ts'
 import { deviceRoutes } from './devices.ts'
+import { insightRoutes } from './insights.ts'
 import { statsRoutes } from './stats.ts'
 
 const me: Routes = async ({ req, email, path }) => (path === '/me' && req.method === 'GET' ? json({ email }) : null)
 
-const GROUPS: Routes[] = [me, deviceRoutes, dataRoutes, statsRoutes]
+const GROUPS: Routes[] = [me, deviceRoutes, dataRoutes, statsRoutes, insightRoutes]
 
 export async function admin(req: Request, env: Env, url: URL): Promise<Response> {
   const email = await accessEmail(req, env)

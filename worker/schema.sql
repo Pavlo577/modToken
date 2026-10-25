@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS token_events (
   is_subagent INTEGER NOT NULL DEFAULT 0,
   -- which agent made the call: claude, and later codex, gemini ... (one OTLP adapter each, src/otlp.ts)
   provider TEXT NOT NULL DEFAULT 'claude',
+  -- the agent's own price estimate of the turn in millionths of a dollar (Claude Code: cost_usd_micros); 0 = unknown, the page then prices the tokens itself
+  cost_micros INTEGER NOT NULL DEFAULT 0,
   UNIQUE (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS events_user_ts_idx ON token_events (user_email, ts);

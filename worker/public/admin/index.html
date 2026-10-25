@@ -15,6 +15,7 @@
     <nav class="pills" id="nav" aria-label="Розділи">
       <button data-tab="overview" aria-pressed="true">Огляд</button>
       <button data-tab="analytics" aria-pressed="false">Аналітика</button>
+      <button data-tab="insights" aria-pressed="false">Інсайти</button>
       <button data-tab="money" aria-pressed="false">Вартість</button>
       <button data-tab="sessions" aria-pressed="false">Сесії</button>
       <button data-tab="devices" aria-pressed="false">Пристрої</button>
@@ -122,6 +123,39 @@
       <div class="card-head"><div><h2>За агентами</h2><p class="sub">Claude, Codex та інші: вихідні токени, нові вхідні й оцінка вартості за API-цінами (показано всіх, незалежно від вибору агента зверху)</p></div></div>
       <div class="rows" id="prov-bars"></div>
       <p class="note" id="prov-note"></p>
+    </div>
+  </section>
+
+  <section id="tab-insights" class="tab hide">
+    <div class="grid kpis" id="ins-kpis"></div>
+    <div id="ins-off" class="card hide"><div class="empty">База подій не підключена: дашборд показує лише токени.</div></div>
+    <div id="ins-body">
+      <div class="grid cols2">
+        <div class="card"><div class="card-head"><div><h2>Куди йдуть гроші</h2><p class="sub">Оцінка вартості за джерелом запиту: твої повідомлення проти фонової роботи Claude</p></div></div><div class="rows" id="ins-source"></div><p class="note" id="ins-source-note"></p></div>
+        <div class="card"><div class="card-head"><div><h2>За моделями</h2><p class="sub">Вартість, запити й швидкість режиму</p></div></div><div class="rows" id="ins-model"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h2>Витрати за днями</h2><p class="sub">Оцінка вартості за джерелом запиту</p></div><div class="legend" id="ins-day-legend"></div></div>
+        <div id="ins-day-chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h2>Швидкість</h2><p class="sub">Час до першого токена (TTFT), повна відповідь і швидкість генерації за моделями; p50 це типове значення, p95 повільні 5% запитів</p></div></div>
+        <div class="scroll" id="ins-latency"></div>
+      </div>
+      <div class="grid cols2">
+        <div class="card"><div class="card-head"><div><h2>Інструменти</h2><p class="sub">Запуски, успішність і час виконання</p></div></div><div class="scroll" id="ins-tools"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Дозволи</h2><p class="sub">Що приймалось і що відхилялось</p></div></div><div class="scroll" id="ins-decisions"></div><div class="scroll" id="ins-safety" style="margin-top:14px"></div></div>
+      </div>
+      <div class="grid cols2">
+        <div class="card"><div class="card-head"><div><h2>Де ти працюєш</h2><p class="sub">Поверхні: застосунок, IDE, SSH, хмара</p></div></div><div class="rows" id="ins-surface"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Ти і Claude</h2><p class="sub">Повідомлень за днями й команди</p></div></div><div id="ins-prompts"></div><div class="scroll" id="ins-commands" style="margin-top:12px"></div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h2>Найдорожчі сесії</h2><p class="sub">За оцінкою вартості в обраному періоді</p></div></div><div class="scroll" id="ins-sessions"></div></div>
+      <div class="grid cols2">
+        <div class="card"><div class="card-head"><div><h2>Хуки</h2><p class="sub">Скільки разів спрацювали й скільки часу забрали</p></div></div><div class="scroll" id="ins-hooks"></div></div>
+        <div class="card"><div class="card-head"><div><h2>MCP-сервери й відмови моделі</h2><p class="sub">З'єднання з серверами та випадки, коли модель відмовила</p></div></div><div class="scroll" id="ins-mcp"></div><div class="scroll" id="ins-refusals" style="margin-top:14px"></div></div>
+      </div>
+      <p class="note" id="ins-note"></p>
     </div>
   </section>
 

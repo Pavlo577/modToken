@@ -18,6 +18,8 @@ export interface ModelCall {
   cache_read_tokens: number
   cache_creation_tokens: number
   duration_ms: number
+  /** The agent's own price estimate of the call in millionths of a dollar (Claude Code: cost_usd_micros); 0 when it does not say. */
+  cost_micros: number
   is_subagent: boolean
 }
 
@@ -81,6 +83,7 @@ function claudeCall(a: Attrs, rec: LogRecord): ModelCall | null {
     provider: 'claude', call_id: str(call), session_id: session, turn_key: text(a, 'prompt.id') || str(call), ts,
     model: text(a, 'model') || 'unknown', input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write,
     duration_ms: count(a, 'duration_ms'),
+    cost_micros: count(a, 'cost_usd_micros') || (typeof a.get('cost_usd') === 'number' ? Math.round((a.get('cost_usd') as number) * 1e6) : 0),
     // `agent_id` is set on the events of sub-agents only (Claude Code 2.1.310+, monitoring docs); the main session has none.
     is_subagent: text(a, 'agent_id') !== '',
   }
@@ -124,10 +127,60 @@ const lensOf = (a: Attrs): string =>
 /** What the exporter sent, by names only: the service, the event and the attribute NAMES (never a value), counted. For finding out why nothing was recognised. */
 const NAME = (v: string) => v.replace(/[^\w.:-]/g, '').slice(0, 80)
 
-export function parseOtlpLogs(payload: unknown, sampleAll: boolean | 'raw' = false): { calls: ModelCall[]; ignored: number; seen: Seen[] } | null {
+/** One event as it is kept in the events database: what happened, when, where, and its harmless attributes (numbers, flags, identifier-like words). */
+export interface EventRow {
+  /** Unique per device: the same event sent twice is stored once. */
+  dedupe: string
+  ts: string
+  name: string
+  service: string
+  session_id: string
+  prompt_id: string
+  /** Where the agent ran: terminal.type (non-interactive = the Claude app, pycharm, ssh-session, linux = cloud ...). */
+  surface: string
+  /** Attributes as JSON. */
+  attrs: string
+}
+
+/** Attributes that are never kept: who the user is, and anything that may hold the text of the conversation. */
+const NEVER_KEPT = new Set([...MASKED_KEYS, ...CONTENT_KEYS, 'user.email', 'user.groups', 'identity.source'])
+/** Attributes that already have a column of their own. */
+const COLUMN_KEYS = new Set(['event.name', 'event.timestamp', 'session.id', 'prompt.id', 'terminal.type', 'service.name'])
+
+/**
+ * The attributes worth keeping, by construction safe: numbers, flags and short identifier-like words only (no spaces, no '@'), so a
+ * sentence or an address cannot get through whatever its attribute is called. Numbers that arrive as strings ("1227") become numbers.
+ */
+export function safeAttrs(a: Attrs): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {}
+  for (const [k, v] of [...a.entries()].sort(([x], [y]) => x.localeCompare(y))) {
+    if (NEVER_KEPT.has(k) || COLUMN_KEYS.has(k) || k.startsWith('user.') || Object.keys(out).length >= 60) continue
+    const key = NAME(k)
+    if (!key) continue
+    if (typeof v === 'number') { if (Number.isFinite(v)) out[key] = v }
+    else if (typeof v === 'boolean') out[key] = v
+    else if (/^-?\d{1,15}(\.\d+)?$/.test(v)) out[key] = Number(v)
+    else if (/^[\w.:/+-]{1,64}$/.test(v)) out[key] = v
+  }
+  return out
+}
+
+function eventRowOf(service: string, a: Attrs, rec: LogRecord): EventRow | null {
+  const name = NAME((text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : '')).replace(/^claude_code\./, ''))
+  const ts = isoFromNanos(rec.timeUnixNano) || (Date.parse(text(a, 'event.timestamp')) ? new Date(text(a, 'event.timestamp')).toISOString() : '')
+  if (!name || !ts) return null
+  const session = text(a, 'session.id')
+  return {
+    dedupe: `${session}|${name}|${text(a, 'event.sequence')}|${ts}`.slice(0, 200), ts, name, service: NAME(service), session_id: session, prompt_id: text(a, 'prompt.id'),
+    surface: NAME(text(a, 'terminal.type')), attrs: JSON.stringify(safeAttrs(a)).slice(0, 3000),
+  }
+}
+
+export function parseOtlpLogs(payload: unknown, sampleAll: boolean | 'raw' = false): { calls: ModelCall[]; ignored: number; seen: Seen[]; events: EventRow[] } | null {
   const doc = payload as OtlpLogs
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.resourceLogs)) return null
   const calls: ModelCall[] = []
+  const events: EventRow[] = []
   const names = new Map<string, Seen>()
   let ignored = 0
   let seen = 0
@@ -137,7 +190,10 @@ export function parseOtlpLogs(payload: unknown, sampleAll: boolean | 'raw' = fal
     for (const scope of Array.isArray(rl?.scopeLogs) ? rl.scopeLogs : []) {
       for (const rec of Array.isArray(scope?.logRecords) ? scope.logRecords : []) {
         if (++seen > MAX_RECORDS) return null
-        const call = adapter && rec ? adapter(attrs(rec.attributes), rec) : null
+        const recAttrs = rec ? attrs(rec.attributes) : null
+        const call = adapter && rec && recAttrs ? adapter(recAttrs, rec) : null
+        const row = adapter && rec && recAttrs ? eventRowOf(service, recAttrs, rec) : null
+        if (row) events.push(row)
         if (call) calls.push(call)
         else ignored++
         if ((!call || sampleAll) && rec && names.size < 50) {
@@ -151,5 +207,5 @@ export function parseOtlpLogs(payload: unknown, sampleAll: boolean | 'raw' = fal
       }
     }
   }
-  return { calls, ignored, seen: [...names.values()] }
+  return { calls, ignored, seen: [...names.values()], events }
 }

@@ -1,5 +1,7 @@
 export interface Env {
   DB: D1Database
+  /** The events database (every event with its harmless attributes, for the statistics); optional: without it only the counting works. */
+  EVENTS?: D1Database
   ASSETS: Fetcher
   TEAM_DOMAIN: string
   POLICY_AUD: string

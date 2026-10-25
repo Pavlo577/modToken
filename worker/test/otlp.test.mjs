@@ -1,7 +1,7 @@
 // The OTLP side of the Worker: how a payload becomes ModelCalls (src/otlp.ts, pure). The receiver itself is checked end to end in otlp.sh.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_RECORDS, parseOtlpLogs, sampleOf } from '../src/otlp.ts'
+import { MAX_RECORDS, parseOtlpLogs, safeAttrs, sampleOf } from '../src/otlp.ts'
 
 const s = (key, v) => ({ key, value: { stringValue: v } })
 const i = (key, v) => ({ key, value: { intValue: String(v) } }) // OTLP/JSON: an int64 is a string
@@ -17,7 +17,7 @@ test('otlp: a Claude Code api_request becomes one ModelCall with the numbers of 
   assert.equal(ignored, 0)
   assert.deepEqual(calls, [{
     provider: 'claude', call_id: 'req_1', session_id: 'sess-1', turn_key: 'prompt-1', ts: '2025-10-24T10:00:00.123Z', model: 'claude-sonnet-x',
-    input_tokens: 86013, output_tokens: 5189, cache_read_tokens: 467328, cache_creation_tokens: 0, duration_ms: 10243, is_subagent: false,
+    input_tokens: 86013, output_tokens: 5189, cache_read_tokens: 467328, cache_creation_tokens: 0, duration_ms: 10243, cost_micros: 0, is_subagent: false,
   }])
 })
 
@@ -25,8 +25,8 @@ test('otlp: nothing outside the structure survives (emails, account ids, prompts
   const noisy = record([s('user.email', 'me@example.com'), s('user.account_uuid', 'uuid-1'), s('organization.id', 'org-1'), s('prompt', 'SECRET PROMPT'), s('tool_parameters', 'SECRET'), { key: 'cost_usd', value: { doubleValue: 0.5 } }])
   const { calls } = parseOtlpLogs(payload([noisy]))
   const text = JSON.stringify(calls)
-  for (const bad of ['me@example.com', 'uuid-1', 'org-1', 'SECRET', 'cost']) assert.equal(text.includes(bad), false, bad)
-  assert.deepEqual(Object.keys(calls[0]).sort(), ['cache_creation_tokens', 'cache_read_tokens', 'call_id', 'duration_ms', 'input_tokens', 'is_subagent', 'model', 'output_tokens', 'provider', 'session_id', 'ts', 'turn_key'])
+  for (const bad of ['me@example.com', 'uuid-1', 'org-1', 'SECRET', 'cost_usd']) assert.equal(text.includes(bad), false, bad)
+  assert.deepEqual(Object.keys(calls[0]).sort(), ['cache_creation_tokens', 'cache_read_tokens', 'call_id', 'cost_micros', 'duration_ms', 'input_tokens', 'is_subagent', 'model', 'output_tokens', 'provider', 'session_id', 'ts', 'turn_key'])
 })
 
 test('otlp: the event name is accepted with or without its prefix, in an attribute or in the body; other events are ignored', () => {
@@ -53,8 +53,8 @@ test('otlp: a request that cost nothing, negative or fractional numbers, other s
   const odd = record([]); odd.attributes = odd.attributes.map(a => (a.key === 'output_tokens' ? { key: 'output_tokens', value: { intValue: '-5' } } : a.key === 'duration_ms' ? { key: 'duration_ms', value: { doubleValue: 12.9 } } : a))
   const [c] = parseOtlpLogs(payload([odd])).calls
   assert.deepEqual([c.output_tokens, c.duration_ms], [0, 12])
-  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', lens: '', sample: parseOtlpLogs(payload([record()], 'some-other-agent')).seen[0].sample, keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
-  assert.deepEqual(parseOtlpLogs({ resourceLogs: [] }), { calls: [], ignored: 0, seen: [] })
+  assert.deepEqual(parseOtlpLogs(payload([record()], 'some-other-agent')), { calls: [], ignored: 1, events: [], seen: [{ service: 'some-other-agent', event: 'claude_code.api_request', lens: '', sample: parseOtlpLogs(payload([record()], 'some-other-agent')).seen[0].sample, keys: 'cache_creation_tokens,cache_read_tokens,duration_ms,event.name,input_tokens,model,output_tokens,prompt.id,request_id,session.id', n: 1 }] })
+  assert.deepEqual(parseOtlpLogs({ resourceLogs: [] }), { calls: [], ignored: 0, events: [], seen: [] })
   for (const bad of [null, 5, 'x', {}, { resourceLogs: 'no' }]) assert.equal(parseOtlpLogs(bad), null)
 })
 
@@ -114,4 +114,33 @@ test('otlp: the raw debug mode keeps the values (temporary, preview only); the d
   assert.ok(parseOtlpLogs(payload([rec]), 'raw').seen[0].sample.includes('me@example.com'))
   assert.equal(parseOtlpLogs(payload([rec]), true).seen[0].sample.includes('me@example.com'), false)
   assert.equal(parseOtlpLogs(payload([rec])).seen[0].sample.includes('me@example.com'), false)
+})
+
+test('otlp: the cost the agent states is kept per call (micros, or dollars converted)', () => {
+  assert.equal(parseOtlpLogs(payload([record([i('cost_usd_micros', 168820)])])).calls[0].cost_micros, 168820)
+  assert.equal(parseOtlpLogs(payload([record([{ key: 'cost_usd', value: { doubleValue: 0.5 } }])])).calls[0].cost_micros, 500000)
+  assert.equal(parseOtlpLogs(payload([record()])).calls[0].cost_micros, 0)
+})
+
+test('events: every record of a known service is kept, with time, name, session, prompt and surface as columns', () => {
+  const tool = { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'claude_code.tool_result'), s('session.id', 'sess-1'), s('prompt.id', 'p-1'), s('terminal.type', 'pycharm'), i('event.sequence', 7), s('tool_name', 'Bash'), s('duration_ms', '1227'), s('success', 'true')] }
+  const { events } = parseOtlpLogs(payload([record(), tool]))
+  assert.equal(events.length, 2)
+  const e = events.find(x => x.name === 'tool_result')
+  assert.deepEqual({ ts: e.ts, session_id: e.session_id, prompt_id: e.prompt_id, surface: e.surface, service: e.service }, { ts: '2025-10-24T10:00:00.000Z', session_id: 'sess-1', prompt_id: 'p-1', surface: 'pycharm', service: 'claude-code' })
+  assert.deepEqual(JSON.parse(e.attrs), { 'event.sequence': 7, duration_ms: 1227, success: 'true', tool_name: 'Bash' }, 'numbers that arrive as strings become numbers')
+  assert.equal(events.find(x => x.name === 'api_request').dedupe.startsWith('sess-1|api_request|'), true)
+  assert.equal(parseOtlpLogs(payload([tool], 'some-other-agent')).events.length, 0, 'an unknown service is not stored')
+})
+
+test('events: identity, conversation text, prose and addresses never reach the stored attributes', () => {
+  const a = new Map(Object.entries({
+    'user.email': 'me@example.com', 'user.id': 'abc', 'user.account_uuid': 'u', organization_id: 'x', 'organization.id': 'org-1', 'process.owner': 'IOOOI',
+    prompt: 'SECRET PROMPT', response: 'SECRET ANSWER', prompt_text: 'SECRET', tool_input: 'SECRET', error: 'SECRET failure',
+    summary: 'some secret sentence with spaces', contact: 'someone@example.com', path: 'C:\\Users\\me\\file.txt', note: 'x'.repeat(100),
+    tool_name: 'Bash', duration_ms: 12, ok: true, ttft: '1500', model: 'claude-sonnet-5',
+  }))
+  const out = safeAttrs(a)
+  assert.deepEqual(out, { duration_ms: 12, model: 'claude-sonnet-5', ok: true, organization_id: 'x', tool_name: 'Bash', ttft: 1500 })
+  assert.equal(JSON.stringify(out).includes('SECRET'), false)
 })
