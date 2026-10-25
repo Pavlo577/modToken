@@ -121,6 +121,26 @@ lim $TOKEN "$L1" >/dev/null
 lim $TOKEN '{"limits":[{"kind":"five_hour","percentUsed":39,"resetsAt":"2026-10-26T01:40:00.000Z"}]}' >/dev/null
 check "limits: an unchanged reading is stored once, a change is stored" "$(curl -s "$B/api/admin/limits?from=$(date -u -d "-1 day" +%F)&to=$(date -u -d "+1 day" +%F)" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(len(d), sorted(r["percent"] for r in d if r["kind"]=="five_hour"))')" "3 [38, 39]"
 check "limits: nothing else of the body is kept" "$(curl -s "$B/api/admin/limits?from=$(date -u -d "-1 day" +%F)&to=$(date -u -d "+1 day" +%F)" | grep -c SECRET)" 0
+# the mod's sessions and turns (POST /v1/activity) and what the device lets it send (GET /v1/config, PATCH project_mode)
+act() { curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/activity -H "x-device-token: $TOKEN" -H 'content-type: application/json' --data-binary "$1"; }
+NOW=$(date -u +%FT%T.000Z)
+TURN() { echo "{\"id\":\"$1\",\"session\":\"sess-otlp\",\"ts\":\"$NOW\",\"wall_ms\":$2,\"think_ms\":3000,\"outcome\":\"answer\",\"context_pct\":$3,\"perm_asks\":1,\"perm_denied\":0,\"perm_wait_ms\":5000,\"prompt\":\"SECRET PROMPT\"}"; }
+check "config: the project is off by default" "$(curl -s $B/v1/config -H "x-device-token: $TOKEN")" '{"project":"off"}'
+check "activity: a device token is needed" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/activity -H 'x-device-token: wrong' --data-binary '{}')" 401
+check "activity: a session and turns are accepted" "$(act "{\"session\":{\"id\":\"sess-otlp\",\"started_at\":\"$NOW\",\"project\":\"owner/secret-repo\"},\"turns\":[$(TURN t1 10000 40),$(TURN t2 20000 95)]}")" 200
+act "{\"turns\":[$(TURN t1 10000 40)]}" >/dev/null
+MS() { curl -s "$B/api/admin/mod-stats?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)"; }
+check "activity: a turn sent twice counts once; context and time are summed up" "$(MS | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["time"]["wall"]["n"], d["context"]["over90"], d["permissions"]["asks"], d["sessions"]["count"])')" "2 1 2 1"
+check "activity: with the project off, no project is stored" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "[None]"
+DEVID=$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; print([d["id"] for d in json.load(sys.stdin) if d["name"]=="otlp-box"][0])')
+check "project mode: a wrong value is refused" "$(curl -s -o /dev/null -w '%{http_code}' -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"all"}')" 400
+curl -s -o /dev/null -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"name"}'
+check "config: the device now allows names" "$(curl -s $B/v1/config -H "x-device-token: $TOKEN")" '{"project":"name"}'
+act "{\"session\":{\"id\":\"sess-otlp\",\"started_at\":\"$NOW\",\"project\":\"owner/secret-repo\"}}" >/dev/null
+check "activity: with names allowed, tokens are grouped by project" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "['owner/secret-repo']"
+curl -s -o /dev/null -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"off"}'
+check "project mode off forgets the stored project" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "[None]"
+check "activity: no text of the body is kept" "$(MS | grep -c SECRET)" 0
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

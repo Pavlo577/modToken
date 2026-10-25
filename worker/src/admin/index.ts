@@ -7,11 +7,12 @@ import { dataRoutes } from './data.ts'
 import { deviceRoutes } from './devices.ts'
 import { historyRoutes } from './history.ts'
 import { insightRoutes } from './insights.ts'
+import { modStatsRoutes } from './modstats.ts'
 import { statsRoutes } from './stats.ts'
 
 const me: Routes = async ({ req, email, path }) => (path === '/me' && req.method === 'GET' ? json({ email }) : null)
 
-const GROUPS: Routes[] = [me, deviceRoutes, historyRoutes, dataRoutes, statsRoutes, insightRoutes]
+const GROUPS: Routes[] = [me, deviceRoutes, historyRoutes, dataRoutes, statsRoutes, insightRoutes, modStatsRoutes]
 
 export async function admin(req: Request, env: Env, url: URL): Promise<Response> {
   const email = await accessEmail(req, env)

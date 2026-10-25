@@ -128,6 +128,18 @@
 
   <section id="tab-insights" class="tab hide">
     <div class="grid kpis" id="ins-kpis"></div>
+    <div id="mod-off" class="card hide"><div class="empty">Мод token-tracker ще нічого не надсилав за цей період: контекст, час ходів, сесії, дозволи й проєкти з'являться, щойно він запрацює на пристрої (Пристрої → Додати пристрій).</div></div>
+    <div id="mod-body" class="hide">
+      <div class="grid cols2">
+        <div class="card"><div class="card-head"><div><h2>Контекстне вікно</h2><p class="sub">Наскільки заповнюється контекст: найвище значення кожної сесії</p></div></div><div id="mod-context-sum" class="lat-summary"></div><div id="mod-context-hist" style="margin-top:12px"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Час ходу і паузи</h2><p class="sub">Від твого повідомлення до відповіді (з інструментами) і пауза перед наступним</p></div></div><div id="mod-time-sum" class="lat-summary"></div><div id="mod-time-chart" style="margin-top:12px"></div></div>
+      </div>
+      <div class="grid cols2">
+        <div class="card"><div class="card-head"><div><h2>Сесії</h2><p class="sub">Скільки тривають і як закінчуються</p></div></div><div id="mod-sessions-sum" class="lat-summary"></div><div class="rows" id="mod-sessions-end" style="margin-top:12px"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Очікування дозволів</h2><p class="sub">Як часто агент чекає на твоє рішення і скільки часу це забирає</p></div></div><div id="mod-perm-sum" class="lat-summary"></div><div id="mod-perm-chart" style="margin-top:12px"></div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h2>Проєкти</h2><p class="sub">Куди йдуть токени: за репозиторієм сесії (лише з пристроїв, де це дозволено)</p></div></div><div class="scroll" id="mod-projects"></div></div>
+    </div>
     <div id="ins-off" class="card hide"><div class="empty">База подій не підключена: дашборд показує лише токени.</div></div>
     <div id="ins-body">
       <div class="grid cols2">
@@ -213,7 +225,11 @@
     <div class="card">
       <h2>Додати пристрій</h2>
       <p class="sub" style="margin-bottom:14px">Пристрій це одне місце, де працює Claude Code: комп'ютер, сервер або хмарне середовище. Створи токен, встав налаштування експорту OpenTelemetry, перезапусти Claude Code.</p>
-      <form id="new-device"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required><button class="primary" type="submit">Створити токен</button></form>
+      <form id="new-device"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required>
+        <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
+          <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репозиторію</option><option value="hash">Проєкт: анонімний хеш</option>
+        </select><button class="primary" type="submit">Створити токен</button></form>
+      <p class="note">Проєкт потрібен для зрізу «куди йдуть токени» на вкладці «Інсайти». Назва це <code>власник/репозиторій</code> з git remote; хеш дає ті самі групи без назви. Змінити можна будь-коли в списку пристроїв.</p>
       <div id="setup-box" class="hide">
         <p class="sub" style="margin:16px 0 6px"><b>1.</b> Додай це в <code>~/.claude/settings.json</code> (на Windows <code>%USERPROFILE%\.claude\settings.json</code>); якщо там уже є блок <code>env</code>, додай у нього ці ключі:</p>
         <pre class="snip" id="setup-json"></pre><button type="button" id="copy-json">Копіювати</button>

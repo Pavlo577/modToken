@@ -85,6 +85,8 @@ export interface DeviceRow {
   last_seen: string | null
   /** when OTLP started to count this device's tokens; earlier numbers may be incomplete */
   otlp_since: string | null
+  /** what the token-tracker mod may send about the session's repository */
+  project_mode: 'off' | 'name' | 'hash'
   /** agents that sent turns from this device */
   providers: string[]
 }

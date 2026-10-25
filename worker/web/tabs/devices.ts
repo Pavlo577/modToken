@@ -6,6 +6,20 @@ import { fillHistoryDevices, initHistory } from './history.ts'
 import { cloudEnv, cloudScript, settingsJson, shellEnv } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
+const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
+
+/** What the mod may send about the session's repository; turning it down also forgets what was stored. */
+function projectSelect(d: DeviceRow): HTMLElement {
+  const sel = el('select', { 'aria-label': 'Проєкт у статистиці для ' + d.name, title: 'Що мод token-tracker надсилає про репозиторій сесії' },
+    ...(Object.keys(PROJECT) as DeviceRow['project_mode'][]).map(k => el('option', { value: k, ...(k === d.project_mode ? { selected: '' } : {}) }, PROJECT[k]))) as HTMLSelectElement
+  sel.onchange = async () => {
+    const mode = sel.value as DeviceRow['project_mode']
+    if (mode !== 'name' && d.project_mode !== mode && !confirm(mode === 'off' ? 'Не надсилати проєкт? Збережені проєкти цього пристрою буде забуто.' : 'Лише хеш? Збережені назви проєктів цього пристрою буде забуто.')) { sel.value = d.project_mode; return }
+    try { await api('/devices/' + d.id, { method: 'PATCH', body: JSON.stringify({ project_mode: mode }) }); d.project_mode = mode } catch (err) { sel.value = d.project_mode; alert('Не вдалося змінити: ' + (err as Error).message) }
+  }
+  return sel
+}
+
 function deviceRow(d: DeviceRow): HTMLElement {
   const added = d.created_at.slice(0, 10)
   const seen = d.last_seen
@@ -14,6 +28,7 @@ function deviceRow(d: DeviceRow): HTMLElement {
       ...[...d.providers].sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Агент надсилав дані з цього пристрою' }, providerLabel(p))),
       el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
     d.revoked ? '' : el('div', { class: 'dev-actions' },
+      projectSelect(d),
       el('button', { class: 'danger', onclick: async () => {
         if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані.`)) return
         await api('/devices/' + d.id, { method: 'DELETE' })
@@ -47,7 +62,7 @@ export function initDevices(): void {
     e.preventDefault()
     const name = $<HTMLInputElement>('dev-name')
     try {
-      const { token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value }) })
+      const { token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) })
       $('setup-json').textContent = settingsJson(location.origin, token)
       $('setup-env').textContent = shellEnv(location.origin, token)
       $('setup-cloud').textContent = cloudScript()
