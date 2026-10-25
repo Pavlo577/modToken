@@ -30,7 +30,7 @@ test('setup: the cloud variant is the minimum OTLP set plus the mod folder; the 
   assert.deepEqual(lines, [
     'CLAUDE_CODE_ENABLE_TELEMETRY=1', 'OTEL_LOGS_EXPORTER=otlp', 'OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json',
     'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://x.test/v1/logs', 'OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-device-token=tok',
-    'CLAUDE_CODE_PLUGIN_DIRS=/root/.claude/mods/limits-probe',
+    'CLAUDE_CODE_PLUGIN_DIRS=/root/.claude/mods/token-tracker',
   ])
   assert.equal(cloudScript().includes('tok'), false)
   assert.ok(cloudScript().endsWith('| bash'))

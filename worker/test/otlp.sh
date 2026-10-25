@@ -119,6 +119,15 @@ check "statusline: a log entry is accepted" "$(sl $TOKEN)" 200
 sl $TOKEN >/dev/null
 check "statusline: counted, with the shape of the input" "$(curl -s $B/api/admin/statusline | python3 -c 'import sys,json; d=json.load(sys.stdin)[0]; print(d["device"], d["n"], d["sample"]["rate_limits.five_hour.used_percentage"])')" "otlp-box 2 42.5"
 check "statusline: no text of the input is kept" "$(curl -s $B/api/admin/statusline | grep -c SECRET)" 0
+lim() { curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/limits -H "x-device-token: $1" -H 'content-type: application/json' --data-binary "$2"; }
+L1='{"limits":[{"kind":"five_hour","percentUsed":38,"resetsAt":"2026-10-26T01:40:00.000Z"},{"kind":"seven_day","percentUsed":11}],"cwd":"/home/SECRETUSER"}'
+check "limits: a device token is needed" "$(lim wrong "$L1")" 401
+check "limits: a body without a list is refused" "$(lim $TOKEN '{"rows":[]}')" 400
+check "limits: readings are accepted" "$(lim $TOKEN "$L1")" 200
+lim $TOKEN "$L1" >/dev/null
+lim $TOKEN '{"limits":[{"kind":"five_hour","percentUsed":39,"resetsAt":"2026-10-26T01:40:00.000Z"}]}' >/dev/null
+check "limits: an unchanged reading is stored once, a change is stored" "$(curl -s "$B/api/admin/limits?from=$(date -u -d "-1 day" +%F)&to=$(date -u -d "+1 day" +%F)" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(len(d), sorted(r["percent"] for r in d if r["kind"]=="five_hour"))')" "3 [38, 39]"
+check "limits: nothing else of the body is kept" "$(curl -s "$B/api/admin/limits?from=$(date -u -d "-1 day" +%F)&to=$(date -u -d "+1 day" +%F)" | grep -c SECRET)" 0
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

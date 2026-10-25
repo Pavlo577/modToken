@@ -1,4 +1,4 @@
-// Admin routes that hand the page its raw numbers: hourly buckets, single turns and sessions.
+// Admin routes that hand the page its raw numbers: hourly buckets, single turns, sessions and limit readings.
 import { json } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -8,7 +8,7 @@ export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
     const r = await env.DB.prepare('SELECT MIN(ts) AS first FROM token_events WHERE user_email = ?').bind(email).first<{ first: string | null }>()
     return json({ first: r?.first ?? null })
   }
-  if (['/buckets', '/turns', '/sessions'].includes(path) && req.method === 'GET') {
+  if (['/buckets', '/turns', '/sessions', '/limits'].includes(path) && req.method === 'GET') {
     // [from, to) in UTC; the page groups by the viewer's own time zone, so the server only slices by time.
     const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000
     const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 30 * 86_400_000, to - 400 * 86_400_000)
@@ -40,7 +40,10 @@ export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
          WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? GROUP BY e.device_id, e.session_id, e.provider
          ORDER BY output DESC LIMIT 300`, email, a, b))
     }
-    return null
+    return json(await all(
+      `SELECT l.ts, d.name AS device, l.kind, l.percent_used AS percent, l.resets_at, l.provider AS provider
+       FROM plan_limits l JOIN devices d ON d.id = l.device_id
+       WHERE l.user_email = ? AND l.ts >= ? AND l.ts < ? ORDER BY l.ts LIMIT 20000`, email, a, b))
   }
   return null
 }

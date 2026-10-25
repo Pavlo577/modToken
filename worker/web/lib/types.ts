@@ -49,6 +49,16 @@ export interface SessionRow extends Counts, OwnCost {
   provider: string
 }
 
+/** One reading of a subscription window: GET /api/admin/limits */
+export interface LimitRow {
+  ts: string
+  device: string
+  kind: string // 'five_hour' | 'seven_day'
+  percent: number
+  resets_at: string | null
+  provider: string
+}
+
 export interface PriceEntry {
   match: string
   input: number

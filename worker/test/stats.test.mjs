@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { freshInput, makeTz, addDays, dayList, rangeMs, aggregate, priceFor, costOf, cacheHit, delta, records } from '../web/lib/stats.ts'
+import { freshInput, makeTz, addDays, dayList, rangeMs, aggregate, priceFor, costOf, cacheHit, delta, records, latestLimits, weeklyWindows, forecast, efficiency } from '../web/lib/stats.ts'
 import { readFileSync } from 'node:fs'
 
 const prices = JSON.parse(readFileSync(new URL('../public/admin/prices.json', import.meta.url), 'utf8'))
@@ -105,4 +105,65 @@ test('a price applies to its own model and dated or suffixed ids, not to another
   assert.equal(priceFor('gpt-5.6-sol', p), null)
   assert.equal(priceFor('gpt-50', p), null)
   assert.equal(priceFor('claude-sonnet-5-5-20260101', p).input, 9)
+})
+
+test('limits: latest reading, stale windows, forecast', () => {
+  const now = Date.parse('2026-10-23T12:00:00Z')
+  const rows = [
+    { ts: '2026-10-23T08:00:00Z', kind: 'seven_day', percent: 10, resets_at: '2026-10-27T00:00:00Z' },
+    { ts: '2026-10-23T11:00:00Z', kind: 'seven_day', percent: 20, resets_at: '2026-10-27T00:00:00Z' },
+    { ts: '2026-10-23T11:00:00Z', kind: 'five_hour', percent: 80, resets_at: '2026-10-23T11:30:00Z' },
+  ]
+  const l = latestLimits(rows, now)
+  assert.equal(l.seven_day.percent, 20)
+  assert.equal(l.five_hour.isStale, true)
+  assert.equal(l.five_hour.percent, 0)
+  // window started 2026-10-20 00:00; 20% after 3.5 days -> full after 17.5 days > 7: will not fill
+  assert.equal(forecast(l.seven_day, now).willFill, false)
+  const fast = forecast({ kind: 'seven_day', percent: 80, resets_at: '2026-10-27T00:00:00Z' }, now)
+  assert.equal(fast.willFill, true)
+  assert.ok(fast.fullAt > now && fast.fullAt < Date.parse('2026-10-27T00:00:00Z'))
+  assert.equal(forecast(l.five_hour, now), null)
+})
+
+test('efficiency: tokens and dollars per 1% of the weekly limit', () => {
+  const windows = weeklyWindows([
+    { kind: 'seven_day', percent: 25, resets_at: '2026-10-27T00:00:00Z' },
+    { kind: 'seven_day', percent: 50, resets_at: '2026-10-27T00:00:00Z' },
+    { kind: 'five_hour', percent: 99, resets_at: '2026-10-27T00:00:00Z' },
+  ])
+  assert.equal(windows.length, 1)
+  assert.equal(windows[0].peak, 50)
+  assert.equal(windows[0].start, Date.parse('2026-10-20T00:00:00Z'))
+  const e = efficiency(windows, [bk('2026-10-22T10', { input: 100, output: 900 }), bk('2026-10-01T10')], prices)
+  assert.equal(e[0].tokens, 1000) // only the bucket inside the window counts
+  assert.equal(e[0].tokensPerPct, 20)
+})
+
+test('limit reset by hand: window ends early, the next starts at the reset, forecast uses it', () => {
+  const lr = (ts, percent, resets_at, kind = 'seven_day') => ({ ts, device: 'a', kind, percent, resets_at })
+  const end = '2026-10-28T00:00:00Z'
+  // same resets_at: percent drops 100 -> 2 on the 22nd
+  let w = weeklyWindows([lr('2026-10-21T10:00:00Z', 60, end), lr('2026-10-22T08:00:00Z', 100, end), lr('2026-10-22T12:00:00Z', 2, end), lr('2026-10-23T08:00:00Z', 10, end)])
+  assert.equal(w.length, 2)
+  assert.equal(w[0].reset, true)
+  assert.equal(w[0].peak, 100)
+  assert.equal(w[0].end, Date.parse('2026-10-22T12:00:00Z'))
+  assert.equal(w[1].start, Date.parse('2026-10-22T12:00:00Z'))
+  assert.equal(w[1].peak, 10)
+  // resets_at moved a week ahead early: same result
+  w = weeklyWindows([lr('2026-10-22T08:00:00Z', 100, end), lr('2026-10-22T12:00:00Z', 1, '2026-10-29T12:00:00Z')])
+  assert.equal(w[0].reset, true)
+  assert.equal(w[1].afterReset, true)
+  // an ordinary rollover is not a reset
+  w = weeklyWindows([lr('2026-10-27T23:00:00Z', 70, end), lr('2026-10-28T01:00:00Z', 1, '2026-11-04T00:00:00Z')])
+  assert.equal(w[0].reset, false)
+  assert.equal(w[1].start, Date.parse('2026-10-28T00:00:00Z'))
+  // latest + forecast count from the reset, not from resets_at minus 7 days
+  const rows = [lr('2026-10-22T08:00:00Z', 100, end), lr('2026-10-22T12:00:00Z', 2, end), lr('2026-10-22T20:00:00Z', 4, end)]
+  const now = Date.parse('2026-10-23T12:00:00Z')
+  const l = latestLimits(rows, now).seven_day
+  assert.equal(l.resetAt, Date.parse('2026-10-22T12:00:00Z'))
+  const f = forecast(l, now)
+  assert.equal(Math.round((f.fullAt - Date.parse('2026-10-22T12:00:00Z')) / 3_600_000), 600)
 })

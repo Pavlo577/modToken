@@ -20,7 +20,7 @@ export const shellEnv = (origin: string, token: string): string =>
 // installs the mod (scripts/cloud-setup.sh); the OTLP settings, the token and CLAUDE_CODE_PLUGIN_DIRS go into "Environment variables" as KEY=value lines.
 // The minimum: metrics and traces are off unless an exporter is named, and the mod reads the site and the token from the OTLP variables.
 export const CLOUD_SCRIPT_URL = 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts/cloud-setup.sh'
-export const CLOUD_MOD_DIR = '/root/.claude/mods/limits-probe'
+export const CLOUD_MOD_DIR = '/root/.claude/mods/token-tracker'
 export const cloudScript = (): string => `curl -fsSL ${CLOUD_SCRIPT_URL} | bash`
 export function cloudEnv(origin: string, token: string): string {
   const { CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_LOGS_EXPORTER, OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, OTEL_EXPORTER_OTLP_LOGS_HEADERS } = setupEnv(origin, token)
