@@ -142,6 +142,20 @@
         <div class="card-head"><div><h2>Швидкість</h2><p class="sub">Час до першого токена (TTFT), повна відповідь і швидкість генерації за моделями; p50 це типове значення, p95 повільні 5% запитів</p></div></div>
         <div class="scroll" id="ins-latency"></div>
       </div>
+      <div class="card">
+        <div class="card-head"><div><h2>Час відповіді</h2><p class="sub">Зведення за періодом, зміни за днями та розподіл запитів; без службових запитів (назви сесій, підсумки)</p></div></div>
+        <div id="ins-lat-summary" class="lat-summary"></div>
+        <div class="grid cols2" style="margin-top:14px">
+          <div><p class="sub" style="margin:0 0 6px">Повна відповідь за днями (медіана й p95)</p><div id="ins-lat-dur"></div></div>
+          <div><p class="sub" style="margin:0 0 6px">Час до першого токена за днями (медіана й p95)</p><div id="ins-lat-ttft"></div></div>
+        </div>
+        <div class="grid cols2" style="margin-top:14px">
+          <div><p class="sub" style="margin:0 0 6px">Розподіл повної відповіді</p><div id="ins-hist-dur"></div></div>
+          <div><p class="sub" style="margin:0 0 6px">Розподіл часу до першого токена</p><div id="ins-hist-ttft"></div></div>
+        </div>
+        <p class="sub" style="margin:14px 0 6px">Швидкість генерації, токенів за секунду (медіана за днями)</p><div id="ins-lat-tps"></div>
+        <p class="sub" style="margin:14px 0 6px">Найповільніші запити</p><div class="scroll" id="ins-slowest"></div>
+      </div>
       <div class="grid cols2">
         <div class="card"><div class="card-head"><div><h2>Інструменти</h2><p class="sub">Запуски, успішність і час виконання</p></div></div><div class="scroll" id="ins-tools"></div></div>
         <div class="card"><div class="card-head"><div><h2>Дозволи</h2><p class="sub">Що приймалось і що відхилялось</p></div></div><div class="scroll" id="ins-decisions"></div><div class="scroll" id="ins-safety" style="margin-top:14px"></div></div>

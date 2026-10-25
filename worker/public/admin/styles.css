@@ -235,3 +235,8 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 .click { cursor: pointer; }
 .md.click:hover, .mt.click:hover, .md.click:focus-visible, .mt.click:focus-visible { border-color: rgba(255,255,255,.7); outline: none; transform: translateY(-1px); }
 .mcal h3.click:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+
+.lat-summary { display: grid; gap: 8px; }
+.summary-row { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13.5px; align-items: baseline; }
+.summary-row b { min-width: 140px; }
+.summary-row span { color: var(--text-2); font-variant-numeric: tabular-nums; }

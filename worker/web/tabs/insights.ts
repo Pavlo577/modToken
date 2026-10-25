@@ -28,6 +28,10 @@ interface Compaction { trigger: string | null; success: string | null; n: number
 interface Subagent { agent: string | null; runs: number; avg_ms: N; avg_tools: N; avg_tokens: N; async_runs: N; swapped: N }
 interface ApiError { kind: string; status: N; model: string | null; n: number; avg_attempts: N; avg_retry_ms: N }
 interface Skill { skill: string | null; trigger: string | null; source: string | null; n: number }
+interface LatencyDay { day: string; calls: number; ttft_p50: number; ttft_p95: number; dur_p50: number; dur_p95: number; tps_p50: number }
+interface Bucket { lo: number; hi: number | null; n: number }
+interface Stat { n: number; avg: number; p50: number; p90: number; p95: number; p99: number; max: number }
+interface Slow { ts: string; surface: string; model: string | null; source: string | null; ttft: N; dur: N; output: N }
 interface Insights {
   available: boolean
   totals: { events: number; kinds: number; sessions: number; first_ts: string | null; last_ts: string | null }
@@ -35,6 +39,7 @@ interface Insights {
   tools: Tool[]; decisions: Decision[]; safety: Safety[]; hooks: Hook[]; mcp: Mcp[]; refusals: Refusal[]
   sessions: Session[]; prompts: Prompts[]; commands: Command[]; modes: Mode[]
   compaction: Compaction[]; subagents: Subagent[]; errors: ApiError[]; skills: Skill[]
+  latencyDaily: LatencyDay[]; latencyHist: { ttft: Bucket[]; duration: Bucket[] }; latencyStats: { duration: Stat; ttft: Stat }; slowest: Slow[]
   unknownFields: { key: string; event: string }[]
 }
 
@@ -114,6 +119,28 @@ export async function renderInsights(): Promise<void> {
 
   table($('ins-latency'), ['Модель', 'Запитів', 'TTFT p50', 'TTFT p95', 'Відповідь p50', 'Відповідь p95', 'Токенів/с'],
     d.latency.map(l => [l.model, fmt(l.calls), ms(l.ttft_p50), ms(l.ttft_p95), ms(l.dur_p50), ms(l.dur_p95), l.tps_p50 ? String(l.tps_p50) : '—']))
+
+  // response time: summary numbers, over time, how it is spread, the slowest requests
+  const st = d.latencyStats
+  $('ins-lat-summary').replaceChildren(...([['Повна відповідь', st.duration], ['До першого токена', st.ttft]] as const).map(([title, x]) => el('div', { class: 'summary-row' },
+    el('b', {}, title), el('span', {}, `середня ${ms(x.avg)} · медіана ${ms(x.p50)} · p90 ${ms(x.p90)} · p95 ${ms(x.p95)} · p99 ${ms(x.p99)} · максимум ${ms(x.max)} · запитів ${fmt(x.n)}`))))
+  const ld = d.latencyDaily
+  const labels = ld.map(x => dayLabel(x.day))
+  const sec = (v: number): number => Math.round(v) / 1000
+  lineChart($('ins-lat-dur'), { labels, height: 200, series: [
+    { label: 'Медіана', color: COLORS.in, values: ld.map(x => sec(x.dur_p50)), fmt: v => v.toFixed(1) + ' с' },
+    { label: 'p95', color: COLORS.out, values: ld.map(x => sec(x.dur_p95)), fmt: v => v.toFixed(1) + ' с' }], yFmt: v => (v >= 10 ? Math.round(v) : +v.toFixed(1)) + ' с', tipTitle: i => `${dayLong(ld[i].day)} · ${ld[i].calls} запитів` })
+  lineChart($('ins-lat-ttft'), { labels, height: 200, series: [
+    { label: 'Медіана', color: COLORS.in, values: ld.map(x => sec(x.ttft_p50)), fmt: v => v.toFixed(2) + ' с' },
+    { label: 'p95', color: COLORS.out, values: ld.map(x => sec(x.ttft_p95)), fmt: v => v.toFixed(2) + ' с' }], yFmt: v => +v.toFixed(1) + ' с', tipTitle: i => `${dayLong(ld[i].day)} · ${ld[i].calls} запитів` })
+  lineChart($('ins-lat-tps'), { labels, height: 160, series: [{ label: 'Токенів за секунду', color: COLORS.ok, values: ld.map(x => x.tps_p50), fmt: v => v.toFixed(1) }], yFmt: v => String(Math.round(v)), tipTitle: i => dayLong(ld[i].day) })
+  const sec1 = (v: number): number => +(v / 1000).toFixed(1)
+  const range = (b: Bucket): string => (b.hi == null ? `>${sec1(b.lo)} с` : b.lo === 0 ? `<${sec1(b.hi)} с` : `${sec1(b.lo)}–${sec1(b.hi)} с`)
+  for (const [id, hist, color] of [['ins-hist-dur', d.latencyHist.duration, COLORS.out], ['ins-hist-ttft', d.latencyHist.ttft, COLORS.in]] as const) {
+    barChart($(id), { labels: hist.map(range), series: [{ label: 'Запитів', color, values: hist.map(b => b.n), fmt: v => fmt(v) }], height: 170, yFmt: v => fmt(v), tipTitle: i => range(hist[i]) })
+  }
+  table($('ins-slowest'), ['Коли', 'Де', 'Модель', 'Джерело', 'До 1-го токена', 'Відповідь', 'Вихідні'],
+    d.slowest.map(x => [new Date(x.ts).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' }), surfaceLabel(x.surface), x.model ?? '—', sourceLabel(x.source), ms(x.ttft), ms(x.dur), fmt(x.output)]))
 
   table($('ins-tools'), ['Інструмент', 'Запусків', 'Успішно', 'Сер. час', 'Сер. вхід', 'Сер. результат'],
     d.tools.map(t => [t.tool ?? 'невідомо', fmt(t.runs), fmtPct(t.runs ? (t.ok ?? 0) / t.runs : null), ms(t.avg_ms), bytes(t.avg_in_bytes), bytes(t.avg_out_bytes)]))

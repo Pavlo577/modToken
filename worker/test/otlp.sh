@@ -90,6 +90,7 @@ PY
 )" > /dev/null
 check "compaction and sub-agent events reach their cards" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["compaction"][0]["saved"], d["subagents"][0]["agent"], d["subagents"][0]["runs"])')" "130000 Explore 1"
 check "a field that is not in the registry is reported as new" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; print([x["key"] for x in json.load(sys.stdin)["unknownFields"]])')" "['brand_new_field']"
+check "response-time statistics and their distribution are computed" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["latencyStats"]["duration"]["n"] > 0, sum(b["n"] for b in d["latencyHist"]["duration"]) == d["latencyStats"]["duration"]["n"], len(d["latencyDaily"]) > 0)')" "True True True"
 check "the insights API answers" "$(curl -s $B/api/admin/insights | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["available"], d["tools"][0]["tool"], d["tools"][0]["runs"])')" "True Bash 3"
 
 # a revoked device is refused
