@@ -7,7 +7,11 @@ ORIGIN="${1%/}"
 [ -z "$ORIGIN" ] && { echo "Token Tracker: no origin given, OTLP export stays off"; exit 0; }
 [ -z "$TRACKER_TOKEN" ] && { echo "Token Tracker: TRACKER_TOKEN is not set, OTLP export stays off"; exit 0; }
 mkdir -p "$HOME/.claude"
-TT_ORIGIN="$ORIGIN" node -e '
+# The statusLine probe (scripts/statusline-probe.mjs): it POSTs the shape of statusLine's input to <origin>/v1/statusline. Skipped if the download fails.
+PROBE_URL="${TT_PROBE_URL:-https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts/statusline-probe.mjs}"
+PROBE="$HOME/.claude/statusline-probe.mjs"
+curl -fsSL --max-time 20 "$PROBE_URL" -o "$PROBE" 2>/dev/null || { rm -f "$PROBE"; echo "Token Tracker: statusLine probe not downloaded, statusLine stays off"; }
+TT_ORIGIN="$ORIGIN" TT_PROBE="$PROBE" node -e '
 const fs = require("fs");
 const p = process.env.HOME + "/.claude/settings.json";
 let s = {};
@@ -20,7 +24,9 @@ s.env = Object.assign(s.env || {}, {
   OTEL_EXPORTER_OTLP_LOGS_PROTOCOL: "http/json",
   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: process.env.TT_ORIGIN + "/v1/logs",
   OTEL_EXPORTER_OTLP_LOGS_HEADERS: "x-device-token=" + process.env.TRACKER_TOKEN,
+  TRACKER_ORIGIN: process.env.TT_ORIGIN, // read by the statusLine probe (the token is the container variable TRACKER_TOKEN)
 });
+if (fs.existsSync(process.env.TT_PROBE) && !s.statusLine) s.statusLine = { type: "command", command: "node " + process.env.TT_PROBE };
 fs.writeFileSync(p, JSON.stringify(s, null, 2));
 ' && echo "Token Tracker: OTLP export configured for $ORIGIN"
 exit 0
