@@ -15,3 +15,8 @@ export const settingsJson = (origin: string, token: string): string => JSON.stri
 
 export const shellEnv = (origin: string, token: string): string =>
   Object.entries(setupEnv(origin, token)).map(([k, v]) => `export ${k}=${/^[\w./:=-]+$/.test(v) ? v : JSON.stringify(v)}`).join('\n')
+
+// A cloud session (claude.ai/code) is a fresh container each time: its "Setup script" fetches scripts/cloud-setup.sh, and the token goes in as the environment variable TRACKER_TOKEN.
+export const CLOUD_SCRIPT_URL = 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts/cloud-setup.sh'
+export const cloudScript = (origin: string): string => `curl -fsSL ${CLOUD_SCRIPT_URL} | bash -s -- ${origin.replace(/\/$/, '')}`
+export const cloudTokenVar = (token: string): string => `TRACKER_TOKEN=${token}`

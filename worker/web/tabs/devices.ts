@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
-import { settingsJson, shellEnv } from '../lib/setup.ts'
+import { cloudScript, cloudTokenVar, settingsJson, shellEnv } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 function deviceRow(d: DeviceRow): HTMLElement {
@@ -40,6 +40,8 @@ export function initDevices(): void {
   }
   $('copy-json').onclick = copy('setup-json', $('copy-json'))
   $('copy-env').onclick = copy('setup-env', $('copy-env'))
+  $('copy-cloud').onclick = copy('setup-cloud', $('copy-cloud'))
+  $('copy-cloud-env').onclick = copy('setup-cloud-env', $('copy-cloud-env'))
 
   $('new-device').addEventListener('submit', async e => {
     e.preventDefault()
@@ -48,6 +50,8 @@ export function initDevices(): void {
       const { token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value }) })
       $('setup-json').textContent = settingsJson(location.origin, token)
       $('setup-env').textContent = shellEnv(location.origin, token)
+      $('setup-cloud').textContent = cloudScript(location.origin)
+      $('setup-cloud-env').textContent = cloudTokenVar(token)
       $('setup-host').textContent = location.hostname
       $('setup-box').classList.remove('hide')
       name.value = ''
