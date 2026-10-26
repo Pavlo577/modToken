@@ -17,7 +17,7 @@ test('otlp: a Claude Code api_request becomes one ModelCall with the numbers of 
   assert.equal(ignored, 0)
   assert.deepEqual(calls, [{
     provider: 'claude', call_id: 'req_1', session_id: 'sess-1', turn_key: 'prompt-1', ts: '2025-10-24T10:00:00.123Z', model: 'claude-sonnet-x',
-    input_tokens: 86013, output_tokens: 5189, cache_read_tokens: 467328, cache_creation_tokens: 0, duration_ms: 10243, cost_micros: 0, is_subagent: false,
+    input_tokens: 86013, output_tokens: 5189, cache_read_tokens: 467328, cache_creation_tokens: 0, duration_ms: 10243, cost_micros: 0, is_subagent: false, kind: 'main',
   }])
 })
 
@@ -26,7 +26,7 @@ test('otlp: nothing outside the structure survives (emails, account ids, prompts
   const { calls } = parseOtlpLogs(payload([noisy]))
   const text = JSON.stringify(calls)
   for (const bad of ['me@example.com', 'uuid-1', 'org-1', 'SECRET', 'cost_usd']) assert.equal(text.includes(bad), false, bad)
-  assert.deepEqual(Object.keys(calls[0]).sort(), ['cache_creation_tokens', 'cache_read_tokens', 'call_id', 'cost_micros', 'duration_ms', 'input_tokens', 'is_subagent', 'model', 'output_tokens', 'provider', 'session_id', 'ts', 'turn_key'])
+  assert.deepEqual(Object.keys(calls[0]).sort(), ['cache_creation_tokens', 'cache_read_tokens', 'call_id', 'cost_micros', 'duration_ms', 'input_tokens', 'is_subagent', 'kind', 'model', 'output_tokens', 'provider', 'session_id', 'ts', 'turn_key'])
 })
 
 test('otlp: the event name is accepted with or without its prefix, in an attribute or in the body; other events are ignored', () => {
@@ -143,4 +143,17 @@ test('events: identity, conversation text, prose and addresses never reach the s
   const out = safeAttrs(a)
   assert.deepEqual(out, { duration_ms: 12, model: 'claude-sonnet-5', ok: true, organization_id: 'x', tool_name: 'Bash', ttft: 1500 })
   assert.equal(JSON.stringify(out).includes('SECRET'), false)
+})
+
+test('otlp: a sub-agent and a background request get turn rows of their own, by model; the prompt stays one turn', () => {
+  const src = (v) => s('query_source', v)
+  const { calls } = parseOtlpLogs(payload([
+    record([src('sdk')]), record([src('agent:builtin:general-purpose'), s('model', 'claude-haiku-x'), s('request_id', 'req_2')]),
+    record([src('prompt_suggestion'), s('request_id', 'req_3')]), record([src('repl_main_thread'), s('request_id', 'req_4')]),
+    record([src('subagent'), s('request_id', 'req_5')]), record([s('agent_id', 'a1'), s('request_id', 'req_6')]),
+  ]))
+  assert.deepEqual(calls.map(c => [c.kind, c.is_subagent, c.turn_key]), [
+    ['main', false, 'prompt-1'], ['sub', true, 'prompt-1:sub:claude-haiku-x'], ['bg', false, 'prompt-1:bg:claude-sonnet-x'],
+    ['main', false, 'prompt-1'], ['sub', true, 'prompt-1:sub:claude-sonnet-x'], ['sub', true, 'prompt-1:sub:claude-sonnet-x'],
+  ])
 })

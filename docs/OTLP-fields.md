@@ -34,7 +34,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `model` | string | model id | counted |
 | `speed` | string | normal or fast | stored |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent or agent:<type> (a sub-agent call), anything else a background request (prompt_suggestion, generate_session_title, away_summary ...); sub-agent and background calls get turn rows of their own | counted |
 | `attempt` | int | which attempt was refused | stored |
 | `status_code` | int | HTTP status code of the failure (absent for non-HTTP errors) *(documented only)* | stored |
 | `error` | string | the error message (may hold text) *(documented only)* | content |
@@ -46,7 +46,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `speed` | string | normal or fast | stored |
 | `effort` | string | thinking effort setting (medium ...) | stored |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent or agent:<type> (a sub-agent call), anything else a background request (prompt_suggestion, generate_session_title, away_summary ...); sub-agent and background calls get turn rows of their own | counted |
 | `attempt` | int | which attempt was refused | stored |
 | `has_category` | bool | the refusal names a category | stored |
 | `has_explanation` | bool | the refusal carries an explanation | stored |
@@ -70,7 +70,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `cost_usd_micros` | int | the same in millionths of a dollar | counted |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
 | `client_request_id` | id | client-side id of the request | stored |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent or agent:<type> (a sub-agent call), anything else a background request (prompt_suggestion, generate_session_title, away_summary ...); sub-agent and background calls get turn rows of their own | counted |
 | `agent_id` | id | set on sub-agent calls only; makes the call a sub-agent call *(documented only)* | counted |
 | `parent_agent_id` | id | the agent that started a sub-agent *(documented only)* | stored |
 
@@ -89,7 +89,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 |---|---|---|---|
 | `model` | string | model id | counted |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
-| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ... | counted |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent or agent:<type> (a sub-agent call), anything else a background request (prompt_suggestion, generate_session_title, away_summary ...); sub-agent and background calls get turn rows of their own | counted |
 | `message.uuid` | id | id of the message | stored |
 | `response` | string | the text of the answer (arrives as <REDACTED>) | content |
 | `response_length` | int | length of the answer in characters | stored |

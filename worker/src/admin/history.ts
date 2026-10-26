@@ -41,15 +41,15 @@ export const historyRoutes: Routes = async ({ req, env, email, path }) => {
   const before = await count()
   const sql = env.DB.prepare(
     `INSERT INTO token_events
-       (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent, provider, cost_micros)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'claude', 0)
+       (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent, provider, cost_micros, kind)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'claude', 0, ?)
      ON CONFLICT (device_id, turn_id) DO UPDATE SET
        input_tokens = MAX(input_tokens, excluded.input_tokens), output_tokens = MAX(output_tokens, excluded.output_tokens),
        cache_read_tokens = MAX(cache_read_tokens, excluded.cache_read_tokens), cache_creation_tokens = MAX(cache_creation_tokens, excluded.cache_creation_tokens),
        is_subagent = MAX(is_subagent, excluded.is_subagent)`,
   )
   for (let i = 0; i < rows.length; i += CHUNK) {
-    await env.DB.batch(rows.slice(i, i + CHUNK).map(r => sql.bind(email, dev.id, r.session, 'log:' + r.id, r.ts, r.model, r.input, r.output, r.cache_read, r.cache_creation, r.sub ? 1 : 0)))
+    await env.DB.batch(rows.slice(i, i + CHUNK).map(r => sql.bind(email, dev.id, r.session, 'log:' + r.id, r.ts, r.model, r.input, r.output, r.cache_read, r.cache_creation, r.sub ? 1 : 0, r.sub ? 'sub' : 'main')))
   }
   return json({ added: (await count()) - before, received: rows.length, skipped_live: skippedLive, invalid })
 }

@@ -14,7 +14,9 @@ test('activity: the numbers of a turn and a session are kept, nothing else survi
   }, 'name')
   const text = JSON.stringify(out)
   for (const bad of ['SECRET', 'secret.person', 'cwd', 'prompt']) assert.equal(text.includes(bad), false, bad)
-  assert.deepEqual(out.session, { id: 'sess-1', started_at: '2026-10-25T22:00:00.000Z', ended_at: null, end_reason: 'clear', project: 'owner/repo' })
+  assert.deepEqual(out.session, { id: 'sess-1', started_at: '2026-10-25T22:00:00.000Z', ended_at: null, end_reason: 'clear', project: 'owner/repo', project_note: null })
+  assert.equal(parseActivity({ session: { id: 's', started_at: '2026-10-25T22:00:00Z', project_note: 'no_repo' } }, 'name').session.project_note, 'no_repo')
+  assert.equal(parseActivity({ session: { id: 's', started_at: '2026-10-25T22:00:00Z', project_note: '/home/SECRET path' } }, 'name').session.project_note, null)
   assert.deepEqual(out.turns[0], { id: 'turn-1', session: 'sess-1', ts: '2026-10-25T23:00:00.000Z', wall_ms: 12346, think_ms: 4000, outcome: 'answer',
     context_pct: 42.5, context_tokens: 85000, context_window: 200000, perm_asks: 2, perm_denied: 1, perm_wait_ms: 9000 })
 })

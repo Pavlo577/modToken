@@ -21,7 +21,13 @@ export interface ModelCall {
   /** The agent's own price estimate of the call in millionths of a dollar (Claude Code: cost_usd_micros); 0 when it does not say. */
   cost_micros: number
   is_subagent: boolean
+  /** main: the session's own work; sub: a sub-agent; bg: background requests Claude makes by itself (prompt suggestions, titles, summaries, compaction) */
+  kind: CallKind
 }
+
+export type CallKind = 'main' | 'sub' | 'bg'
+/** query_source of the session's own requests (terminal / IDE, the app and the cloud); an empty one is the main session too */
+const MAIN_SOURCES = new Set(['', 'repl_main_thread', 'sdk'])
 
 type Scalar = string | number | boolean
 type Attrs = Map<string, Scalar>
@@ -79,13 +85,20 @@ function claudeCall(a: Attrs, rec: LogRecord): ModelCall | null {
   if (!ts || input + output + read + write === 0) return null // no time, or a request that cost nothing (an error)
   const session = text(a, 'session.id')
   const call = text(a, 'request_id') || `${session}:${rec.timeUnixNano ?? ts}:${text(a, 'event.sequence')}`
+  // a sub-agent's call: `agent_id` is set on its events (Claude Code 2.1.310+), and its `query_source` is "subagent" or "agent:<type>";
+  // the main session's is repl_main_thread, sdk or none; anything else is Claude working by itself (prompt_suggestion, generate_session_title ...)
+  const source = text(a, 'query_source')
+  const kind: CallKind = text(a, 'agent_id') !== '' || source === 'subagent' || source.startsWith('agent:') ? 'sub' : MAIN_SOURCES.has(source) ? 'main' : 'bg'
+  const model = text(a, 'model') || 'unknown'
+  const prompt = text(a, 'prompt.id') || str(call)
   return {
-    provider: 'claude', call_id: str(call), session_id: session, turn_key: text(a, 'prompt.id') || str(call), ts,
-    model: text(a, 'model') || 'unknown', input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write,
+    // one row per prompt for the session's own work; a sub-agent's or a background request's calls get rows of their own, by model,
+    // so that neither is counted as the prompt's model nor marks the whole prompt as a sub-agent's
+    provider: 'claude', call_id: str(call), session_id: session, turn_key: kind === 'main' ? prompt : `${prompt}:${kind}:${model}`, ts, kind,
+    model, input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write,
     duration_ms: count(a, 'duration_ms'),
     cost_micros: count(a, 'cost_usd_micros') || (typeof a.get('cost_usd') === 'number' ? Math.round((a.get('cost_usd') as number) * 1e6) : 0),
-    // a sub-agent's call: `agent_id` is set on its events (Claude Code 2.1.310+), and the docs name `query_source` "subagent" for its requests; the main session has neither
-    is_subagent: text(a, 'agent_id') !== '' || text(a, 'query_source') === 'subagent',
+    is_subagent: kind === 'sub',
   }
 }
 

@@ -66,7 +66,7 @@ export const FIELDS: Field[] = [
   f('cost_usd_micros', ['api_request'], 'int', 'the same in millionths of a dollar', 'counted'),
   f('request_id', ['api_request', 'assistant_response', 'api_refusal', 'tool_decision', 'tool_result', 'api_error'], 'id', 'the API request id; the call id of the counting (a call is counted once)', 'counted'),
   f('client_request_id', ['api_request'], 'id', 'client-side id of the request', 'stored'),
-  f('query_source', ['api_request', 'assistant_response', 'api_refusal', 'api_error'], 'string', 'who asked: repl_main_thread (you), sdk (app / cloud), subagent (a sub-agent: makes the call a sub-agent call), generate_session_title, away_summary ...', 'counted'),
+  f('query_source', ['api_request', 'assistant_response', 'api_refusal', 'api_error'], 'string', 'who asked: repl_main_thread (you), sdk (app / cloud), subagent or agent:<type> (a sub-agent call), anything else a background request (prompt_suggestion, generate_session_title, away_summary ...); sub-agent and background calls get turn rows of their own', 'counted'),
   f('agent_id', ['api_request'], 'id', 'set on sub-agent calls only; makes the call a sub-agent call', 'counted', { seen: false }),
   f('parent_agent_id', ['api_request'], 'id', 'the agent that started a sub-agent', 'stored', { seen: false }),
 

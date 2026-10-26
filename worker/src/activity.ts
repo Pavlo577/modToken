@@ -1,5 +1,5 @@
 // POST /v1/activity: what the token-tracker mod measures beyond the limits, numbers only. GET /v1/config: what the device lets the mod send.
-// A session: { id, started_at, ended_at?, end_reason?, project? }; turns: [{ id, session, ts, wall_ms, think_ms?, outcome, context_pct?, context_tokens?,
+// A session: { id, started_at, ended_at?, end_reason?, project?, project_note? (why there is none: a word) }; turns: [{ id, session, ts, wall_ms, think_ms?, outcome, context_pct?, context_tokens?,
 // context_window?, perm_asks, perm_denied, perm_wait_ms }]. The project (a repository's owner/name, or `h:` and 12 hex characters) is kept only as
 // far as the device's project_mode allows: off keeps none, hash keeps a hash only, name keeps either. Anything else in the body is ignored.
 import type { Env } from './env.ts'
@@ -17,7 +17,7 @@ const HASH = /^h:[0-9a-f]{12}$/
 const NAME = /^[\w.-]{1,100}(\/[\w.-]{1,100})?$/
 const OUTCOMES = new Set(['answer', 'aborted', 'refusal', 'error'])
 
-export interface ModSession { id: string; started_at: string; ended_at: string | null; end_reason: string | null; project: string | null }
+export interface ModSession { id: string; started_at: string; ended_at: string | null; end_reason: string | null; project: string | null; project_note: string | null }
 export interface ModTurn {
   id: string; session: string; ts: string; wall_ms: number; think_ms: number | null; outcome: string
   context_pct: number | null; context_tokens: number | null; context_window: number | null
@@ -46,7 +46,8 @@ export function parseActivity(body: unknown, mode: ProjectMode): { session: ModS
     const s = b.session as Record<string, unknown>
     const started = iso(s.started_at)
     if (typeof s.id === 'string' && ID.test(s.id) && started) {
-      session = { id: s.id, started_at: started, ended_at: iso(s.ended_at), end_reason: typeof s.end_reason === 'string' && WORD.test(s.end_reason) ? s.end_reason : null, project: projectFor(s.project, mode) }
+      session = { id: s.id, started_at: started, ended_at: iso(s.ended_at), end_reason: typeof s.end_reason === 'string' && WORD.test(s.end_reason) ? s.end_reason : null, project: projectFor(s.project, mode),
+        project_note: typeof s.project_note === 'string' && WORD.test(s.project_note) ? s.project_note : null }
     }
   }
   const turns: ModTurn[] = []
@@ -92,11 +93,11 @@ export async function activityIngest(req: Request, env: Env): Promise<Response> 
   const s = parsed.session
   if (s) {
     stmts.push(env.DB.prepare(
-      `INSERT INTO mod_sessions (device_id, user_email, session_id, started_at, ended_at, end_reason, project) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+      `INSERT INTO mod_sessions (device_id, user_email, session_id, started_at, ended_at, end_reason, project, project_note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
        ON CONFLICT (device_id, session_id) DO UPDATE SET started_at = MIN(started_at, excluded.started_at),
          ended_at = COALESCE(excluded.ended_at, ended_at), end_reason = COALESCE(excluded.end_reason, end_reason),
-         project = COALESCE(excluded.project, project)`,
-    ).bind(dev.id, dev.user_email, s.id, s.started_at, s.ended_at, s.end_reason, s.project))
+         project = COALESCE(excluded.project, project), project_note = COALESCE(excluded.project_note, project_note)`,
+    ).bind(dev.id, dev.user_email, s.id, s.started_at, s.ended_at, s.end_reason, s.project, s.project_note))
   }
   for (const t of parsed.turns) {
     stmts.push(env.DB.prepare(

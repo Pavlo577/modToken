@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS token_events (
   provider TEXT NOT NULL DEFAULT 'claude',
   -- the agent's own price estimate of the turn in millionths of a dollar (Claude Code: cost_usd_micros); 0 = unknown, the page then prices the tokens itself
   cost_micros INTEGER NOT NULL DEFAULT 0,
+  -- main: the prompt's own calls (one row per prompt, counted as a turn); sub: a sub-agent's; bg: background requests (one row per prompt, kind and model)
+  kind TEXT NOT NULL DEFAULT 'main',
   UNIQUE (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS events_user_ts_idx ON token_events (user_email, ts);
@@ -80,6 +82,7 @@ CREATE TABLE IF NOT EXISTS mod_sessions (
   ended_at TEXT,
   end_reason TEXT,
   project TEXT,
+  project_note TEXT, -- why there is no project, when there is none: off, no_repo, config_failed ...
   PRIMARY KEY (device_id, session_id)
 );
 CREATE INDEX IF NOT EXISTS mod_sessions_user_idx ON mod_sessions (user_email, started_at);

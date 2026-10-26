@@ -106,7 +106,7 @@ imp() { curl -s -XPOST $B/api/admin/import -d "{\"device_id\":\"$1\",\"turns\":$
 TURNS='[{"id":"msg_a","session":"s1","ts":"2026-01-05T10:00:00.000Z","model":"claude-sonnet-x","input":2,"output":100,"cache_read":1000,"cache_creation":10,"sub":false},{"id":"msg_b","session":"s1","ts":"2026-01-05T10:01:00.000Z","model":"claude-sonnet-x","input":4,"output":50,"cache_read":2000,"cache_creation":0,"sub":true}]'
 check "an import adds the new turns" "$(imp $HB "$TURNS" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["added"], d["received"])')" "2 2"
 check "importing the same turns again adds nothing" "$(imp $HB "$TURNS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["added"])')" 0
-check "the imported numbers are in the dashboard" "$(curl -s "$B/api/admin/buckets?from=2026-01-01&to=2026-12-31" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="hist-box"]; print(sum(r["output"] for r in d), sum(r["turns"] for r in d))')" "150 2"
+check "the imported numbers are in the dashboard (a sub-agent turn adds tokens, not a turn)" "$(curl -s "$B/api/admin/buckets?from=2026-01-01&to=2026-12-31" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="hist-box"]; print(sum(r["output"] for r in d), sum(r["turns"] for r in d))')" "150 1"
 check "an import for a device that is not yours: 404" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/api/admin/import -d '{"device_id":"00000000-0000-0000-0000-000000000000","turns":[]}')" 404
 check "a turn from when the device already reports through OTLP is skipped" "$(imp $DEV '[{"id":"msg_c","session":"s1","ts":"2999-01-01T00:00:00.000Z","model":"m","input":1,"output":1,"cache_read":0,"cache_creation":0,"sub":false}]' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["added"], d["invalid"])')" "0 1"
 check "the moment OTLP started counting is recorded per device" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; d={x["name"]:x["otlp_since"] for x in json.load(sys.stdin)}; print(bool(d["otlp-box"]), d["hist-box"])')" "True None"
@@ -149,6 +149,19 @@ check "check: turns are accepted" "$(curl -s -o /dev/null -w '%{http_code}' -XPO
 check "check: the dashboard totals do not change" "$(sums)" "$BEFORE"
 check "check: compared with OTLP for the same session" "$(curl -s "$B/api/admin/check?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | python3 -c 'import sys,json; s=[x for x in json.load(sys.stdin)["sessions"] if x["session_id"]=="sess-otlp"][0]; print(s["mod"]["output"], s["mod"]["turns"], s["otlp"] is not None)')" "100 1 True"
 check "check: no text of the body is kept" "$(curl -s "$B/api/admin/check?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | grep -c SECRET)" 0
+# a background request (prompt_suggestion) of a prompt gets a row of its own and is not counted as a turn
+TURNS_BEFORE=$(curl -s "$B/api/admin/buckets?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["bg_output"] for r in d))')
+BG=$(python3 - <<'PY'
+import json, time
+kv = lambda k, v: {"key": k, "value": ({"intValue": str(v)} if isinstance(v, int) else {"stringValue": v})}
+rec = {"timeUnixNano": str(time.time_ns()), "attributes": [kv("event.name", "claude_code.api_request"), kv("session.id", "sess-otlp"), kv("prompt.id", "p-bg"), kv("request_id", "req-bg-1"),
+  kv("model", "claude-sonnet-x"), kv("query_source", "prompt_suggestion"), kv("input_tokens", 506), kv("output_tokens", 9), kv("cache_read_tokens", 86332), kv("cache_creation_tokens", 105), kv("duration_ms", 900)]}
+print(json.dumps({"resourceLogs": [{"resource": {"attributes": [kv("service.name", "claude-code")]}, "scopeLogs": [{"logRecords": [rec]}]}]}))
+PY
+)
+post "$BG" >/dev/null
+check "a background request adds tokens, not a turn" "$(curl -s "$B/api/admin/buckets?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["bg_output"] for r in d))')" "$(echo $TURNS_BEFORE | awk '{print $1, $2+9}')"
+check "activity: why a session has no project is kept as a word" "$(act "{\"session\":{\"id\":\"sess-note\",\"started_at\":\"$NOW\",\"project_note\":\"no_repo\"}}" >/dev/null; MS | python3 -c 'import sys,json; print([x for x in json.load(sys.stdin)["projectNotes"] if x["note"]=="no_repo"][0]["n"])')" 1
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

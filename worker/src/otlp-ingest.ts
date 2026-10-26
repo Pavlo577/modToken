@@ -49,8 +49,8 @@ function callStatements(env: Env, email: string, deviceId: string, c: ModelCall,
     // Only when the line above really added the call (changes() = 1): the row of the turn grows by this call's numbers.
     env.DB.prepare(
       `INSERT INTO token_events
-         (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent, provider, cost_micros)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14 WHERE changes() = 1
+         (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent, provider, cost_micros, kind)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15 WHERE changes() = 1
        ON CONFLICT (device_id, turn_id) DO UPDATE SET
          input_tokens = input_tokens + excluded.input_tokens,
          output_tokens = output_tokens + excluded.output_tokens,
@@ -63,7 +63,7 @@ function callStatements(env: Env, email: string, deviceId: string, c: ModelCall,
          is_subagent = MAX(is_subagent, excluded.is_subagent)`,
     ).bind(
       email, deviceId, c.session_id, `otlp:${c.provider}:${c.session_id}:${c.turn_key}`.slice(0, 200), c.ts, c.model,
-      c.input_tokens, c.output_tokens, c.cache_read_tokens, c.cache_creation_tokens, c.duration_ms, c.is_subagent ? 1 : 0, c.provider, c.cost_micros,
+      c.input_tokens, c.output_tokens, c.cache_read_tokens, c.cache_creation_tokens, c.duration_ms, c.is_subagent ? 1 : 0, c.provider, c.cost_micros, c.kind,
     ),
   ]
 }

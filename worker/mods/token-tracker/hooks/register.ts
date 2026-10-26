@@ -3,8 +3,9 @@ import type { EngineInterface, Register } from 'claude-code'
 // Token Tracker's mod: what OTLP does not carry. Numbers only, never text:
 // - the subscription's rate-limit windows -> POST /v1/limits when they change;
 // - the session (start, end, why it ended) and every main-loop turn (wall-clock length, the pause before the prompt, context fill,
-//   permission prompts: how many, how many refused, how long until the tool finished) -> POST /v1/activity;
-// - the session's repository only when the device allows it (GET /v1/config: off | name | hash): owner/name, or a hash of the remote.
+//   permission prompts put to a person: how many, how many refused, how long until the tool finished) -> POST /v1/activity;
+// - the session's repository only when the device allows it (GET /v1/config: off | name | hash): owner/name, or a hash of the remote;
+//   when there is none, a word saying why (project_note: off, no_target, config_failed, no_repo).
 // The site and the device token are the device's own OTLP settings (the logs endpoint's origin, the x-device-token header);
 // TRACKER_ORIGIN / TRACKER_TOKEN override them. Tokens are never sent: OTLP counts them.
 type Limit = { kind: string; percentUsed: number; resetsAt?: string }
@@ -41,25 +42,30 @@ function remoteName(remote: string | null): string | null {
   return m ? `${m[1]}/${m[2]}` : null
 }
 
-async function project($: EngineInterface, mode: string): Promise<string | null> {
-  if (mode !== 'name' && mode !== 'hash') return null
-  const repo = await $.session.repo().catch(() => null)
-  if (!repo) return null
+/** The project as the device allows it, or why there is none. */
+async function project($: EngineInterface, mode: string): Promise<{ project: string | null; note: string | null }> {
+  if (mode !== 'name' && mode !== 'hash') return { project: null, note: mode === 'off' ? 'off' : mode }
+  const repo = await $.session.repo().catch(() => undefined)
+  if (repo === undefined) return { project: null, note: 'repo_failed' }
+  if (!repo) return { project: null, note: 'no_repo' }
   const name = repo.name ?? remoteName(repo.remote)
-  if (mode === 'name' && name) return name
+  if (mode === 'name' && name) return { project: name, note: null }
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(repo.remote ?? repo.root))
-  return 'h:' + [...new Uint8Array(digest)].slice(0, 6).map(b => b.toString(16).padStart(2, '0')).join('')
+  return { project: 'h:' + [...new Uint8Array(digest)].slice(0, 6).map(b => b.toString(16).padStart(2, '0')).join(''), note: null }
 }
 
 // the session this process is in; reset by session.start (a /clear goes on under a new id)
 let sessionId = ''
 let startedAt = ''
 let projectName: string | null = null
+let projectNote: string | null = null
 let target_: Target | undefined
 let lastSentLimits = ''
 let lastTurnEnd = 0
 const turnStart = new Map<string, number>()
-const asked = new Set<string>() // tool_use_ids whose permission check went to the decider
+// permission checks that went to the decider (tool_use_id -> tool), and whether a person was then asked (classic PermissionRequest:
+// a dialog is shown; an auto-mode classifier or a rule answering is not a person)
+const asked = new Map<string, { tool: string; person: boolean }>()
 let perm = { asks: 0, denied: 0, waitMs: 0 }
 let queue: Turn[] = [] // turns not accepted yet; resent with the next one
 
@@ -76,7 +82,7 @@ async function sendLimits($: EngineInterface): Promise<void> {
 async function sendActivity($: EngineInterface, end?: { at: string; reason: string }): Promise<void> {
   if (!target_ || !sessionId) return
   const turns = queue.slice(-50)
-  const session = { id: sessionId, started_at: startedAt, project: projectName, ...(end ? { ended_at: end.at, end_reason: end.reason } : {}) }
+  const session = { id: sessionId, started_at: startedAt, project: projectName, project_note: projectNote, ...(end ? { ended_at: end.at, end_reason: end.reason } : {}) }
   if (await post($, target_, '/v1/activity', { session, turns })) queue = queue.filter(t => !turns.includes(t))
 }
 
@@ -88,12 +94,14 @@ export const register: Register = on => {
       startedAt = await iso($)
       target_ = await target($)
       lastTurnEnd = 0
-      let mode = 'off'
+      let mode = target_ ? 'config_failed' : 'no_target'
       if (target_) {
         const c = await $.http.fetch(`${target_.origin}/v1/config`, { headers: { 'x-device-token': target_.token } }).catch(() => undefined)
-        if (c?.ok) try { mode = String((JSON.parse(c.text) as { project?: unknown }).project ?? 'off') } catch { /* keep off */ }
+        if (c?.ok) try { mode = String((JSON.parse(c.text) as { project?: unknown }).project ?? 'off') } catch { /* config_failed */ }
       }
-      projectName = await project($, mode)
+      const p = await project($, mode)
+      projectName = p.project
+      projectNote = p.note
       await sendActivity($)
       await sendLimits($)
     } catch { /* never in the way of the session */ }
@@ -110,18 +118,30 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // a permission prompt: tool.check's verdict is "ask"; the wait is the tool call's time from then on (the answer plus the run)
+  // a permission prompt to a person: tool.check's verdict is "ask" and a dialog is then shown (classic PermissionRequest for that tool);
+  // the wait runs from the call's start to its end, the answer and the run together (the API shows no moment of the answer)
   on('tool.check', async ($, e, next) => {
     const r = await next(e)
-    if (e.agentId === undefined && r.decision === 'ask' && e.tool_use_id) { asked.add(e.tool_use_id); perm.asks++ }
+    if (e.agentId === undefined && r.decision === 'ask' && e.tool_use_id) asked.set(e.tool_use_id, { tool: e.tool, person: false })
     return r
+  })
+
+  on('classic.PermissionRequest', async ($, e, next) => {
+    if (e.agent_id === undefined) {
+      const pending = [...asked.values()].find(x => x.tool === e.tool_name && !x.person)
+      if (pending) pending.person = true
+    }
+    return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
     const t0 = await $.clock.now()
     const r = await next(e)
     const id = (e as { tool_use_id?: string }).tool_use_id
-    if (id && asked.delete(id)) {
+    const a = id ? asked.get(id) : undefined
+    if (id) asked.delete(id)
+    if (a?.person) {
+      perm.asks++
       perm.waitMs += (await $.clock.now()) - t0
       if (r.deny !== undefined) perm.denied++
     }

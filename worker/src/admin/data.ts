@@ -15,7 +15,8 @@ export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
     const a = new Date(from).toISOString()
     const b = new Date(to).toISOString()
     const sums = `SUM(e.input_tokens) AS input, SUM(e.output_tokens) AS output, SUM(e.cache_read_tokens) AS cache_read,
-                  SUM(e.cache_creation_tokens) AS cache_creation, SUM(e.duration_ms) AS duration_ms, COUNT(*) AS turns,
+                  SUM(e.cache_creation_tokens) AS cache_creation, SUM(e.duration_ms) AS duration_ms, SUM(CASE WHEN e.kind = 'main' THEN 1 ELSE 0 END) AS turns,
+                  SUM(CASE WHEN e.kind = 'bg' THEN e.output_tokens ELSE 0 END) AS bg_output,
                   CASE WHEN MIN(e.cost_micros) > 0 THEN SUM(e.cost_micros) ELSE 0 END AS cost_micros`
     const all = <T>(sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args).all<T>().then(r => r.results)
     if (path === '/buckets') {

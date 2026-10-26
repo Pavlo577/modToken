@@ -17,6 +17,7 @@ interface ModStats {
   sessions: { count: number; length: Stat; turns: Stat; reasons: { reason: string; n: number }[] }
   permissions: { asks: number; denied: number; waitMs: number; turnsWithAsks: number }
   daily: { day: string; turns: number; wall_p50: number; context_p50: number; asks: number }[]
+  projectNotes: { note: string | null; n: number }[]
   projects: { project: string | null; sessions: number; turns: number; output: number | null; input: number | null; cache_read: number | null; cost_micros: number | null }[]
 }
 
@@ -73,6 +74,8 @@ export async function renderModStats(r: Period): Promise<void> {
       el('tbody', {}, ...rows.map(x => el('tr', {}, el('td', { class: 'l' }, x.project == null ? 'без проєкту' : x.project.startsWith('h:') ? `анонімний ${x.project.slice(2, 8)}` : x.project),
         ...[fmt(x.sessions), fmt(x.turns), fmt(x.output), fmt(x.input), fmt(x.cache_read), x.cost_micros ? fmtUsd(x.cost_micros / 1e6) : '—'].map(v => el('td', {}, v))))))
     : el('div', { class: 'empty' }, 'Немає сесій із проєктом за цей період'))
+  const NOTE: Record<string, string> = { off: 'на пристрої вимкнено', no_repo: 'сесія не в git-репозиторії', repo_failed: 'не вдалося прочитати репозиторій', config_failed: 'мод не отримав налаштування', no_target: 'мод не знайшов адресу сайту чи токен' }
+  if (d.projectNotes.length) $('mod-projects').append(el('p', { class: 'note' }, 'Сесії без проєкту: ' + d.projectNotes.map(x => `${x.note ? NOTE[x.note] ?? x.note : 'старіша версія моду'} ${fmt(x.n)}`).join(' · ')))
 }
 
 interface CheckSide { input: number; output: number; cache_read: number; cache_creation: number; turns: number }
