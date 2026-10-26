@@ -10,6 +10,7 @@ import type { HistoryTurn } from './history.ts'
 //   when there is none, a word saying why (project_note: off, no_target, config_failed, no_repo).
 // - /tracker-import: the token history from the local logs (~/.claude/projects/**/*.jsonl), parsed here by ./history.ts (a copy of the
 //   Worker's src/history.ts) into numbers, a model name and ids, and POSTed to /v1/import; prompts and answers never leave the device.
+//   A log over 4 MiB (what $.fs.read takes) is first shrunk on the device by node, python or PowerShell to those fields.
 // The site and the device token are the device's own OTLP settings (the logs endpoint's origin, the x-device-token header);
 // TRACKER_ORIGIN / TRACKER_TOKEN override them. Tokens are never sent: OTLP counts them.
 type Limit = { kind: string; percentUsed: number; resetsAt?: string }
@@ -93,24 +94,54 @@ async function sendActivity($: EngineInterface, end?: { at: string; reason: stri
 // /tracker-import, one file per step on a timer, so a big history never holds one hook past its budget
 let importing = false
 
-/** The .jsonl logs under ~/.claude/projects (sessions, and sub-agents' logs in their folders), up to three levels down. */
-async function logFiles($: EngineInterface): Promise<string[]> {
-  const base = `${(await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${await $.env.get('HOME')}/.claude`}/projects`
-  const out: string[] = []
+// where the logs are: the folder of this session's own transcript (…/projects/<project>/<session>.jsonl, from a classic hook's transcript_path),
+// else <CLAUDE_CONFIG_DIR or the home folder>/.claude/projects
+let transcriptPath = ''
+
+async function projectsDir($: EngineInterface): Promise<string> {
+  const m = /^(.*)[\\/][^\\/]+[\\/][^\\/]+\.jsonl$/.exec(transcriptPath)
+  if (m) return m[1]
+  const config = await $.env.get('CLAUDE_CONFIG_DIR')
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
+  return `${config ?? `${home}/.claude`}/projects`
+}
+
+/** The .jsonl logs under the projects folder (sessions, and sub-agents' logs in their folders), up to three levels down. */
+async function logFiles($: EngineInterface): Promise<{ base: string; files: { path: string; size: number }[] }> {
+  const base = await projectsDir($)
+  const files: { path: string; size: number }[] = []
   const walk = async (dir: string, depth: number): Promise<void> => {
     for (const e of await $.fs.list(dir).catch(() => [])) {
       if (e.kind === 'dir' && depth < 3) await walk(`${dir}/${e.name}`, depth + 1)
-      else if (e.kind === 'file' && e.name.endsWith('.jsonl')) out.push(`${dir}/${e.name}`)
+      else if (e.kind === 'file' && e.name.endsWith('.jsonl')) files.push({ path: `${dir}/${e.name}`, size: e.size })
     }
   }
   await walk(base, 0)
-  return out
+  return { base, files }
 }
 
-function startImport($: EngineInterface, t: Target, files: string[]): void {
+// $.fs.read takes at most 4 MiB. A bigger log is shrunk on the device first: a small program keeps, of every assistant line with usage, only what
+// the parser reads (type, timestamp, sessionId, isSidechain, message id, model, the four counts), one line per message, and ./history.ts parses that.
+const FS_LIMIT = 4 * 1024 * 1024 - 64 * 1024
+export const SHRINK_JS = `const fs=require("fs"),rl=require("readline").createInterface({input:fs.createReadStream(process.argv[1])}),m=new Map();rl.on("line",l=>{if(!l.includes('"usage"'))return;let o;try{o=JSON.parse(l)}catch{return}const g=o&&o.message,u=g&&g.usage;if(o.type!=="assistant"||!u||typeof g.id!=="string")return;const k=["input_tokens","output_tokens","cache_read_input_tokens","cache_creation_input_tokens"],x=m.get(g.id),n={type:"assistant",timestamp:o.timestamp,sessionId:o.sessionId,isSidechain:o.isSidechain===true,message:{id:g.id,model:g.model,usage:{}}};for(const q of k)n.message.usage[q]=Math.max(Number(u[q])||0,x?x.message.usage[q]:0);if(x&&x.timestamp>n.timestamp)n.timestamp=x.timestamp;if(x&&x.isSidechain)n.isSidechain=true;m.set(g.id,n)});rl.on("close",()=>{for(const n of m.values())process.stdout.write(JSON.stringify(n)+"\\n")})`
+export const SHRINK_PY = `import json,sys\nm={}\nk=["input_tokens","output_tokens","cache_read_input_tokens","cache_creation_input_tokens"]\nfor l in open(sys.argv[1],encoding="utf-8",errors="replace"):\n if '"usage"' not in l: continue\n try: o=json.loads(l)\n except Exception: continue\n g=o.get("message") if isinstance(o,dict) else None\n u=g.get("usage") if isinstance(g,dict) else None\n if o.get("type")!="assistant" or not isinstance(u,dict) or not isinstance(g.get("id"),str): continue\n x=m.get(g["id"])\n n={"type":"assistant","timestamp":o.get("timestamp"),"sessionId":o.get("sessionId"),"isSidechain":o.get("isSidechain") is True,"message":{"id":g["id"],"model":g.get("model"),"usage":{}}}\n for q in k:\n  v=u.get(q); v=v if isinstance(v,(int,float)) else 0\n  n["message"]["usage"][q]=max(v,x["message"]["usage"][q] if x else 0)\n if x and str(x["timestamp"])>str(n["timestamp"]): n["timestamp"]=x["timestamp"]\n if x and x["isSidechain"]: n["isSidechain"]=True\n m[g["id"]]=n\nfor n in m.values(): sys.stdout.write(json.dumps(n)+"\\n")\n`
+export const SHRINK_PS = `$m=[ordered]@{};$k='input_tokens','output_tokens','cache_read_input_tokens','cache_creation_input_tokens';foreach($l in [IO.File]::ReadLines($args[0])){if(-not $l.Contains('"usage"')){continue};try{$o=$l|ConvertFrom-Json}catch{continue};if($o.type -ne 'assistant' -or -not $o.message.usage -or -not $o.message.id){continue};$x=$m[$o.message.id];$u=[ordered]@{};foreach($q in $k){$v=[double]($o.message.usage.$q);if($x -and $x.message.usage[$q] -gt $v){$v=$x.message.usage[$q]};$u[$q]=$v};$t=$o.timestamp;if($x -and "$($x.timestamp)" -gt "$t"){$t=$x.timestamp};$m[$o.message.id]=[ordered]@{type='assistant';timestamp=$t;sessionId=$o.sessionId;isSidechain=($o.isSidechain -eq $true -or ($x -and $x.isSidechain));message=[ordered]@{id=$o.message.id;model=$o.message.model;usage=$u}}};foreach($n in $m.Values){$n|ConvertTo-Json -Compress -Depth 5}`
+
+/** A log's text, shrunk on the device when it is over $.fs.read's limit; null when it cannot be read. */
+async function readLog($: EngineInterface, f: { path: string; size: number }): Promise<string | null> {
+  if (f.size <= FS_LIMIT) return $.fs.read(f.path).catch(() => null)
+  for (const argv of [['node', '-e', SHRINK_JS, f.path], ['python3', '-c', SHRINK_PY, f.path], ['python', '-c', SHRINK_PY, f.path],
+    ['powershell', '-NoProfile', '-Command', `& { ${SHRINK_PS} }`, f.path]]) {
+    const r = await $.process.run(argv, { timeoutMs: 120_000 }).catch(() => null)
+    if (r && r.exitCode === 0 && !r.isStdoutTruncated) return r.stdout
+  }
+  return null
+}
+
+function startImport($: EngineInterface, t: Target, files: { path: string; size: number }[]): void {
   importing = true
   const acc = new Map<string, HistoryTurn>()
-  const total = { files: 0, found: 0, added: 0, received: 0, skipped_live: 0, invalid: 0, failed: 0 }
+  const total = { files: 0, found: 0, added: 0, received: 0, skipped_live: 0, invalid: 0, failed: 0, unread: 0 }
   const send = async (): Promise<void> => {
     const turns = [...acc.values()]
     acc.clear()
@@ -128,7 +159,8 @@ function startImport($: EngineInterface, t: Target, files: string[]): void {
   const finish = (): void => {
     importing = false
     const msg = `Імпорт історії: файлів ${total.files}, повідомлень ${total.found}; додано ${total.added}, уже були ${total.received - total.added}, ` +
-      `пропущено як уже пораховані OTLP ${total.skipped_live}` + (total.invalid ? `, некоректних ${total.invalid}` : '') + (total.failed ? `, НЕ надіслано ${total.failed}` : '')
+      `пропущено як уже пораховані OTLP ${total.skipped_live}` + (total.invalid ? `, некоректних ${total.invalid}` : '') + (total.failed ? `, НЕ надіслано ${total.failed}` : '') +
+      (total.unread ? `; не вдалося прочитати файлів: ${total.unread} (великі логи потребують node, python або PowerShell)` : '')
     $.ui.toast(msg, { timeoutMs: 15_000 })
     $.ui.status(total.failed ? 'імпорт: не все надіслано' : `імпорт: +${total.added}`)
   }
@@ -136,9 +168,10 @@ function startImport($: EngineInterface, t: Target, files: string[]): void {
     try {
       const file = files.shift()
       if (file) {
-        const text = await $.fs.read(file).catch(() => '')
+        const text = await readLog($, file)
+        if (text === null) total.unread++
         const before = acc.size
-        for (const line of text.split('\n')) addLogLine(acc, line)
+        for (const line of (text ?? '').split('\n')) addLogLine(acc, line)
         total.files++
         total.found += acc.size - before
         $.ui.status(`імпорт: файл ${total.files}, повідомлень ${total.found}`)
@@ -158,11 +191,15 @@ export const register: Register = on => {
     if (importing) return { text: 'Імпорт уже триває.' }
     const t = await target($)
     if (!t) return { text: 'Немає адреси сайту чи токена: налаштуй OTLP-змінні пристрою (Пристрої → Додати пристрій).' }
-    const files = await logFiles($)
-    if (!files.length) return { text: 'Локальних логів не знайдено (~/.claude/projects).' }
+    const { base, files } = await logFiles($)
+    if (!files.length) return { text: `Локальних логів не знайдено (${base}).` }
     startImport($, t, files)
     return { text: `Імпорт історії почався: ${files.length} файлів. Надсилаються лише числа, модель і id; підсумок з'явиться в сповіщенні.` }
   }).catch(() => ({ text: 'Імпорт історії не вдалося запустити.' }))
+
+  // the session's own transcript tells where the logs are, whatever the OS and the config folder
+  on('classic.SessionStart', async ($, e, next) => { transcriptPath = e.transcript_path ?? ''; return next(e) })
+  on('classic.UserPromptSubmit', async ($, e, next) => { transcriptPath ||= e.transcript_path ?? ''; return next(e) })
 
   on('session.start', async ($, e, next) => {
     const r = await next(e)
