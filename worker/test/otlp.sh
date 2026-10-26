@@ -159,6 +159,11 @@ DIMP='{"turns":[{"id":"msg_mod1","session":"s-mod","ts":"2025-02-01T00:00:00.000
 check "device import: a device token is needed" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/import -H 'x-device-token: wrong' --data-binary "$DIMP")" 401
 check "device import: turns from before OTLP are added, later ones skipped" "$(curl -s -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$DIMP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["added"], d["skipped_live"], d["invalid"])')" "1 0 1"
 check "device import: the same turns again add nothing" "$(curl -s -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$DIMP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["added"])')" 0
+# an imported turn: its first answer counts as the turn and carries its length; the other answers are steps, not turns
+TB=$(curl -s "$B/api/admin/buckets?from=2025-01-01&to=2025-12-31" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["duration_ms"] for r in d))')
+STEPS='{"turns":[{"id":"msg_t1","session":"s-steps","ts":"2025-03-01T00:00:05.000Z","model":"claude-sonnet-x","input":1,"output":10,"cache_read":0,"cache_creation":0,"sub":false,"first":true,"duration_ms":42000},{"id":"msg_t2","session":"s-steps","ts":"2025-03-01T00:00:40.000Z","model":"claude-sonnet-x","input":1,"output":20,"cache_read":0,"cache_creation":0,"sub":false,"first":false,"duration_ms":0}]}'
+curl -s -o /dev/null -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$STEPS"
+check "import: a prompt with two answers is one turn with its length" "$(curl -s "$B/api/admin/buckets?from=2025-01-01&to=2025-12-31" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["duration_ms"] for r in d))')" "$(echo $TB | awk '{print $1+1, $2+42000}')"
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

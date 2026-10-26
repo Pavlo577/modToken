@@ -1,5 +1,5 @@
 // The "Import history" card of the Devices tab: reads Claude Code's local logs in the browser and sends only the numbers (see src/history.ts).
-import { addLogLine, MAX_HISTORY_TURNS } from '../../src/history.ts'
+import { addLogLine, MAX_HISTORY_TURNS, newLogState } from '../../src/history.ts'
 import type { HistoryTurn } from '../../src/history.ts'
 import { api } from '../lib/api.ts'
 import { $ } from '../lib/dom.ts'
@@ -40,7 +40,8 @@ export function initHistory(): void {
       const turns = new Map<string, HistoryTurn>()
       for (let i = 0; i < files.length; i++) {
         status.textContent = `Читаю файли: ${i + 1} з ${files.length}…`
-        await eachLine(files[i]!, l => addLogLine(turns, l))
+        const state = newLogState() // one per file: a turn is a prompt and the answers after it in the same log
+        await eachLine(files[i]!, l => addLogLine(turns, l, state))
       }
       const all = [...turns.values()]
       const total: ImportResult = { added: 0, received: 0, skipped_live: 0, invalid: 0 }

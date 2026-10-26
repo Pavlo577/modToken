@@ -28,7 +28,8 @@ export async function importTurns(env: Env, email: string, dev: { id: string; ot
     const iso = new Date(ts).toISOString()
     if (iso > latest) { invalid++; continue }
     if (iso >= limit) { skippedLive++; continue }
-    rows.push({ id: x.id as string, session: x.session as string, ts: iso, model: x.model as string, input: int(x.input), output: int(x.output), cache_read: int(x.cache_read), cache_creation: int(x.cache_creation), sub: x.sub === true })
+    // first and duration_ms came later: a client that sends neither counts every message as a turn, as before
+    rows.push({ id: x.id as string, session: x.session as string, ts: iso, model: x.model as string, input: int(x.input), output: int(x.output), cache_read: int(x.cache_read), cache_creation: int(x.cache_creation), sub: x.sub === true, first: x.first !== false, duration_ms: Math.min(7 * 86_400_000, int(x.duration_ms)) })
   }
 
   const count = () => env.DB.prepare(`SELECT COUNT(*) AS n FROM token_events WHERE device_id = ? AND turn_id LIKE 'log:%'`).bind(dev.id).first<{ n: number }>().then(r => r?.n ?? 0)
@@ -36,14 +37,14 @@ export async function importTurns(env: Env, email: string, dev: { id: string; ot
   const sql = env.DB.prepare(
     `INSERT INTO token_events
        (user_email, device_id, session_id, turn_id, ts, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, duration_ms, is_subagent, provider, cost_micros, kind)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'claude', 0, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'claude', 0, ?)
      ON CONFLICT (device_id, turn_id) DO UPDATE SET
        input_tokens = MAX(input_tokens, excluded.input_tokens), output_tokens = MAX(output_tokens, excluded.output_tokens),
        cache_read_tokens = MAX(cache_read_tokens, excluded.cache_read_tokens), cache_creation_tokens = MAX(cache_creation_tokens, excluded.cache_creation_tokens),
-       is_subagent = MAX(is_subagent, excluded.is_subagent)`,
+       is_subagent = MAX(is_subagent, excluded.is_subagent), duration_ms = MAX(duration_ms, excluded.duration_ms), kind = excluded.kind`,
   )
   for (let i = 0; i < rows.length; i += CHUNK) {
-    await env.DB.batch(rows.slice(i, i + CHUNK).map(r => sql.bind(email, dev.id, r.session, 'log:' + r.id, r.ts, r.model, r.input, r.output, r.cache_read, r.cache_creation, r.sub ? 1 : 0, r.sub ? 'sub' : 'main')))
+    await env.DB.batch(rows.slice(i, i + CHUNK).map(r => sql.bind(email, dev.id, r.session, 'log:' + r.id, r.ts, r.model, r.input, r.output, r.cache_read, r.cache_creation, r.duration_ms, r.sub ? 1 : 0, r.sub ? 'sub' : r.first ? 'main' : 'step')))
   }
   return { added: (await count()) - before, received: rows.length, skipped_live: skippedLive, invalid }
 }

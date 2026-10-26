@@ -1,5 +1,5 @@
 import type { EngineInterface, Register } from 'claude-code'
-import { addLogLine, MAX_HISTORY_TURNS } from './history.ts'
+import { addLogLine, MAX_HISTORY_TURNS, newLogState } from './history.ts'
 import type { HistoryTurn } from './history.ts'
 
 // Token Tracker's mod: what OTLP does not carry. Numbers only, never text:
@@ -120,12 +120,43 @@ async function logFiles($: EngineInterface): Promise<{ base: string; files: { pa
   return { base, files }
 }
 
-// $.fs.read takes at most 4 MiB. A bigger log is shrunk on the device first: a small program keeps, of every assistant line with usage, only what
-// the parser reads (type, timestamp, sessionId, isSidechain, message id, model, the four counts), one line per message, and ./history.ts parses that.
+// $.fs.read takes at most 4 MiB. A bigger log is shrunk on the device first: a small program keeps, in order, a bare mark for every prompt of
+// yours (its time only) and, of every assistant line with usage, only what the parser reads (type, timestamp, sessionId, isSidechain, message
+// id, model, the four counts), a message's consecutive copies kept as its first and its last (their times matter for a turn's length);
+// ./history.ts then parses that as it would the log.
 const FS_LIMIT = 4 * 1024 * 1024 - 64 * 1024
-export const SHRINK_JS = `const fs=require("fs"),rl=require("readline").createInterface({input:fs.createReadStream(process.argv[1])}),m=new Map();rl.on("line",l=>{if(!l.includes('"usage"'))return;let o;try{o=JSON.parse(l)}catch{return}const g=o&&o.message,u=g&&g.usage;if(o.type!=="assistant"||!u||typeof g.id!=="string")return;const k=["input_tokens","output_tokens","cache_read_input_tokens","cache_creation_input_tokens"],x=m.get(g.id),n={type:"assistant",timestamp:o.timestamp,sessionId:o.sessionId,isSidechain:o.isSidechain===true,message:{id:g.id,model:g.model,usage:{}}};for(const q of k)n.message.usage[q]=Math.max(Number(u[q])||0,x?x.message.usage[q]:0);if(x&&x.timestamp>n.timestamp)n.timestamp=x.timestamp;if(x&&x.isSidechain)n.isSidechain=true;m.set(g.id,n)});rl.on("close",()=>{for(const n of m.values())process.stdout.write(JSON.stringify(n)+"\\n")})`
-export const SHRINK_PY = `import json,sys\nm={}\nk=["input_tokens","output_tokens","cache_read_input_tokens","cache_creation_input_tokens"]\nfor l in open(sys.argv[1],encoding="utf-8",errors="replace"):\n if '"usage"' not in l: continue\n try: o=json.loads(l)\n except Exception: continue\n g=o.get("message") if isinstance(o,dict) else None\n u=g.get("usage") if isinstance(g,dict) else None\n if o.get("type")!="assistant" or not isinstance(u,dict) or not isinstance(g.get("id"),str): continue\n x=m.get(g["id"])\n n={"type":"assistant","timestamp":o.get("timestamp"),"sessionId":o.get("sessionId"),"isSidechain":o.get("isSidechain") is True,"message":{"id":g["id"],"model":g.get("model"),"usage":{}}}\n for q in k:\n  v=u.get(q); v=v if isinstance(v,(int,float)) else 0\n  n["message"]["usage"][q]=max(v,x["message"]["usage"][q] if x else 0)\n if x and str(x["timestamp"])>str(n["timestamp"]): n["timestamp"]=x["timestamp"]\n if x and x["isSidechain"]: n["isSidechain"]=True\n m[g["id"]]=n\nfor n in m.values(): sys.stdout.write(json.dumps(n)+"\\n")\n`
-export const SHRINK_PS = `$m=[ordered]@{};$k='input_tokens','output_tokens','cache_read_input_tokens','cache_creation_input_tokens';foreach($l in [IO.File]::ReadLines($args[0])){if(-not $l.Contains('"usage"')){continue};try{$o=$l|ConvertFrom-Json}catch{continue};if($o.type -ne 'assistant' -or -not $o.message.usage -or -not $o.message.id){continue};$x=$m[$o.message.id];$u=[ordered]@{};foreach($q in $k){$v=[double]($o.message.usage.$q);if($x -and $x.message.usage[$q] -gt $v){$v=$x.message.usage[$q]};$u[$q]=$v};$t=$o.timestamp;if($x -and "$($x.timestamp)" -gt "$t"){$t=$x.timestamp};$m[$o.message.id]=[ordered]@{type='assistant';timestamp=$t;sessionId=$o.sessionId;isSidechain=($o.isSidechain -eq $true -or ($x -and $x.isSidechain));message=[ordered]@{id=$o.message.id;model=$o.message.model;usage=$u}}};foreach($n in $m.Values){$n|ConvertTo-Json -Compress -Depth 5}`
+export const SHRINK_JS = `const fs=require("fs"),rl=require("readline").createInterface({input:fs.createReadStream(process.argv[1])}),out=[],K=["input_tokens","output_tokens","cache_read_input_tokens","cache_creation_input_tokens"];let last=null,tail=null,lastHas=false;rl.on("line",l=>{if(!l.includes('"usage"')&&!l.includes('"type":"user"'))return;let o;try{o=JSON.parse(l)}catch{return}if(o&&o.type==="user"){const c=o.message&&o.message.content;if(o.isMeta===true||o.isCompactSummary===true)return;if(typeof c==="string"||(Array.isArray(c)&&!c.some(x=>x&&x.type==="tool_result"))){out.push({type:"user",timestamp:o.timestamp,message:{content:""}});last=null}return}const g=o&&o.message,u=g&&g.usage;if(!o||o.type!=="assistant"||!u||typeof g.id!=="string")return;const v=q=>typeof u[q]==="number"?u[q]:0,has=K.some(q=>v(q)>0),mk=()=>{const n={type:"assistant",timestamp:o.timestamp,sessionId:o.sessionId,isSidechain:o.isSidechain===true,message:{id:g.id,model:g.model,usage:{}}};for(const q of K)n.message.usage[q]=v(q);return n};if(last&&last.message.id===g.id){if(!has)return;if(!lastHas){const n=mk();Object.assign(last,n);lastHas=true;return}if(!tail){tail=mk();out.push(tail);return}for(const q of K)tail.message.usage[q]=Math.max(tail.message.usage[q],v(q));if(String(o.timestamp)>String(tail.timestamp))tail.timestamp=o.timestamp;if(o.isSidechain===true)tail.isSidechain=true;return}last=mk();tail=null;lastHas=has;out.push(last)});rl.on("close",()=>{for(const n of out)process.stdout.write(JSON.stringify(n)+"\\n")})`
+export const SHRINK_PY = `import json,sys
+K=["input_tokens","output_tokens","cache_read_input_tokens","cache_creation_input_tokens"]
+out=[];last=None;tail=None;last_has=False
+for l in open(sys.argv[1],encoding="utf-8",errors="replace"):
+ if '"usage"' not in l and '"type":"user"' not in l: continue
+ try: o=json.loads(l)
+ except Exception: continue
+ if not isinstance(o,dict): continue
+ if o.get("type")=="user":
+  g=o.get("message"); c=g.get("content") if isinstance(g,dict) else None
+  if o.get("isMeta") is True or o.get("isCompactSummary") is True: continue
+  if isinstance(c,str) or (isinstance(c,list) and not any(isinstance(x,dict) and x.get("type")=="tool_result" for x in c)):
+   out.append({"type":"user","timestamp":o.get("timestamp"),"message":{"content":""}}); last=None
+  continue
+ g=o.get("message"); u=g.get("usage") if isinstance(g,dict) else None
+ if o.get("type")!="assistant" or not isinstance(u,dict) or not isinstance(g.get("id"),str): continue
+ v=lambda q: u[q] if isinstance(u.get(q),(int,float)) and not isinstance(u.get(q),bool) else 0
+ has=any(v(q)>0 for q in K)
+ mk=lambda: {"type":"assistant","timestamp":o.get("timestamp"),"sessionId":o.get("sessionId"),"isSidechain":o.get("isSidechain") is True,"message":{"id":g["id"],"model":g.get("model"),"usage":{q:v(q) for q in K}}}
+ if last is not None and last["message"]["id"]==g["id"]:
+  if not has: continue
+  if not last_has: last.update(mk()); last_has=True; continue
+  if tail is None: tail=mk(); out.append(tail); continue
+  for q in K: tail["message"]["usage"][q]=max(tail["message"]["usage"][q],v(q))
+  if str(o.get("timestamp"))>str(tail["timestamp"]): tail["timestamp"]=o.get("timestamp")
+  if o.get("isSidechain") is True: tail["isSidechain"]=True
+  continue
+ last=mk(); tail=None; last_has=has; out.append(last)
+for n in out: sys.stdout.write(json.dumps(n,separators=(",",":"))+"\\n")
+`
+export const SHRINK_PS = `$out=[Collections.Generic.List[object]]::new();$k='input_tokens','output_tokens','cache_read_input_tokens','cache_creation_input_tokens';$last=$null;$tail=$null;$lastHas=$false;foreach($l in [IO.File]::ReadLines($args[0])){if(-not $l.Contains('"usage"') -and -not $l.Contains('"type":"user"')){continue};try{$o=$l|ConvertFrom-Json}catch{continue};if($o.type -eq 'user'){if($o.isMeta -eq $true -or $o.isCompactSummary -eq $true){continue};$c=$o.message.content;if($c -is [string] -or ($c -is [array] -and -not ($c|Where-Object{$_.type -eq 'tool_result'}))){$out.Add([ordered]@{type='user';timestamp=$o.timestamp;message=[ordered]@{content=''}});$last=$null};continue};if($o.type -ne 'assistant' -or -not $o.message.usage -or -not ($o.message.id -is [string])){continue};$u=[ordered]@{};foreach($q in $k){$x=$o.message.usage.$q;$u[$q]=if($x -is [ValueType] -and $x -isnot [bool]){$x}else{0}};$has=($k|Where-Object{$u[$_] -gt 0}).Count -gt 0;$n=[ordered]@{type='assistant';timestamp=$o.timestamp;sessionId=$o.sessionId;isSidechain=($o.isSidechain -eq $true);message=[ordered]@{id=$o.message.id;model=$o.message.model;usage=$u}};if($last -and $last.message.id -eq $o.message.id){if(-not $has){continue};if(-not $lastHas){$i=$out.IndexOf($last);$out[$i]=$n;$last=$n;$lastHas=$true;continue};if(-not $tail){$tail=$n;$out.Add($tail);continue};foreach($q in $k){if($u[$q] -gt $tail.message.usage[$q]){$tail.message.usage[$q]=$u[$q]}};if("$($o.timestamp)" -gt "$($tail.timestamp)"){$tail.timestamp=$o.timestamp};if($o.isSidechain -eq $true){$tail.isSidechain=$true};continue};$last=$n;$tail=$null;$lastHas=$has;$out.Add($n)};foreach($n in $out){$n|ConvertTo-Json -Compress -Depth 5}`
 
 /** A log's text, shrunk on the device when it is over $.fs.read's limit; null when it cannot be read. */
 async function readLog($: EngineInterface, f: { path: string; size: number }): Promise<string | null> {
@@ -175,7 +206,8 @@ function startImport($: EngineInterface, t: Target, files: { path: string; size:
         const text = await readLog($, file)
         if (text === null) total.unread++
         const before = acc.size
-        for (const line of (text ?? '').split('\n')) addLogLine(acc, line)
+        const state = newLogState() // one per file: a turn is a prompt and the answers after it in the same log
+        for (const line of (text ?? '').split('\n')) addLogLine(acc, line, state)
         total.files++
         total.found += acc.size - before
         $.ui.status(`імпорт: файл ${total.files}, повідомлень ${total.found}`)
