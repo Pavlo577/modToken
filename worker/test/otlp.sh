@@ -141,14 +141,6 @@ check "activity: with names allowed, tokens are grouped by project" "$(MS | pyth
 curl -s -o /dev/null -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"off"}'
 check "project mode off forgets the stored project" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "[None]"
 check "activity: no text of the body is kept" "$(MS | grep -c SECRET)" 0
-# diagnostics: the otlp-check mod's token counts are compared with OTLP's per session and never counted
-BEFORE=$(sums)
-CHK='{"turns":[{"id":"ct1","session":"sess-otlp","ts":"'$NOW'","model":"claude-sonnet-x","input":20,"output":100,"cache_read":3000,"cache_creation":0,"duration_ms":1000,"answer":"SECRET"},{"id":"ct1","session":"sess-otlp","ts":"'$NOW'","model":"m","input":1,"output":1,"cache_read":0,"cache_creation":0,"duration_ms":1}]}'
-check "check: a device token is needed" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/check -H 'x-device-token: wrong' --data-binary "$CHK")" 401
-check "check: turns are accepted" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/check -H "x-device-token: $TOKEN" -H 'content-type: application/json' --data-binary "$CHK")" 200
-check "check: the dashboard totals do not change" "$(sums)" "$BEFORE"
-check "check: compared with OTLP for the same session" "$(curl -s "$B/api/admin/check?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | python3 -c 'import sys,json; s=[x for x in json.load(sys.stdin)["sessions"] if x["session_id"]=="sess-otlp"][0]; print(s["mod"]["output"], s["mod"]["turns"], s["otlp"] is not None)')" "100 1 True"
-check "check: no text of the body is kept" "$(curl -s "$B/api/admin/check?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | grep -c SECRET)" 0
 # a background request (prompt_suggestion) of a prompt gets a row of its own and is not counted as a turn
 TURNS_BEFORE=$(curl -s "$B/api/admin/buckets?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["bg_output"] for r in d))')
 BG=$(python3 - <<'PY'

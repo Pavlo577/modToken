@@ -6,7 +6,7 @@ import { PALETTE } from '../core/palette.ts'
 import { currentRange } from '../core/range.ts'
 import { get, q } from '../core/store.ts'
 import { $, el } from '../lib/dom.ts'
-import { renderCheck, renderModStats } from './modstats.ts'
+import { renderModStats } from './modstats.ts'
 import { dayLabel, dayLong, fmt, fmtPct, fmtUsd } from '../lib/format.ts'
 
 type N = number | null
@@ -80,7 +80,6 @@ const table = (box: HTMLElement, head: string[], rows: (string | number)[][], em
 export async function renderInsights(): Promise<void> {
   const r = currentRange()
   void renderModStats(r)
-  void renderCheck(r)
   let d: Insights
   try { d = await get<Insights>('/insights?' + q(r.from, r.to)) } catch (e) {
     $('ins-kpis').replaceChildren(el('div', { class: 'empty', style: 'grid-column:1/-1' }, 'Не вдалося завантажити: ' + (e as Error).message)); return

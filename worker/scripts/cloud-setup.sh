@@ -9,8 +9,7 @@ LOG="$HOME/.claude/token-tracker-setup.log"
 say() { echo "Token Tracker: $*"; echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
 say "start: user=$(id -un) home=$HOME"
 RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker}"
-# token-tracker is the mod; otlp-check is diagnostics (compares its token counts with OTLP's), loaded only when its folder is in CLAUDE_CODE_PLUGIN_DIRS too
-for name in token-tracker otlp-check; do
+for name in token-tracker; do
   MOD="$HOME/.claude/mods/$name"
   mkdir -p "$MOD/.claude-plugin" "$MOD/hooks"
   ok=1
@@ -19,5 +18,5 @@ for name in token-tracker otlp-check; do
   done
   if [ $ok = 1 ]; then say "mod $name installed in $MOD"; else rm -rf "$MOD"; say "mod $name not downloaded"; fi
 done
-say "loaded when CLAUDE_CODE_PLUGIN_DIRS names the folders, separated by ':' ($HOME/.claude/mods/token-tracker:$HOME/.claude/mods/otlp-check)"
+say "loaded when CLAUDE_CODE_PLUGIN_DIRS=$HOME/.claude/mods/token-tracker"
 exit 0
