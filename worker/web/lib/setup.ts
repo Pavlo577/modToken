@@ -27,3 +27,8 @@ export function cloudEnv(origin: string, token: string): string {
   return Object.entries({ CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_LOGS_EXPORTER, OTEL_EXPORTER_OTLP_LOGS_PROTOCOL, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, OTEL_EXPORTER_OTLP_LOGS_HEADERS, CLAUDE_CODE_PLUGIN_DIRS: CLOUD_MOD_DIR })
     .map(([k, v]) => `${k}=${v}`).join('\n')
 }
+
+// A computer: one command does all of it (scripts/install.sh, scripts/install.ps1): the OTLP settings with the token, and the mod as a plugin.
+const RAW_SCRIPTS = 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts'
+export const pcInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
+export const pcInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install.ps1))) ${origin.replace(/\/$/, '')} ${token}`

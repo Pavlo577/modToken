@@ -231,6 +231,11 @@
         </select><button class="primary" type="submit">Створити токен</button></form>
       <p class="note">Проєкт потрібен для зрізу «куди йдуть токени» на вкладці «Інсайти». Назва це <code>власник/репозиторій</code> з git remote; хеш дає ті самі групи без назви. Змінити можна будь-коли в списку пристроїв.</p>
       <div id="setup-box" class="hide">
+        <p class="sub" style="margin:16px 0 6px"><b>Комп'ютер, найпростіше:</b> одна команда налаштує OpenTelemetry і поставить мод (ліміти, сесії, <code>/tracker-import</code>). macOS / Linux, у терміналі:</p>
+        <pre class="snip" id="setup-pc-sh"></pre><button type="button" id="copy-pc-sh">Копіювати</button>
+        <p class="sub" style="margin:16px 0 6px">Windows, у PowerShell:</p>
+        <pre class="snip" id="setup-pc-ps"></pre><button type="button" id="copy-pc-ps">Копіювати</button>
+        <p class="sub" style="margin:16px 0 6px">Потім перезапусти Claude Code. Або вручну, кроки нижче.</p>
         <p class="sub" style="margin:16px 0 6px"><b>1.</b> Додай це в <code>~/.claude/settings.json</code> (на Windows <code>%USERPROFILE%\.claude\settings.json</code>); якщо там уже є блок <code>env</code>, додай у нього ці ключі:</p>
         <pre class="snip" id="setup-json"></pre><button type="button" id="copy-json">Копіювати</button>
         <p class="sub" style="margin:16px 0 6px"><b>2.</b> Або як змінні середовища (shell, хмарне середовище claude.ai/code):</p>

@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
-import { cloudEnv, cloudScript, settingsJson, shellEnv } from '../lib/setup.ts'
+import { cloudEnv, cloudScript, pcInstallPs, pcInstallSh, settingsJson, shellEnv } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
@@ -55,6 +55,8 @@ export function initDevices(): void {
   }
   $('copy-json').onclick = copy('setup-json', $('copy-json'))
   $('copy-env').onclick = copy('setup-env', $('copy-env'))
+  $('copy-pc-sh').onclick = copy('setup-pc-sh', $('copy-pc-sh'))
+  $('copy-pc-ps').onclick = copy('setup-pc-ps', $('copy-pc-ps'))
   $('copy-cloud').onclick = copy('setup-cloud', $('copy-cloud'))
   $('copy-cloud-env').onclick = copy('setup-cloud-env', $('copy-cloud-env'))
 
@@ -65,6 +67,8 @@ export function initDevices(): void {
       const { token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) })
       $('setup-json').textContent = settingsJson(location.origin, token)
       $('setup-env').textContent = shellEnv(location.origin, token)
+      $('setup-pc-sh').textContent = pcInstallSh(location.origin, token)
+      $('setup-pc-ps').textContent = pcInstallPs(location.origin, token)
       $('setup-cloud').textContent = cloudScript()
       $('setup-cloud-env').textContent = cloudEnv(location.origin, token)
       $('setup-host').textContent = location.hostname

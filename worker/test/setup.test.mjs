@@ -1,7 +1,7 @@
 // The settings a device pastes: they point Claude Code's logs at /v1/logs as JSON, keep metrics and traces off and never ask for prompt text.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cloudEnv, cloudScript, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { cloudEnv, cloudScript, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -34,4 +34,9 @@ test('setup: the cloud variant is the minimum OTLP set plus the mod folder; the 
   ])
   assert.equal(cloudScript().includes('tok'), false)
   assert.ok(cloudScript().endsWith('| bash'))
+})
+
+test('setup: the computer one-liners pass the site and the token to the install scripts', () => {
+  assert.ok(pcInstallSh('https://x.test/', 'tok').endsWith('/install.sh | bash -s -- https://x.test tok'))
+  assert.ok(pcInstallPs('https://x.test/', 'tok').endsWith('/install.ps1))) https://x.test tok'))
 })
