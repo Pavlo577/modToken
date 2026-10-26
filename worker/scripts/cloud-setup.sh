@@ -13,7 +13,7 @@ for name in token-tracker; do
   MOD="$HOME/.claude/mods/$name"
   mkdir -p "$MOD/.claude-plugin" "$MOD/hooks"
   ok=1
-  for f in .claude-plugin/plugin.json hooks/hooks.json hooks/register.ts; do
+  for f in .claude-plugin/plugin.json hooks/hooks.json hooks/register.ts hooks/history.ts; do
     curl -fsSL --max-time 20 "$RAW/mods/$name/$f" -o "$MOD/$f" || { ok=0; break; }
   done
   if [ $ok = 1 ]; then say "mod $name installed in $MOD"; else rm -rf "$MOD"; say "mod $name not downloaded"; fi

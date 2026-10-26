@@ -154,6 +154,11 @@ PY
 post "$BG" >/dev/null
 check "a background request adds tokens, not a turn" "$(curl -s "$B/api/admin/buckets?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["bg_output"] for r in d))')" "$(echo $TURNS_BEFORE | awk '{print $1, $2+9}')"
 check "activity: why a session has no project is kept as a word" "$(act "{\"session\":{\"id\":\"sess-note\",\"started_at\":\"$NOW\",\"project_note\":\"no_repo\"}}" >/dev/null; MS | python3 -c 'import sys,json; print([x for x in json.load(sys.stdin)["projectNotes"] if x["note"]=="no_repo"][0]["n"])')" 1
+# the mod's /tracker-import: the same import with the device token (POST /v1/import)
+DIMP='{"turns":[{"id":"msg_mod1","session":"s-mod","ts":"2025-02-01T00:00:00.000Z","model":"claude-sonnet-x","input":3,"output":30,"cache_read":300,"cache_creation":0,"sub":false,"text":"SECRET"},{"id":"msg_mod2","session":"s-mod","ts":"2999-01-01T00:00:00.000Z","model":"m","input":1,"output":1,"cache_read":0,"cache_creation":0,"sub":false}]}'
+check "device import: a device token is needed" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/import -H 'x-device-token: wrong' --data-binary "$DIMP")" 401
+check "device import: turns from before OTLP are added, later ones skipped" "$(curl -s -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$DIMP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["added"], d["skipped_live"], d["invalid"])')" "1 0 1"
+check "device import: the same turns again add nothing" "$(curl -s -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$DIMP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["added"])')" 0
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

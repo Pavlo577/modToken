@@ -31,3 +31,10 @@ test('history: synthetic, empty, malformed and foreign lines are skipped; sidech
   assert.deepEqual([...acc.keys()], ['msg_4'])
   assert.equal(acc.get('msg_4').sub, true)
 })
+
+test('history: the mod parses the logs with the same code as the dashboard (a copy of src/history.ts)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const a = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8')
+  const b = readFileSync(new URL('../mods/token-tracker/hooks/history.ts', import.meta.url), 'utf8')
+  assert.equal(b, a, 'copy src/history.ts to mods/token-tracker/hooks/history.ts')
+})

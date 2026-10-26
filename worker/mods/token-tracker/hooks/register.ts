@@ -1,4 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
+import { addLogLine, MAX_HISTORY_TURNS } from './history.ts'
+import type { HistoryTurn } from './history.ts'
 
 // Token Tracker's mod: what OTLP does not carry. Numbers only, never text:
 // - the subscription's rate-limit windows -> POST /v1/limits when they change;
@@ -6,6 +8,8 @@ import type { EngineInterface, Register } from 'claude-code'
 //   permission prompts put to a person: how many, how many refused, how long until the tool finished) -> POST /v1/activity;
 // - the session's repository only when the device allows it (GET /v1/config: off | name | hash): owner/name, or a hash of the remote;
 //   when there is none, a word saying why (project_note: off, no_target, config_failed, no_repo).
+// - /tracker-import: the token history from the local logs (~/.claude/projects/**/*.jsonl), parsed here by ./history.ts (a copy of the
+//   Worker's src/history.ts) into numbers, a model name and ids, and POSTed to /v1/import; prompts and answers never leave the device.
 // The site and the device token are the device's own OTLP settings (the logs endpoint's origin, the x-device-token header);
 // TRACKER_ORIGIN / TRACKER_TOKEN override them. Tokens are never sent: OTLP counts them.
 type Limit = { kind: string; percentUsed: number; resetsAt?: string }
@@ -86,9 +90,83 @@ async function sendActivity($: EngineInterface, end?: { at: string; reason: stri
   if (await post($, target_, '/v1/activity', { session, turns })) queue = queue.filter(t => !turns.includes(t))
 }
 
+// /tracker-import, one file per step on a timer, so a big history never holds one hook past its budget
+let importing = false
+
+/** The .jsonl logs under ~/.claude/projects (sessions, and sub-agents' logs in their folders), up to three levels down. */
+async function logFiles($: EngineInterface): Promise<string[]> {
+  const base = `${(await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${await $.env.get('HOME')}/.claude`}/projects`
+  const out: string[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    for (const e of await $.fs.list(dir).catch(() => [])) {
+      if (e.kind === 'dir' && depth < 3) await walk(`${dir}/${e.name}`, depth + 1)
+      else if (e.kind === 'file' && e.name.endsWith('.jsonl')) out.push(`${dir}/${e.name}`)
+    }
+  }
+  await walk(base, 0)
+  return out
+}
+
+function startImport($: EngineInterface, t: Target, files: string[]): void {
+  importing = true
+  const acc = new Map<string, HistoryTurn>()
+  const total = { files: 0, found: 0, added: 0, received: 0, skipped_live: 0, invalid: 0, failed: 0 }
+  const send = async (): Promise<void> => {
+    const turns = [...acc.values()]
+    acc.clear()
+    for (let i = 0; i < turns.length; i += MAX_HISTORY_TURNS) {
+      const r = await $.http.fetch(`${t.origin}/v1/import`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-device-token': t.token }, body: JSON.stringify({ turns: turns.slice(i, i + MAX_HISTORY_TURNS) }),
+      }).catch(() => undefined)
+      if (!r?.ok) { total.failed += Math.min(MAX_HISTORY_TURNS, turns.length - i); continue }
+      try {
+        const x = JSON.parse(r.text) as { added?: number; received?: number; skipped_live?: number; invalid?: number }
+        total.added += x.added ?? 0; total.received += x.received ?? 0; total.skipped_live += x.skipped_live ?? 0; total.invalid += x.invalid ?? 0
+      } catch { /* counted as sent */ }
+    }
+  }
+  const finish = (): void => {
+    importing = false
+    const msg = `Імпорт історії: файлів ${total.files}, повідомлень ${total.found}; додано ${total.added}, уже були ${total.received - total.added}, ` +
+      `пропущено як уже пораховані OTLP ${total.skipped_live}` + (total.invalid ? `, некоректних ${total.invalid}` : '') + (total.failed ? `, НЕ надіслано ${total.failed}` : '')
+    $.ui.toast(msg, { timeoutMs: 15_000 })
+    $.ui.status(total.failed ? 'імпорт: не все надіслано' : `імпорт: +${total.added}`)
+  }
+  const step = async (): Promise<void> => {
+    try {
+      const file = files.shift()
+      if (file) {
+        const text = await $.fs.read(file).catch(() => '')
+        const before = acc.size
+        for (const line of text.split('\n')) addLogLine(acc, line)
+        total.files++
+        total.found += acc.size - before
+        $.ui.status(`імпорт: файл ${total.files}, повідомлень ${total.found}`)
+        if (acc.size >= MAX_HISTORY_TURNS) await send()
+        $.clock.after(0, () => void step())
+        return
+      }
+      await send()
+      finish()
+    } catch { importing = false; $.ui.toast('Імпорт історії перервано через помилку') }
+  }
+  $.clock.after(0, () => void step())
+}
+
 export const register: Register = on => {
+  on('command.run', { command: 'tracker-import' }, async ($) => {
+    if (importing) return { text: 'Імпорт уже триває.' }
+    const t = await target($)
+    if (!t) return { text: 'Немає адреси сайту чи токена: налаштуй OTLP-змінні пристрою (Пристрої → Додати пристрій).' }
+    const files = await logFiles($)
+    if (!files.length) return { text: 'Локальних логів не знайдено (~/.claude/projects).' }
+    startImport($, t, files)
+    return { text: `Імпорт історії почався: ${files.length} файлів. Надсилаються лише числа, модель і id; підсумок з'явиться в сповіщенні.` }
+  }).catch(() => ({ text: 'Імпорт історії не вдалося запустити.' }))
+
   on('session.start', async ($, e, next) => {
     const r = await next(e)
+    await $.command.register({ name: 'tracker-import', description: 'Імпорт історії токенів із локальних логів (лише числа)' }).catch(() => {})
     try {
       sessionId = await $.session.id()
       startedAt = await iso($)
