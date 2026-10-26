@@ -138,8 +138,11 @@ async function readLog($: EngineInterface, f: { path: string; size: number }): P
   return null
 }
 
-function startImport($: EngineInterface, t: Target, files: { path: string; size: number }[]): void {
+/** Imports the logs one file per timer step; resolves to the summary (also shown as a notification). */
+function startImport($: EngineInterface, t: Target, files: { path: string; size: number }[]): Promise<string> {
   importing = true
+  let done: (summary: string) => void = () => {}
+  const finished = new Promise<string>(resolve => { done = resolve })
   const acc = new Map<string, HistoryTurn>()
   const total = { files: 0, found: 0, added: 0, received: 0, skipped_live: 0, invalid: 0, failed: 0, unread: 0 }
   const send = async (): Promise<void> => {
@@ -163,6 +166,7 @@ function startImport($: EngineInterface, t: Target, files: { path: string; size:
       (total.unread ? `; не вдалося прочитати файлів: ${total.unread} (великі логи потребують node, python або PowerShell)` : '')
     $.ui.toast(msg, { timeoutMs: 15_000 })
     $.ui.status(total.failed ? 'імпорт: не все надіслано' : `імпорт: +${total.added}`)
+    done(msg)
   }
   const step = async (): Promise<void> => {
     try {
@@ -181,9 +185,10 @@ function startImport($: EngineInterface, t: Target, files: { path: string; size:
       }
       await send()
       finish()
-    } catch { importing = false; $.ui.toast('Імпорт історії перервано через помилку') }
+    } catch { importing = false; $.ui.toast('Імпорт історії перервано через помилку'); done('Імпорт історії перервано через помилку.') }
   }
   $.clock.after(0, () => void step())
+  return finished
 }
 
 export const register: Register = on => {
@@ -193,8 +198,13 @@ export const register: Register = on => {
     if (!t) return { text: 'Немає адреси сайту чи токена: налаштуй OTLP-змінні пристрою (Пристрої → Додати пристрій).' }
     const { base, files } = await logFiles($)
     if (!files.length) return { text: `Локальних логів не знайдено (${base}).` }
-    startImport($, t, files)
-    return { text: `Імпорт історії почався: ${files.length} файлів. Надсилаються лише числа, модель і id; підсумок з'явиться в сповіщенні.` }
+    const run = startImport($, t, files)
+    // the summary is waited for, so it is the command's own output (a notification is not shown everywhere); a big history goes on
+    // in the background and ends with the notification and the status line
+    // (at most 8 s: the hook's own budget is 10 s, and the waiting counts)
+    const summary = await Promise.race([run, $.clock.sleep(8_000).then(() => null, () => null)])
+    if (summary) return { text: summary }
+    return { text: `Імпорт історії триває у фоні: ${files.length} файлів. Надсилаються лише числа, модель і id; підсумок з'явиться в сповіщенні й у рядку статусу.` }
   }).catch(() => ({ text: 'Імпорт історії не вдалося запустити.' }))
 
   // the session's own transcript tells where the logs are, whatever the OS and the config folder

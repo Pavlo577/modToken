@@ -1,1 +1,1 @@
-{ "name": "token-tracker", "version": "1.3.1", "description": "Sends what OpenTelemetry does not carry to your Token Tracker site: subscription limits, session and turn timing, context fill, permission prompts (numbers only)" }
+{ "name": "token-tracker", "version": "1.3.2", "description": "Sends what OpenTelemetry does not carry to your Token Tracker site: subscription limits, session and turn timing, context fill, permission prompts (numbers only)" }
