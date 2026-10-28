@@ -24,9 +24,8 @@ let activitySeq = 0
 
 /** Jumps the whole page to one day (today has its own button), or to a month. */
 function goDay(day: string): void {
-  state.range = day === tz.today() ? 'today' : 'custom'
-  state.from = state.to = day
-  state.anchor = ''
+  state.range = 'day'
+  state.anchor = day >= tz.today() ? '' : day
   persist(); actions.syncControls(); void load()
 }
 

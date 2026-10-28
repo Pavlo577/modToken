@@ -25,6 +25,10 @@ export function currentRange(): Period {
     fromDay = state.from || S.addDays(today, -29); toDay = state.to || today
     if (fromDay > toDay) [fromDay, toDay] = [toDay, fromDay]
     if (S.daysBetween(fromDay, toDay) > 399) fromDay = S.addDays(toDay, -399)
+  } else if (state.range === 'day') {
+    fromDay = toDay = at > today ? today : at
+    prevDay = S.addDays(fromDay, -1)
+    label = fromDay === today ? `${dayLong(fromDay)} (сьогодні)` : dayLong(fromDay)
   } else if (state.range === 'week') {
     fromDay = S.addDays(at, -tz.parts(tz.startOfDay(at) + 12 * 3_600_000).dow); toDay = S.addDays(fromDay, 6)
     prevDay = S.addDays(fromDay, -7)

@@ -21,6 +21,10 @@ export interface LineOptions {
   logScale?: boolean
   /** A vertical line: data before it may be incomplete. */
   marker?: Marker
+  /** Smallest distance between two printed axis labels in pixels (wider labels need more). */
+  labelGap?: number
+  /** More tooltip rows after the series. */
+  extraTip?: (i: number) => TipRow[]
 }
 
 /** Lines over evenly spaced categories (days or hours), with a crosshair and a tooltip. */
@@ -54,7 +58,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
-    for (const i of evenLabels(labels.length, iw)) root.append(svg('text', { x: x(i), y: height - 6, class: 'ax', 'text-anchor': i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle' }, labels[i]))
+    for (const i of evenLabels(labels.length, iw, opts.labelGap)) root.append(svg('text', { x: x(i), y: height - 6, class: 'ax', 'text-anchor': i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle' }, labels[i]))
     plot.forEach(({ s, y: yf }, k) => {
       const pts = s.values.map((v, i): [number, number] => [x(i), yf(v)])
       if (area && !lg && k < 2 && pts.length > 1) root.append(svg('path', { d: `${smooth(pts)}L${pts[pts.length - 1][0]},${m.t + ih}L${pts[0][0]},${m.t + ih}Z`, fill: `url(#${uid}${k})`, class: 'fade' }))
@@ -77,7 +81,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
       const i = Math.max(0, Math.min(labels.length - 1, Math.round(((pe.clientX - r.left) / r.width) * (labels.length - 1))))
       cross.setAttribute('x1', String(x(i))); cross.setAttribute('x2', String(x(i))); cross.style.display = ''
       dots.forEach((d, k) => { d.setAttribute('cx', String(x(i))); d.setAttribute('cy', String(plot[k].y(plot[k].s.values[i]))); d.style.display = '' })
-      tip.show(x(i), Math.min(...plot.map(p => p.y(p.s.values[i]))), opts.tipTitle(i), plot.map(({ s }): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]))
+      tip.show(x(i), Math.min(...plot.map(p => p.y(p.s.values[i]))), opts.tipTitle(i), [...plot.map(({ s }): TipRow => [s.label, (s.fmt ?? yFmt)(s.values[i]), s.color]), ...(opts.extraTip?.(i) ?? [])])
     }
     const leave = (): void => { cross.style.display = 'none'; dots.forEach(d => (d.style.display = 'none')); tip.hide() }
     hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move); hit.addEventListener('pointerleave', leave)

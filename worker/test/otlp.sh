@@ -167,6 +167,13 @@ check "import: a prompt with two answers is one turn with its length" "$(curl -s
 # the mod's endpoints drop what they do not read, and remember only the NAME of a dropped field
 check "the mod's limits endpoint accepts an extra field" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/limits -H "x-device-token: $TOKEN" -d '{"limits":[{"kind":"five_hour","percentUsed":12,"resetsAt":"2030-01-01T00:00:00Z","new_mod_field":"SECRET MOD VALUE me@example.com"}]}')" 200
 check "the name of the dropped mod field is reported as new, its value is stored nowhere" "$(curl -s "$B/api/admin/insights?fresh=1" | python3 -c 'import sys,json; r=sys.stdin.read(); d=json.loads(r); print("limits.new_mod_field" in [x["key"] for x in d["unknownFields"]], "SECRET MOD" in r)')" "True False"
+# finer steps of the main chart: /series buckets add up to the same totals as /buckets, only the width of a column differs
+RNG="from=$(date -u -d '2 days ago' +%FT%TZ)&to=$(date -u -d '1 day' +%FT%TZ)"
+total() { python3 -c 'import sys,json; d=json.load(sys.stdin); print(sum(r["output"] for r in d), sum(r["input"] for r in d), sum(r["turns"] for r in d))'; }
+BK=$(curl -s "$B/api/admin/buckets?$RNG" | total)
+for st in 5 15 30; do check "series of $st minutes adds up to the hourly buckets" "$(curl -s "$B/api/admin/series?$RNG&step=$st&off=120&fresh=1" | total)" "$BK"; done
+check "a step that is not 5, 15 or 30 is refused" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/admin/series?$RNG&step=7")" 400
+check "the latest turns of a period come back oldest first (?last=1)" "$(curl -s "$B/api/admin/turns?$RNG&last=1" | python3 -c 'import sys,json; t=[x["ts"] for x in json.load(sys.stdin)]; print(len(t) > 0, t == sorted(t))')" "True True"
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

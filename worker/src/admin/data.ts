@@ -28,9 +28,10 @@ export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
     if (path === '/turns') {
       return json(await all(
         `SELECT e.ts, d.name AS device, e.model, e.session_id, e.input_tokens AS input, e.output_tokens AS output,
-                e.cache_read_tokens AS cache_read, e.cache_creation_tokens AS cache_creation, e.duration_ms, e.is_subagent AS sub, e.provider AS provider
+                e.cache_read_tokens AS cache_read, e.cache_creation_tokens AS cache_creation, e.duration_ms, e.is_subagent AS sub, e.provider AS provider, e.kind AS kind
          FROM token_events e JOIN devices d ON d.id = e.device_id
-         WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? ORDER BY e.ts LIMIT 5000`, email, a, b))
+         WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? ORDER BY e.ts ${url.searchParams.has('last') ? 'DESC' : ''} LIMIT 5000`, email, a, b)
+        .then(rows => (url.searchParams.has('last') ? rows.reverse() : rows))) // ?last=1: the latest 5000 of a long period, oldest first
     }
     if (path === '/sessions') {
       const sessions = await all<{ session_id: string; device: string; device_id: string; provider: string; model: string | null; output: number }>(

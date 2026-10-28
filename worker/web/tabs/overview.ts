@@ -8,11 +8,15 @@ import { calendarHeatmap } from '../charts/calendar.ts'
 import { lineChart } from '../charts/line.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { otlpMarker } from '../core/bounds.ts'
+import { currentStep, isRemote, localGrid, remoteGrid } from '../core/series.ts'
+import type { Grid } from '../lib/grid.ts'
+import { stepLabel } from '../lib/steps.ts'
 import { rangeTitle } from '../core/range.ts'
+import type { Period } from '../core/range.ts'
 import { state } from '../core/state.ts'
 import { ZERO, aggregate, compareAvailable, fixedScaleAvailable, get, need, q, store } from '../core/store.ts'
 import { pad, timeOf, tz, weekday } from '../core/time.ts'
-import { $, el } from '../lib/dom.ts'
+import { $, el, skeleton } from '../lib/dom.ts'
 import { dayLabel, dayLong, dur, durSec, fmt, fmtAxis, fmtPct, fmtUsd } from '../lib/format.ts'
 import type { Bucket, Totals, TurnRow } from '../lib/types.ts'
 import { mainHeight } from '../ui/layout.ts'
@@ -47,19 +51,20 @@ const ioDefs = (): Def[] => (state.ioHidden ? [] : state.io === 'in' ? [IN] : st
 const CACHE: Def = ['З кешу', COLORS.cache, t => t.cache_read]
 
 /** One series per agent on the same scale: what the input / output buttons select, added up (input + output when both are on). */
-function compareSeries(keys: string[], hourly: boolean): Series[] {
+function compareSeries(grid: Grid): Series[] {
   const picks = ioDefs().map(d => d[2])
   return store.providers.map(p => {
-    const a = aggregate({ provider: p }), src = hourly ? a.hours : a.days
-    return { label: providerLabel(p), color: providerColor(p), values: keys.map(k => picks.reduce((sum, pick) => sum + pick(src.get(k) ?? ZERO), 0)), fmt }
+    const rows = grid.rowsOf({ device: state.device || null, provider: p })
+    return { label: providerLabel(p), color: providerColor(p), values: rows.map(t => picks.reduce((sum, pick) => sum + pick(t), 0)), fmt }
   }).filter(s => s.values.some(v => v > 0))
 }
 
-/** The top of a fixed axis: the biggest input + output of one hour / day in the shown period, over every agent and device. */
-function fixedTop(keys: string[], hourly: boolean): number {
-  const a = aggregate({ device: null, provider: null }), src = hourly ? a.hours : a.days
-  return niceMax(Math.max(0, ...keys.map(k => { const t = src.get(k) ?? ZERO; return t.output + S.freshInput(t) })))
+/** The top of a fixed axis: the biggest input + output of one column in the shown period, over every agent and device. */
+function fixedTop(grid: Grid): number {
+  return niceMax(Math.max(0, ...grid.rowsOf({ device: null, provider: null }).map(t => t.output + S.freshInput(t))))
 }
+
+let mainSeq = 0 // a slower request for a step the viewer has already left must not draw over the newer chart
 
 export function renderMain(agg: S.Aggregate): void {
   const r = need().r
@@ -92,13 +97,25 @@ export function renderMain(agg: S.Aggregate): void {
     return
   }
 
-  const hourly = r.len === 1
-  const keys = hourly ? Array.from({ length: 24 }, (_, h) => `${r.fromDay}T${pad(h)}`) : S.dayList(r.fromDay, r.toDay)
-  const src = hourly ? agg.hours : agg.days
-  const rows = keys.map(k => src.get(k) ?? ZERO)
-  const labels = keys.map(k => (hourly ? `${+k.slice(11)}:00` : dayLabel(k)))
+  const seq = ++mainSeq
+  const step = currentStep(r)
+  if (!isRemote(step)) return drawMain(localGrid(r, step), r, step)
+  skeleton($('main-chart'), mainHeight())
+  remoteGrid(r, step).then(grid => { if (seq === mainSeq) drawMain(grid, r, step) }, (e: Error) => { if (seq === mainSeq) empty($('main-chart'), 'Не вдалося завантажити: ' + e.message, mainHeight()) })
+}
+
+const stepText = (step: number): string => (step === 1440 ? 'по днях' : step === 60 ? 'по годинах' : step === 0 ? 'кожен запис' : `крок ${stepLabel(step)}`)
+
+function drawMain(grid: Grid, r: Period, step: number): void {
+  const { view } = state
+  const yFmt = fmtAxis
+  const valFmt = fmt
+  $('main-legend').replaceChildren()
+  const keys = grid.keys
+  const rows = grid.rowsOf({ device: state.device || null, provider: state.provider || null })
+  const labels = grid.labels
   const compare = state.compare && compareAvailable()
-  let series: Series[] = compare ? compareSeries(keys, hourly) : ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
+  let series: Series[] = compare ? compareSeries(grid) : ioDefs().map(([label, color, pick]) => ({ label, color, values: rows.map(pick), fmt: valFmt }))
   // the cache is far larger than the rest: logarithmic axis, or one linear scale fitted to input/output with the cache clipped at the top
   let secondary: Series | undefined = state.metric === 'all' && !compare ? { label: CACHE[0], color: CACHE[1], values: rows.map(CACHE[2]), fmt: valFmt } : undefined
   if (!series.length && secondary) { series = [secondary]; secondary = undefined } // the cache alone: an ordinary chart
@@ -108,22 +125,27 @@ export function renderMain(agg: S.Aggregate): void {
     return
   }
   $('main-title').textContent = 'Токени'
-  $('main-sub').textContent = `${rangeTitle(r)} · ${hourly ? 'по годинах' : 'по днях'}${compare ? ' · за агентами: ' + (state.io === 'in' ? 'нові вхідні' : state.io === 'out' ? 'вихідні' : 'вхідні + вихідні') : ''}`
+  $('main-sub').textContent = `${rangeTitle(r)} · ${stepText(step)}${grid.note ? ' · ' + grid.note : ''}${compare ? ' · за агентами: ' + (state.io === 'in' ? 'нові вхідні' : state.io === 'out' ? 'вихідні' : 'вхідні + вихідні') : ''}`
   $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
   const logScale = !!secondary && state.scale === 'log'
   const cacheAlone = !compare && state.metric === 'all' && !secondary && series.length === 1 && series[0].label === CACHE[0] // its own size, not the reference's
-  const yMax = state.fixedScale && fixedScaleAvailable() && !logScale && !cacheAlone ? fixedTop(keys, hourly) : undefined
+  const yMax = state.fixedScale && fixedScaleAvailable() && !logScale && !cacheAlone ? fixedTop(grid) : undefined
   const opts = {
-    labels, series, secondary, yFmt, yMax, height: mainHeight(), logScale, marker: otlpMarker(keys, hourly),
-    tipTitle: (i: number): string => (hourly ? `${dayLong(r.fromDay)}, ${keys[i].slice(11)}:00` : dayLong(keys[i])),
-    extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)]],
+    labels, series, secondary, yFmt, yMax, height: mainHeight(), logScale, marker: otlpMarker(keys, grid.unit), labelGap: grid.labelGap,
+    tipTitle: (i: number): string => grid.tip(i),
+    extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)], ...(grid.extraTip?.(i) ?? [])],
   }
   if (view === 'bars') barChart($('main-chart'), opts)
   else lineChart($('main-chart'), opts)
 }
 
+/** The day the card shows: in the "День" period the pager's, otherwise the card's own choice. */
+const cardDay = (): string => (state.range === 'day' ? need().r.fromDay : state.day || need().r.today)
+
 export async function renderDay(): Promise<void> {
-  const day = state.day || need().r.today
+  const day = cardDay()
+  const own = state.range !== 'day' // the card's own picker is for the other periods; in "День" the pager above drives the day
+  for (const id of ['day-prev', 'day-next', 'day', 'day-today']) $(id).classList.toggle('hide', !own)
   $<HTMLInputElement>('day').value = day
   $('day-sub').textContent = `${weekday(day)}, ${dayLong(day)}`
   const from = tz.startOfDay(day), to = tz.startOfDay(S.addDays(day, 1))
@@ -132,7 +154,7 @@ export async function renderDay(): Promise<void> {
     empty($('day-chart'), 'Не вдалося завантажити: ' + (e as Error).message, 200)
     return
   }
-  if ((state.day || need().r.today) !== day) return
+  if (cardDay() !== day) return
   if (state.device) turns = turns.filter(t => t.device === state.device)
   if (state.provider) turns = turns.filter(t => t.provider === state.provider)
   const hrs = Array.from({ length: 24 }, () => ({ output: 0, input: 0, turns: 0 }))

@@ -9,6 +9,7 @@ import { IO_NEXT, asTab, persist, state } from '../core/state.ts'
 import type { IoMode, Tab, View } from '../core/state.ts'
 import { aggregate, compareAvailable, fixedScaleAvailable, store } from '../core/store.ts'
 import { lastOfMonth, tz } from '../core/time.ts'
+import { STEP_CHOICES, stepLabel, stepRange } from '../lib/steps.ts'
 import { $, el } from '../lib/dom.ts'
 import { renderActivity } from '../tabs/activity.ts'
 import { loadDevices } from '../tabs/devices.ts'
@@ -67,14 +68,21 @@ export function syncControls(): void {
   fix.setAttribute('aria-pressed', String(state.fixedScale && !fixOff))
   fix.setAttribute('aria-disabled', String(fixOff))
   fix.dataset.tip = state.view === 'cal' ? 'У режимі «Календар» шкали немає' : fixOff ? 'Для логарифмічної шкали (кеш) стала шкала не діє' : state.fixedScale ? 'Стала шкала: верх осі = найбільше значення за весь період (усі агенти й пристрої). Натисни, щоб вимкнути' : 'Стала шкала: верх осі = найбільше значення за весь період, не змінюється при зміні вибору'
+  // the main chart's time step: only for a day, a week and a month, and not in the calendar view
+  const sr = stepRange(state.range), stepBox = $('step')
+  stepBox.classList.toggle('hide', !sr || state.view === 'cal')
+  if (sr) {
+    stepBox.replaceChildren(...STEP_CHOICES[sr].map(m => el('button', { 'data-m': String(m), 'aria-pressed': String(state.steps[sr] === m) }, stepLabel(m))))
+  }
   $('custom').classList.toggle('hide', state.range !== 'custom')
-  const paged = state.range === 'week' || state.range === 'month' || state.range === 'year'
+  const paged = state.range === 'day' || state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
   if (paged) {
     const r = currentRange()
     $('pg-label').textContent = r.label
     $<HTMLButtonElement>('pg-next').disabled = r.toDay >= r.today
     $<HTMLButtonElement>('pg-prev').disabled = r.fromDay <= firstDay() // nothing older than the first turn
+    $('pg-reset').classList.toggle('hide', !(state.range === 'day' && state.anchor && state.anchor < r.today)) // only while another day than today is shown
   }
   const today = tz.today()
   for (const id of ['from', 'to']) { const i = $<HTMLInputElement>(id); i.min = firstDay(); i.max = today }
@@ -86,7 +94,8 @@ export function syncControls(): void {
 const step = (dir: -1 | 1): void => {
   if (dir < 0 && currentRange().fromDay <= firstDay()) return
   const at = state.anchor || tz.today()
-  if (state.range === 'week') state.anchor = S.addDays(at, 7 * dir)
+  if (state.range === 'day') state.anchor = S.addDays(at, dir)
+  else if (state.range === 'week') state.anchor = S.addDays(at, 7 * dir)
   else if (state.range === 'month') state.anchor = dir < 0 ? S.addDays(at.slice(0, 7) + '-01', -1) : S.addDays(lastOfMonth(at.slice(0, 7)), 1)
   else state.anchor = `${+at.slice(0, 4) + dir}-${at.slice(5)}`
   if (state.anchor >= tz.today()) state.anchor = ''
@@ -101,6 +110,12 @@ export function initControls(): void {
     const b = clicked(e); if (!b) return
     state.range = b.dataset.r ?? 'month'; state.anchor = ''; persist(); syncControls(); void load()
   })
+  $('step').addEventListener('click', e => {
+    const b = clicked(e), sr = stepRange(state.range)
+    if (!b || !sr) return
+    state.steps[sr] = Number(b.dataset.m); persist(); syncControls(); render()
+  })
+  $('pg-reset').onclick = () => { state.anchor = ''; syncControls(); void load() }
   $('pg-prev').onclick = () => step(-1)
   $('pg-next').onclick = () => step(1)
   $('dev-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.topDevice = b.dataset.t === 'top'; persist(); press($('dev-mode'), 't', b.dataset.t ?? ''); renderActivity(aggregate()) })

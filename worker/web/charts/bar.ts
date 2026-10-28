@@ -20,6 +20,8 @@ export interface BarOptions {
   yMax?: number
   /** A vertical line: data before it may be incomplete. */
   marker?: Marker
+  /** Smallest distance between two printed axis labels in pixels (wider labels need more). */
+  labelGap?: number
 }
 
 /** Stacked bars over categories, rounded on top, with a tooltip. */
@@ -47,7 +49,7 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
       root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
-    for (const i of evenLabels(labels.length, iw, 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
+    for (const i of evenLabels(labels.length, iw, opts.labelGap ?? 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
     const groups = labels.map((_, i): [SVGElement, number, number] => {
       const cx = m.l + slotW * (i + 0.5)
       const g = svg('g', { class: 'bar grow', style: `--d:${Math.min(600, i * 14)}ms;--base:${m.t + ih}px` })

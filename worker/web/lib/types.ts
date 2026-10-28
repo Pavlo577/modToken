@@ -37,6 +37,8 @@ export interface TurnRow {
   duration_ms: number
   sub: number
   provider: string
+  /** main (a turn the person asked for), sub (a sub-agent) or bg (background work) */
+  kind?: string
 }
 
 /** One session: GET /api/admin/sessions */

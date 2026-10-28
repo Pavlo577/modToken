@@ -1,5 +1,8 @@
 // The dashboard state (what the viewer chose), kept in localStorage; the open tab also lives in the address.
 
+import { cleanSteps } from '../lib/steps.ts'
+import type { StepRange } from '../lib/steps.ts'
+
 export type Tab = 'overview' | 'analytics' | 'insights' | 'money' | 'sessions' | 'devices'
 
 export type View = 'line' | 'bars' | 'cal'
@@ -13,7 +16,7 @@ export const IO_NEXT: Record<IoMode, IoMode> = { both: 'in', in: 'out', out: 'bo
 
 interface State {
   tab: Tab
-  range: string // 'today' | 'week' | 'month' | 'year' | 'custom'
+  range: string // 'day' | 'week' | 'month' | 'year' | 'custom'
   /** A day inside the shown week / month / year; '' means today. Not saved. */
   anchor: string
   /** Year view of the activity card: month tiles or month calendars; '' = by length of the period. */
@@ -37,12 +40,14 @@ interface State {
   /** Main chart with the cache on: 'log' = logarithmic, 'linear' = one linear scale, cache clipped at the top. */
   scale: 'log' | 'linear'
   day: string
+  /** The main chart's time step in minutes per period (0 = every record). */
+  steps: Record<StepRange, number>
 }
 
 let saved: Partial<State> = {}
 try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<State> } catch { /* private mode: start with defaults */ }
 
-const OLD_RANGES: Record<string, string> = { '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
+const OLD_RANGES: Record<string, string> = { today: 'day', '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
 
 const TABS: Tab[] = ['overview', 'analytics', 'insights', 'money', 'sessions', 'devices']
 
@@ -51,9 +56,10 @@ export const asTab = (v: unknown): Tab | null => (TABS as unknown[]).includes(v)
 // the tab survives a reload: the address (#analytics) wins, then the last one used
 const startTab: Tab = asTab(location.hash.slice(1)) ?? asTab((saved as { tab?: unknown }).tab) ?? 'overview'
 
-export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, fixedScale: false, scale: 'log', day: '', actMode: '', topDevice: false, ...saved, anchor: '', tab: startTab }
+export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, fixedScale: false, scale: 'log', day: '', actMode: '', topDevice: false, steps: cleanSteps(null), ...saved, anchor: '', tab: startTab }
 
 state.range = OLD_RANGES[state.range] ?? state.range
+state.steps = cleanSteps(state.steps)
 
 if ((state.io as string) === 'off') { state.io = 'both'; state.ioHidden = true } // the old fourth mode
 
@@ -62,5 +68,5 @@ if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 
 export const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, fixedScale: state.fixedScale, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, tab: state.tab })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, fixedScale: state.fixedScale, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, steps: state.steps, tab: state.tab })) } catch { /* ignore */ }
 }

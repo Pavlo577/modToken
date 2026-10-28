@@ -18,7 +18,7 @@ export function renderAnalytics(agg: S.Aggregate): void {
   lineChart($('cache-chart'), {
     labels: active.map(([d]) => dayLabel(d)), height: 200, yMax: 100, yMin: hits.length ? Math.max(0, Math.floor((Math.min(...hits) - 2) / 5) * 5) : 0,
     series: [{ label: 'З кешу', color: COLORS.cache, values: hits, fmt: v => v.toFixed(1) + '%' }],
-    yFmt: v => +v.toFixed(1) + '%', tipTitle: i => dayLong(active[i][0]), marker: otlpMarker(active.map(([d]) => d), false),
+    yFmt: v => +v.toFixed(1) + '%', tipTitle: i => dayLong(active[i][0]), marker: otlpMarker(active.map(([d]) => d), { unit: 'day' }),
   })
 
   const models = [...agg.models].sort((a, b) => b[1].output - a[1].output)
