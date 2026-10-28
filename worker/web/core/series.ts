@@ -1,7 +1,7 @@
 // The columns of the main chart for the chosen time step: the hourly buckets already loaded (60 min, 12 h, 24 h) or a request of their own (5, 15, 30 min, every record).
 import { bucketGrid, seriesGrid, turnGrid } from '../lib/grid.ts'
 import type { Filter, Grid, SeriesRow } from '../lib/grid.ts'
-import { SERIES_STEPS, stepRange } from '../lib/steps.ts'
+import { SERIES_STEPS, effectiveStep, stepRange } from '../lib/steps.ts'
 import type { TurnRow } from '../lib/types.ts'
 import type { Period } from './range.ts'
 import { state } from './state.ts'
@@ -10,11 +10,10 @@ import { tz } from './time.ts'
 
 export const TURN_LIMIT = 5000
 
-/** The shown period's step in minutes (0 = every record): the choice for a day, a week or a month; a single custom day is hourly, anything else daily. */
+/** The shown period's step in minutes (0 = every record): the viewer's choice when the period offers it, else the period's default. A year is daily. */
 export function currentStep(r: Period): number {
   const sr = stepRange(state.range)
-  if (sr) return state.steps[sr]
-  return r.len === 1 ? 60 : 1440
+  return sr ? effectiveStep(sr, state.steps[sr], r.len) : 1440
 }
 
 /** Needs a request of its own (the hourly buckets are too coarse). */

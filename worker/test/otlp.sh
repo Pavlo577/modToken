@@ -174,6 +174,9 @@ BK=$(curl -s "$B/api/admin/buckets?$RNG" | total)
 for st in 5 15 30; do check "series of $st minutes adds up to the hourly buckets" "$(curl -s "$B/api/admin/series?$RNG&step=$st&off=120&fresh=1" | total)" "$BK"; done
 check "a step that is not 5, 15 or 30 is refused" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/admin/series?$RNG&step=7")" 400
 check "the latest turns of a period come back oldest first (?last=1)" "$(curl -s "$B/api/admin/turns?$RNG&last=1" | python3 -c 'import sys,json; t=[x["ts"] for x in json.load(sys.stdin)]; print(len(t) > 0, t == sorted(t))')" "True True"
+# an interval of your own: a long one still answers in fine steps (15 minutes over 60 days adds up to the hourly buckets)
+RNG2="from=$(date -u -d '60 days ago' +%FT%TZ)&to=$(date -u -d '1 day' +%FT%TZ)"
+check "15 minute series over 60 days add up to the hourly buckets" "$(curl -s "$B/api/admin/series?$RNG2&step=15&off=120&fresh=1" | total)" "$(curl -s "$B/api/admin/buckets?$RNG2" | total)"
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

@@ -9,7 +9,7 @@ import { IO_NEXT, asTab, persist, state } from '../core/state.ts'
 import type { IoMode, Tab, View } from '../core/state.ts'
 import { aggregate, compareAvailable, fixedScaleAvailable, store } from '../core/store.ts'
 import { lastOfMonth, tz } from '../core/time.ts'
-import { STEP_CHOICES, stepLabel, stepRange } from '../lib/steps.ts'
+import { effectiveStep, stepChoices, stepLabel, stepRange } from '../lib/steps.ts'
 import { $, el } from '../lib/dom.ts'
 import { renderActivity } from '../tabs/activity.ts'
 import { loadDevices } from '../tabs/devices.ts'
@@ -68,11 +68,12 @@ export function syncControls(): void {
   fix.setAttribute('aria-pressed', String(state.fixedScale && !fixOff))
   fix.setAttribute('aria-disabled', String(fixOff))
   fix.dataset.tip = state.view === 'cal' ? 'У режимі «Календар» шкали немає' : fixOff ? 'Для логарифмічної шкали (кеш) стала шкала не діє' : state.fixedScale ? 'Стала шкала: верх осі = найбільше значення за весь період (усі агенти й пристрої). Натисни, щоб вимкнути' : 'Стала шкала: верх осі = найбільше значення за весь період, не змінюється при зміні вибору'
-  // the main chart's time step: only for a day, a week and a month, and not in the calendar view
+  // the main chart's time step: for a day, a week, a month and an interval of your own (not a year), and not in the calendar view
   const sr = stepRange(state.range), stepBox = $('step')
   stepBox.classList.toggle('hide', !sr || state.view === 'cal')
   if (sr) {
-    stepBox.replaceChildren(...STEP_CHOICES[sr].map(m => el('button', { 'data-m': String(m), 'aria-pressed': String(state.steps[sr] === m) }, stepLabel(m))))
+    const len = currentRange().len, now = effectiveStep(sr, state.steps[sr], len)
+    stepBox.replaceChildren(...stepChoices(sr, len).map(m => el('button', { 'data-m': String(m), 'aria-pressed': String(now === m) }, stepLabel(m))))
   }
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'day' || state.range === 'week' || state.range === 'month' || state.range === 'year'

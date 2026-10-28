@@ -5,7 +5,7 @@ import { json, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
 export const SERIES_STEPS = [5, 15, 30]
-const MAX_DAYS = 40
+const MAX_POINTS = 10_000 // a column per step: the interval is cut so the chart has about this many (web/lib/steps.ts says the same)
 
 export const seriesRoutes: Routes = async ({ req, env, url, email, path }) => {
   if (path !== '/series' || req.method !== 'GET') return null
@@ -13,7 +13,7 @@ export const seriesRoutes: Routes = async ({ req, env, url, email, path }) => {
   if (!SERIES_STEPS.includes(step)) return text('step must be 5, 15 or 30', 400)
   const off = Math.max(-720, Math.min(840, Math.trunc(Number(url.searchParams.get('off'))) || 0))
   const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000
-  const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 86_400_000, to - MAX_DAYS * 86_400_000)
+  const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 86_400_000, to - Math.floor((MAX_POINTS * step) / 1440) * 86_400_000)
   const a = new Date(from).toISOString(), b = new Date(to).toISOString()
 
   const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default
