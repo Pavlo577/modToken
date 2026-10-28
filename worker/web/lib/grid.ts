@@ -8,7 +8,7 @@ import type { Totals, TurnRow } from './types.ts'
 export interface Filter { device: string | null; provider: string | null }
 
 /** How the keys of a grid are written, so a vertical marker can find its place (core/bounds.ts). */
-export type KeyUnit = { unit: 'day' } | { unit: 'hour' } | { unit: 'half' } | { unit: 'minute'; step: number } | { unit: 'ts' }
+export type KeyUnit = { unit: 'day' } | { unit: 'hour' } | { unit: 'half' } | { unit: 'ts' }
 
 export interface Grid {
   keys: string[]
@@ -22,8 +22,6 @@ export interface Grid {
   /** Shown after the period's title (e.g. that only the latest turns are drawn). */
   note?: string
 }
-
-export interface SeriesRow { t: number; device: string; provider: string; input: number; output: number; cache_read: number; cache_creation: number; turns: number; duration_ms: number }
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 const zero = (): Totals => ({ input: 0, output: 0, cache_read: 0, cache_creation: 0, duration_ms: 0, turns: 0, cost: 0 })
@@ -57,29 +55,6 @@ export function bucketGrid(fromDay: string, toDay: string, step: 60 | 720 | 1440
     labels: keys.map(k => (one ? `${+k.slice(11)}:00` : `${dayLabel(k.slice(0, 10))} ${k.slice(11)}:00`)),
     tip: i => `${dayLong(keys[i].slice(0, 10))}, ${+keys[i].slice(11)}:00`,
     rowsOf: f => { const h = aggOf(f).hours; return keys.map(k => h.get(k) ?? zero()) },
-  }
-}
-
-/** 5, 15 or 30 minute columns from the Worker's /series rows. `fromMs`..`toMs` is the shown period; every column in it exists (empty ones are zero). */
-export function seriesGrid(tz: Tz, fromMs: number, toMs: number, step: number, rows: SeriesRow[]): Grid {
-  const keys: string[] = [], labels: string[] = [], index = new Map<string, number>(), starts: number[] = []
-  const first = tz.parts(fromMs).day, last = tz.parts(toMs - 1).day, one = first === last
-  const keyOf = (ms: number): string => { const p = tz.parts(ms); return `${p.day}T${clock(p.h, p.min - (p.min % step))}` }
-  for (let ms = fromMs; ms < toMs; ms += step * 60_000) {
-    const k = keyOf(ms)
-    if (index.has(k)) continue // the clock went back (daylight saving): the repeated columns share one
-    index.set(k, keys.length); keys.push(k); starts.push(ms)
-    labels.push(one ? k.slice(11) : `${dayLabel(k.slice(0, 10))} ${k.slice(11)}`)
-  }
-  const at = rows.map(r => index.get(keyOf(r.t)))
-  return {
-    keys, labels, labelGap: one ? 64 : 96, unit: { unit: 'minute', step },
-    tip: i => { const k = keys[i], endMin = Number(k.slice(14)) + step; return `${dayLong(k.slice(0, 10))}, ${k.slice(11)}–${clock(Number(k.slice(11, 13)) + Math.floor(endMin / 60), endMin % 60).replace(/^24:/, '00:')}` },
-    rowsOf: f => {
-      const out = keys.map(zero)
-      rows.forEach((r, n) => { const i = at[n]; if (i !== undefined && (!f.device || r.device === f.device) && (!f.provider || r.provider === f.provider)) addTo(out[i], r) })
-      return out
-    },
   }
 }
 

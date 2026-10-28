@@ -2,7 +2,6 @@
 import * as S from '../lib/stats.ts'
 import { barChart } from '../charts/bar.ts'
 import { COLORS, HEAT, empty } from '../charts/base.ts'
-import { niceMax } from '../charts/scale.ts'
 import type { Series } from '../charts/base.ts'
 import { calendarHeatmap } from '../charts/calendar.ts'
 import { lineChart } from '../charts/line.ts'
@@ -14,7 +13,7 @@ import { stepLabel } from '../lib/steps.ts'
 import { rangeTitle } from '../core/range.ts'
 import type { Period } from '../core/range.ts'
 import { state } from '../core/state.ts'
-import { ZERO, aggregate, compareAvailable, fixedScaleAvailable, get, need, q, store } from '../core/store.ts'
+import { ZERO, aggregate, compareAvailable, get, need, q, store } from '../core/store.ts'
 import { pad, timeOf, tz, weekday } from '../core/time.ts'
 import { $, el, skeleton } from '../lib/dom.ts'
 import { dayLabel, dayLong, dur, durSec, fmt, fmtAxis, fmtPct, fmtUsd } from '../lib/format.ts'
@@ -59,11 +58,6 @@ function compareSeries(grid: Grid): Series[] {
   }).filter(s => s.values.some(v => v > 0))
 }
 
-/** The top of a fixed axis: the biggest input + output of one column in the shown period, over every agent and device. */
-function fixedTop(grid: Grid): number {
-  return niceMax(Math.max(0, ...grid.rowsOf({ device: null, provider: null }).map(t => t.output + S.freshInput(t))))
-}
-
 let mainSeq = 0 // a slower request for a step the viewer has already left must not draw over the newer chart
 
 export function renderMain(agg: S.Aggregate): void {
@@ -101,7 +95,7 @@ export function renderMain(agg: S.Aggregate): void {
   const step = currentStep(r)
   if (!isRemote(step)) return drawMain(localGrid(r, step), r, step)
   skeleton($('main-chart'), mainHeight())
-  remoteGrid(r, step).then(grid => { if (seq === mainSeq) drawMain(grid, r, step) }, (e: Error) => { if (seq === mainSeq) empty($('main-chart'), 'Не вдалося завантажити: ' + e.message, mainHeight()) })
+  remoteGrid(r).then(grid => { if (seq === mainSeq) drawMain(grid, r, step) }, (e: Error) => { if (seq === mainSeq) empty($('main-chart'), 'Не вдалося завантажити: ' + e.message, mainHeight()) })
 }
 
 const stepText = (step: number): string => (step === 1440 ? 'по днях' : step === 60 ? 'по годинах' : step === 0 ? 'кожен запис' : `крок ${stepLabel(step)}`)
@@ -128,10 +122,8 @@ function drawMain(grid: Grid, r: Period, step: number): void {
   $('main-sub').textContent = `${rangeTitle(r)} · ${stepText(step)}${grid.note ? ' · ' + grid.note : ''}${compare ? ' · за агентами: ' + (state.io === 'in' ? 'нові вхідні' : state.io === 'out' ? 'вихідні' : 'вхідні + вихідні') : ''}`
   $('main-legend').replaceChildren(...[...series, ...(secondary ? [{ ...secondary, label: secondary.label }] : [])].map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
   const logScale = !!secondary && state.scale === 'log'
-  const cacheAlone = !compare && state.metric === 'all' && !secondary && series.length === 1 && series[0].label === CACHE[0] // its own size, not the reference's
-  const yMax = state.fixedScale && fixedScaleAvailable() && !logScale && !cacheAlone ? fixedTop(grid) : undefined
   const opts = {
-    labels, series, secondary, yFmt, yMax, height: mainHeight(), logScale, marker: otlpMarker(keys, grid.unit), labelGap: grid.labelGap,
+    labels, series, secondary, yFmt, height: mainHeight(), logScale, marker: otlpMarker(keys, grid.unit), labelGap: grid.labelGap,
     tipTitle: (i: number): string => grid.tip(i),
     extraTip: (i: number): [string, string][] => [['Ходів', String(rows[i].turns)], ...(grid.extraTip?.(i) ?? [])],
   }

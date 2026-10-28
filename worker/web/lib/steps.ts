@@ -1,16 +1,16 @@
-// The time step of the main chart: how wide one point is. 0 = every record (one turn per point). Pure.
+// The time step of the main chart: how wide one point is, in minutes: 60, 720 (12 h) or 1440 (24 h), or 0 = every record (one turn per point). Pure.
 export type StepRange = 'day' | 'week' | 'month' | 'custom'
 
 export const STEP_CHOICES: Record<StepRange, number[]> = {
-  day: [0, 5, 15, 30, 60],
-  week: [0, 5, 15, 30, 60, 720, 1440],
-  month: [0, 5, 15, 30, 60, 720, 1440],
-  custom: [0, 60, 720, 1440], // an interval of your own: no minute steps below an hour
+  day: [0, 60],
+  week: [0, 60, 720, 1440],
+  month: [0, 60, 720, 1440],
+  custom: [0, 60, 720, 1440],
 }
 
 export const DEFAULT_STEPS: Record<StepRange, number> = { day: 60, week: 1440, month: 1440, custom: 1440 }
 
-/** The steps offered for a period; for an interval of your own a single day has no 12 and 24 hour steps (the others do not depend on the length). */
+/** The steps offered for a period; a single custom day has no 12 and 24 hour steps (the others do not depend on the length). */
 export function stepChoices(range: StepRange, spanDays = 31): number[] {
   if (range === 'custom' && spanDays <= 1) return [0, 60]
   return STEP_CHOICES[range]
@@ -22,9 +22,6 @@ export function effectiveStep(range: StepRange, saved: unknown, spanDays = 31): 
   if (typeof saved === 'number' && ok.includes(saved)) return saved
   return range === 'custom' && spanDays <= 1 ? 60 : DEFAULT_STEPS[range]
 }
-
-/** The steps the Worker answers by itself (/series); longer ones come from the hourly buckets, 0 from the turns. */
-export const SERIES_STEPS = [5, 15, 30]
 
 export const stepRange = (range: string): StepRange | null => (range === 'day' || range === 'week' || range === 'month' || range === 'custom' ? range : null)
 

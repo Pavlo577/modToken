@@ -29,7 +29,6 @@ export function otlpMarker(keys: string[], unit: KeyUnit): Marker | undefined {
     case 'day': stamp = p.day; frac = (p.h * 60 + p.min) / 1440; break
     case 'hour': stamp = `${p.day}T${pad(p.h)}`; frac = p.min / 60; break
     case 'half': stamp = halfKey(p.day, p.h); frac = ((p.h % 12) * 60 + p.min) / 720; break
-    case 'minute': { const m = p.min - (p.min % unit.step); stamp = `${p.day}T${pad(p.h)}:${pad(m)}`; frac = (p.min - m) / unit.step; break }
     case 'ts': stamp = new Date(ms).toISOString(); break
   }
   if (stamp < keys[0]) return undefined

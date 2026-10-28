@@ -42,5 +42,3 @@ export const aggregate = (opts: S.AggregateOptions = {}): S.Aggregate => {
 /** The agent comparison needs data from several agents, all of them selected, and a line / bar chart. */
 export const compareAvailable = (): boolean => store.providers.length > 1 && !state.provider && state.view !== 'cal'
 
-/** Fixed-scale button: not in the calendar, and not on a logarithmic axis (that one is fitted to its own values). */
-export const fixedScaleAvailable = (): boolean => state.view !== 'cal' && !(state.metric === 'all' && state.scale === 'log' && !state.ioHidden && !(state.compare && compareAvailable()))
