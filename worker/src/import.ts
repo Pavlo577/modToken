@@ -32,7 +32,7 @@ export async function importTurns(env: Env, email: string, dev: { id: string; ot
     rows.push({ id: x.id as string, session: x.session as string, ts: iso, model: x.model as string, input: int(x.input), output: int(x.output), cache_read: int(x.cache_read), cache_creation: int(x.cache_creation), sub: x.sub === true, first: x.first !== false, duration_ms: Math.min(7 * 86_400_000, int(x.duration_ms)) })
   }
 
-  const count = () => env.DB.prepare(`SELECT COUNT(*) AS n FROM token_events WHERE device_id = ? AND turn_id LIKE 'log:%'`).bind(dev.id).first<{ n: number }>().then(r => r?.n ?? 0)
+  const count = () => env.DB.prepare(`SELECT COUNT(*) AS n FROM token_events WHERE device_id = ? AND turn_id >= 'log:' AND turn_id < 'log;'`).bind(dev.id).first<{ n: number }>().then(r => r?.n ?? 0)
   const before = await count()
   const sql = env.DB.prepare(
     `INSERT INTO token_events

@@ -33,13 +33,20 @@ export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
          WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? ORDER BY e.ts LIMIT 5000`, email, a, b))
     }
     if (path === '/sessions') {
-      return json(await all(
-        `SELECT e.session_id, d.name AS device, MIN(e.ts) AS first_ts, MAX(e.ts) AS last_ts, e.provider AS provider, ${sums},
-                (SELECT x.model FROM token_events x WHERE x.device_id = e.device_id AND x.session_id = e.session_id
-                 GROUP BY x.model ORDER BY SUM(x.output_tokens) DESC LIMIT 1) AS model
+      const sessions = await all<{ session_id: string; device: string; device_id: string; provider: string; model: string | null; output: number }>(
+        `SELECT e.session_id, d.name AS device, e.device_id, MIN(e.ts) AS first_ts, MAX(e.ts) AS last_ts, e.provider AS provider, ${sums}
          FROM token_events e JOIN devices d ON d.id = e.device_id
          WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? GROUP BY e.device_id, e.session_id, e.provider
-         ORDER BY output DESC LIMIT 300`, email, a, b))
+         ORDER BY output DESC LIMIT 300`, email, a, b)
+      // the model that wrote the most in each session: one pass over the period (a subquery per session re-read the device's rows 300 times)
+      const perModel = await all<{ device_id: string; session_id: string; model: string; o: number }>(
+        `SELECT device_id, session_id, model, SUM(output_tokens) AS o FROM token_events WHERE user_email = ? AND ts >= ? AND ts < ? GROUP BY device_id, session_id, model`, email, a, b)
+      const top = new Map<string, { model: string; o: number }>()
+      for (const r of perModel) {
+        const k = r.device_id + '|' + r.session_id, cur = top.get(k)
+        if (!cur || r.o > cur.o) top.set(k, { model: r.model, o: r.o })
+      }
+      return json(sessions.map(({ device_id, ...x }) => ({ ...x, model: top.get(device_id + '|' + x.session_id)?.model ?? null })))
     }
     return json(await all(
       `SELECT l.ts, d.name AS device, l.kind, l.percent_used AS percent, l.resets_at, l.provider AS provider

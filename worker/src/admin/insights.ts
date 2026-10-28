@@ -13,6 +13,11 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
   const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000
   const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 30 * 86_400_000, to - 400 * 86_400_000)
   const a = new Date(from).toISOString(), b = new Date(to).toISOString()
+  // This page runs about twenty queries over every event of the period, so a repeat within two minutes is answered from the edge cache (rows read are limited per day).
+  const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default
+  const key = new Request(`https://insights.cache.invalid/${encodeURIComponent(email)}/${a}/${b}`)
+  const hit = url.searchParams.has('fresh') ? undefined : await cache?.match(key).catch(() => undefined) // ?fresh=1 skips the cache (the tests, a manual refresh)
+  if (hit) return hit
   const q = <T = Row>(sql: string): Promise<T[]> => env.EVENTS!.prepare(sql).bind(email, a, b).all<T>().then(r => r.results)
   const W = "user_email = ?1 AND ts >= ?2 AND ts < ?3"
   const J = (k: string) => `json_extract(attrs, '$."${k}"')` // quoted: some names have dots
@@ -41,10 +46,8 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     q(`SELECT COUNT(*) AS events, COUNT(DISTINCT name) AS kinds, COUNT(DISTINCT session_id) AS sessions, MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM events WHERE ${W}`),
   ])
 
-  // fields that arrive but are not in the registry (src/otlp-fields.ts) yet: from the stored attributes and from the names the diagnostics saw
+  // fields that arrive but are not in the registry (src/otlp-fields.ts) yet: from the key names the diagnostics saw (otlp_seen lists every key, so no scan of the events)
   const unknown = new Map<string, string>()
-  const stored = await env.EVENTS.prepare(`SELECT DISTINCT e.name AS event, j.key AS key FROM events e, json_each(e.attrs) j WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3`).bind(email, a, b).all<{ event: string; key: string }>().then(r => r.results).catch(() => [])
-  for (const x of stored) if (!FIELD_KEYS.has(x.key)) unknown.set(x.key, x.event)
   const seen = await env.DB.prepare('SELECT event, keys FROM otlp_seen WHERE device_id IN (SELECT id FROM devices WHERE user_email = ?)').bind(email).all<{ event: string; keys: string }>().then(r => r.results).catch(() => [])
   for (const x of seen) for (const k of x.keys.split(',')) if (k && !FIELD_KEYS.has(k) && !unknown.has(k)) unknown.set(k, x.event)
   const unknownFields = [...unknown].map(([key, event]) => ({ key, event })).sort((x, y) => x.key.localeCompare(y.key))
@@ -92,5 +95,8 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     return { model, calls: d.length, ttft_p50: pct(t, 50), ttft_p95: pct(t, 95), dur_p50: pct(d, 50), dur_p95: pct(d, 95), tps_p50: Math.round(pct(s, 50) * 10) / 10 }
   }).sort((x, y) => y.calls - x.calls)
 
-  return json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, compaction, subagents, errors, skills, latencyDaily, latencyHist, latencyStats, slowest, unknownFields })
+  const res = json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, compaction, subagents, errors, skills, latencyDaily, latencyHist, latencyStats, slowest, unknownFields })
+  res.headers.set('cache-control', 'max-age=120')
+  await cache?.put(key, res.clone()).catch(() => undefined)
+  return res
 }

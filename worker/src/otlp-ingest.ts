@@ -77,7 +77,8 @@ async function storeEvents(env: Env, dev: { id: string; user_email: string }, ev
       await env.EVENTS.batch(events.slice(i, i + EVENT_CHUNK).map(e => env.EVENTS!.prepare(sql).bind(dev.id, dev.user_email, e.dedupe, e.ts, e.name, e.service, e.session_id, e.prompt_id, e.surface, e.attrs)))
     }
     const cutoff = new Date(Date.now() - KEEP_EVENTS_DAYS * 86_400_000).toISOString()
-    await env.EVENTS.prepare('DELETE FROM events WHERE id IN (SELECT id FROM events WHERE ts < ? LIMIT 500)').bind(cutoff).run()
+    // per user, so the (user_email, ts) index answers it: without user_email it read the whole table on every request
+    await env.EVENTS.prepare('DELETE FROM events WHERE id IN (SELECT id FROM events WHERE user_email = ?1 AND ts < ?2 LIMIT 500)').bind(dev.user_email, cutoff).run()
   } catch (e) {
     console.error('events database: ' + (e instanceof Error ? e.message : 'failed')) // never the data
   }
@@ -99,7 +100,13 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   for (let i = 0; i < parsed.calls.length; i += CHUNK) {
     await env.DB.batch(parsed.calls.slice(i, i + CHUNK).flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
   }
+  // the key names accumulate (a later request with fewer fields must not forget a field seen before): merged with what is stored, one small read per request
+  const stored = parsed.seen.length
+    ? await env.DB.prepare('SELECT service, event, keys FROM otlp_seen WHERE device_id = ?').bind(dev.id).all<{ service: string; event: string; keys: string }>().then(r => r.results)
+    : []
   for (const x of parsed.seen) {
+    const before = stored.find(r => r.service === x.service && r.event === x.event)?.keys ?? ''
+    x.keys = [...new Set([...before.split(','), ...x.keys.split(',')])].filter(Boolean).sort().join(',').slice(0, 2000)
     await env.DB.prepare(
       `INSERT INTO otlp_seen (device_id, service, event, keys, lens, sample, n, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (device_id, service, event) DO UPDATE SET n = n + excluded.n, keys = excluded.keys, lens = excluded.lens, sample = excluded.sample, last_seen = excluded.last_seen`,
