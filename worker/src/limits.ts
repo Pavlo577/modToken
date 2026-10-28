@@ -2,6 +2,7 @@
 // Body: { limits: [{ kind, percentUsed, resetsAt? }] }. Only the window's name, a percent and a time are read; anything else is ignored.
 // A reading equal to the device's last one for that window is not stored again.
 import type { Env } from './env.ts'
+import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { str, text } from './util.ts'
 
@@ -35,6 +36,7 @@ export async function limitsIngest(req: Request, env: Env): Promise<Response> {
   try { parsed = JSON.parse(body) } catch { return text('bad request', 400) }
   const limits = parseLimits(parsed)
   if (!limits) return text('bad request: { limits: [...] }', 400)
+  await recordDropped(env, dev.id, 'limits', parsed)
   const now = new Date().toISOString()
   if (limits.length) {
     await env.DB.batch(limits.map(l => env.DB.prepare(

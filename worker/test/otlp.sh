@@ -164,6 +164,9 @@ TB=$(curl -s "$B/api/admin/buckets?from=2025-01-01&to=2025-12-31" | python3 -c '
 STEPS='{"turns":[{"id":"msg_t1","session":"s-steps","ts":"2025-03-01T00:00:05.000Z","model":"claude-sonnet-x","input":1,"output":10,"cache_read":0,"cache_creation":0,"sub":false,"first":true,"duration_ms":42000},{"id":"msg_t2","session":"s-steps","ts":"2025-03-01T00:00:40.000Z","model":"claude-sonnet-x","input":1,"output":20,"cache_read":0,"cache_creation":0,"sub":false,"first":false,"duration_ms":0}]}'
 curl -s -o /dev/null -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$STEPS"
 check "import: a prompt with two answers is one turn with its length" "$(curl -s "$B/api/admin/buckets?from=2025-01-01&to=2025-12-31" | python3 -c 'import sys,json; d=[r for r in json.load(sys.stdin) if r["device"]=="otlp-box"]; print(sum(r["turns"] for r in d), sum(r["duration_ms"] for r in d))')" "$(echo $TB | awk '{print $1+1, $2+42000}')"
+# the mod's endpoints drop what they do not read, and remember only the NAME of a dropped field
+check "the mod's limits endpoint accepts an extra field" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/limits -H "x-device-token: $TOKEN" -d '{"limits":[{"kind":"five_hour","percentUsed":12,"resetsAt":"2030-01-01T00:00:00Z","new_mod_field":"SECRET MOD VALUE me@example.com"}]}')" 200
+check "the name of the dropped mod field is reported as new, its value is stored nowhere" "$(curl -s "$B/api/admin/insights?fresh=1" | python3 -c 'import sys,json; r=sys.stdin.read(); d=json.loads(r); print("limits.new_mod_field" in [x["key"] for x in d["unknownFields"]], "SECRET MOD" in r)')" "True False"
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 rm -rf "$T"

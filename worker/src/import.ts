@@ -3,6 +3,7 @@
 import type { Env } from './env.ts'
 import { ID_SHAPE, MAX_HISTORY_TURNS, MODEL_SHAPE } from './history.ts'
 import type { HistoryTurn } from './history.ts'
+import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { int, json, text } from './util.ts'
 
@@ -59,6 +60,7 @@ export async function deviceImport(req: Request, env: Env): Promise<Response> {
   try { body = JSON.parse(raw) } catch { body = null }
   if (!body || !Array.isArray(body.turns)) return text('bad request', 400)
   if (body.turns.length > MAX_HISTORY_TURNS) return text(`at most ${MAX_HISTORY_TURNS} turns per request`, 400)
+  await recordDropped(env, dev.id, 'import', body)
   const d = await env.DB.prepare('SELECT otlp_since FROM devices WHERE id = ?').bind(dev.id).first<{ otlp_since: string | null }>()
   return json(await importTurns(env, dev.user_email, { id: dev.id, otlp_since: d?.otlp_since ?? null }, body.turns))
 }

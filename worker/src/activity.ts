@@ -3,6 +3,7 @@
 // context_window?, perm_asks, perm_denied, perm_wait_ms }]. The project (a repository's owner/name, or `h:` and 12 hex characters) is kept only as
 // far as the device's project_mode allows: off keeps none, hash keeps a hash only, name keeps either. Anything else in the body is ignored.
 import type { Env } from './env.ts'
+import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { json, text } from './util.ts'
 
@@ -89,6 +90,7 @@ export async function activityIngest(req: Request, env: Env): Promise<Response> 
   const mode = await deviceMode(env, dev.id)
   const parsed = parseActivity(raw, mode)
   if (!parsed) return text('bad request', 400)
+  await recordDropped(env, dev.id, 'activity', raw)
   const stmts: D1PreparedStatement[] = []
   const s = parsed.session
   if (s) {
