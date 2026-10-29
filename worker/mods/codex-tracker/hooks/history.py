@@ -101,7 +101,12 @@ def main():
     site, token = site_and_token()
     if not site:
         return
-    rows = [c for path in session_files() for c in calls(path)]
+    rows = []
+    for path in session_files():
+        try:
+            rows += calls(path)
+        except OSError:  # a file that cannot be read is skipped, not the whole import
+            pass
     for i in range(0, len(rows), CHUNK):
         send(site, token, rows[i:i + CHUNK])
     os.makedirs(DATA, exist_ok=True)

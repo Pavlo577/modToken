@@ -30,7 +30,11 @@ try {
     $m = [regex]::Match($file.Name, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})')
     $session = if ($m.Success) { $m.Groups[1].Value } else { $null }
     $model = 'unknown'; $own = $false; $newTurn = $true; $turnStart = $null; $turnRow = $null; $total = $null; $n = 0
-    foreach ($line in [IO.File]::ReadLines($file.FullName)) {
+    # Codex keeps the running session's file open for writing: File.ReadLines (read sharing only) cannot open it, a FileStream that shares
+    # writing can; a file that cannot be read is skipped, not the whole import
+    try { $reader = New-Object IO.StreamReader((New-Object IO.FileStream($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))), [Text.Encoding]::UTF8) }
+    catch { continue }
+    try { while ($null -ne ($line = $reader.ReadLine())) {
       if ($line -notmatch '"(session_meta|turn_context|task_started|turn_started|token_count)"') { continue }
       try { $row = $line | ConvertFrom-Json } catch { continue }
       $p = $row.payload; $ts = "$($row.timestamp)"
@@ -59,7 +63,7 @@ try {
         }
         $rows.Add($call)
       }
-    }
+    } } finally { $reader.Dispose() }
   }
   for ($i = 0; $i -lt $rows.Count; $i += 500) {
     $part = $rows.GetRange($i, [math]::Min(500, $rows.Count - $i))
