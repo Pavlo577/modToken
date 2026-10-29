@@ -119,7 +119,8 @@ function codexCall(a: Attrs, rec: LogRecord): ModelCall | null {
   const ts = isoFromNanos(rec.timeUnixNano) || (Date.parse(text(a, 'event.timestamp')) ? new Date(text(a, 'event.timestamp')).toISOString() : '')
   const session = text(a, 'conversation.id')
   if (!ts || !session) return null
-  const at = String(rec.timeUnixNano ?? ts)
+  // Codex Desktop leaves timeUnixNano at 0: the event's own timestamp tells its calls apart (with 0 every call of a session had one id)
+  const at = text(a, 'event.timestamp') || (isoFromNanos(rec.timeUnixNano) ? String(rec.timeUnixNano) : ts)
   const model = text(a, 'model') || 'unknown'
   const base = { provider: 'codex' as const, session_id: session, ts, model, duration_ms: count(a, 'duration_ms'), cost_micros: 0, is_subagent: false }
   if (name === 'codex.user_prompt') {

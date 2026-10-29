@@ -216,3 +216,13 @@ test('otlp: Codex writes input and output counts as strings of digits (a real Co
   // a word is not a number
   assert.equal(parseOtlpLogs(payload([codexRec('codex.sse_event', [s('event.kind', 'response.completed'), s('input_token_count', '12 tokens'), i('cached_token_count', 1)])], 'codex-app-server')).calls[0].input_tokens, 0)
 })
+
+test('otlp: Codex Desktop sends timeUnixNano 0: its calls are told apart by event.timestamp, not merged into one', () => {
+  const call = (stamp, inp) => ({ timeUnixNano: '0', attributes: [s('event.name', 'codex.sse_event'), s('event.kind', 'response.completed'), s('event.timestamp', stamp), s('conversation.id', 'conv-9'),
+    s('model', 'gpt-5.6-sol'), s('input_token_count', String(inp)), i('cached_token_count', 100), s('output_token_count', '10')] })
+  const { calls } = parseOtlpLogs(payload([call('2026-10-29T20:26:57.923Z', 1000), call('2026-10-29T20:26:59.899Z', 2000)], 'codex-app-server'))
+  assert.equal(calls.length, 2)
+  assert.notEqual(calls[0].call_id, calls[1].call_id)
+  assert.notEqual(calls[0].turn_key, calls[1].turn_key)
+  assert.deepEqual(calls.map(c => [c.ts, c.input_tokens]), [['2026-10-29T20:26:57.923Z', 900], ['2026-10-29T20:26:59.899Z', 1900]])
+})
