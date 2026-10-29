@@ -26,6 +26,8 @@ export interface Field {
 }
 
 const ALL = ['*']
+/** The Codex CLI log events (openai/codex, crate codex-rs/otel); each carries the Codex common attributes. */
+const CODEX = ['codex.conversation_starts', 'codex.api_request', 'codex.sse_event', 'codex.user_prompt', 'codex.tool_decision', 'codex.tool_result', 'codex.turn_cost']
 const f = (key: string, events: string[], type: Field['type'], what: string, handling: Handling, extra: Partial<Pick<Field, 'seen' | 'only'>> = {}): Field => ({ key, events, type, what, handling, seen: true, ...extra })
 
 export const FIELDS: Field[] = [
@@ -57,9 +59,9 @@ export const FIELDS: Field[] = [
   f('cache_creation_tokens', ['api_request'], 'int', 'input written to the cache (1h + 5m)', 'counted'),
   f('cache_creation_1h_tokens', ['api_request'], 'int', 'part of the cache writes with a one-hour life', 'stored'),
   f('cache_creation_5m_tokens', ['api_request'], 'int', 'part of the cache writes with a five-minute life', 'stored'),
-  f('duration_ms', ['api_request', 'tool_result', 'mcp_server_connection', 'compaction', 'subagent_completed'], 'int', 'how long the call / tool / connection took', 'counted'),
-  f('ttft_ms', ['api_request'], 'int', 'time to the first token', 'stored'),
-  f('model', ['api_request', 'assistant_response', 'api_refusal', 'subagent_completed', 'api_error', 'api_retries_exhausted'], 'string', 'model id', 'counted'),
+  f('duration_ms', ['api_request', 'tool_result', 'mcp_server_connection', 'compaction', 'subagent_completed', 'codex.sse_event', 'codex.api_request', 'codex.tool_result'], 'int', 'how long the call / tool / connection took', 'counted'),
+  f('ttft_ms', ['api_request', 'codex.sse_event'], 'int', 'time to the first token', 'stored'),
+  f('model', ['api_request', 'assistant_response', 'api_refusal', 'subagent_completed', 'api_error', 'api_retries_exhausted', ...CODEX], 'string', 'model id', 'counted'),
   f('speed', ['api_request', 'api_refusal', 'api_error', 'api_retries_exhausted'], 'string', 'normal or fast', 'stored'),
   f('effort', ['api_request', 'api_refusal'], 'string', 'thinking effort setting (medium ...)', 'stored'),
   f('cost_usd', ['api_request'], 'float', "Claude Code's own price estimate of the call in dollars", 'counted'),
@@ -71,9 +73,9 @@ export const FIELDS: Field[] = [
   f('parent_agent_id', ['api_request'], 'id', 'the agent that started a sub-agent', 'stored', { seen: false }),
 
   // ---- user_prompt / assistant_response
-  f('prompt', ['user_prompt'], 'string', 'the text of the message (arrives as <REDACTED>)', 'content'),
+  f('prompt', ['user_prompt', 'codex.user_prompt'], 'string', 'the text of the message (arrives as <REDACTED>)', 'content'),
   f('prompt_text', ['user_prompt'], 'string', 'the text of the message again (arrives as <REDACTED>)', 'content'),
-  f('prompt_length', ['user_prompt'], 'int', 'length of the message in characters', 'stored'),
+  f('prompt_length', ['user_prompt', 'codex.user_prompt'], 'int', 'length of the message in characters', 'stored'),
   f('message.uuid', ['user_prompt', 'assistant_response'], 'id', 'id of the message', 'stored'),
   f('command_name', ['user_prompt'], 'string', 'the slash command, when the message was one (ide ...)', 'stored'),
   f('command_source', ['user_prompt'], 'string', 'where the command comes from (builtin ...)', 'stored'),
@@ -81,20 +83,20 @@ export const FIELDS: Field[] = [
   f('response_length', ['assistant_response'], 'int', 'length of the answer in characters', 'stored'),
 
   // ---- api_refusal
-  f('attempt', ['api_refusal', 'api_error'], 'int', 'which attempt was refused', 'stored'),
+  f('attempt', ['api_refusal', 'api_error', 'codex.api_request'], 'int', 'which attempt was refused (Codex: the attempt number of the request)', 'stored'),
   f('has_category', ['api_refusal'], 'bool', 'the refusal names a category', 'stored'),
   f('has_explanation', ['api_refusal'], 'bool', 'the refusal carries an explanation', 'stored'),
   f('server_fallback_hop', ['api_refusal'], 'int', 'how many hops to a fallback model happened', 'stored'),
 
   // ---- tools and permissions
-  f('tool_name', ['tool_decision', 'tool_result', 'safety_event'], 'string', 'the tool (Bash, Read, Edit, PowerShell ...)', 'stored'),
+  f('tool_name', ['tool_decision', 'tool_result', 'safety_event', 'codex.tool_decision', 'codex.tool_result'], 'string', 'the tool (Bash, Read, Edit, PowerShell ...)', 'stored'),
   f('tool_source', ['tool_decision', 'safety_event'], 'string', 'where the tool comes from (builtin ...)', 'stored'),
   f('tool_use_id', ['tool_decision', 'tool_result', 'safety_event'], 'id', 'id of one use of a tool', 'stored'),
-  f('decision', ['tool_decision', 'safety_event'], 'string', 'accept or reject', 'stored'),
+  f('decision', ['tool_decision', 'safety_event', 'codex.tool_decision'], 'string', 'accept or reject', 'stored'),
   f('source', ['tool_decision'], 'string', 'who decided: config, user_reject ...', 'stored'),
   f('permission_mode', ['tool_decision', 'safety_event'], 'string', 'the permission mode (default, auto ...)', 'stored'),
   f('classifier_verdict', ['tool_decision'], 'string', 'what the safety classifier said (allow ...)', 'stored'),
-  f('success', ['tool_result', 'compaction', 'at_mention', 'auth'], 'bool', 'the tool finished without an error', 'stored'),
+  f('success', ['tool_result', 'compaction', 'at_mention', 'auth', 'codex.tool_result'], 'bool', 'the tool finished without an error', 'stored'),
   f('tool_input_size_bytes', ['tool_result'], 'int', 'size of the tool input (not its content)', 'stored'),
   f('tool_result_size_bytes', ['tool_result'], 'int', 'size of the tool result (not its content)', 'stored'),
   f('decision_source', ['tool_result', 'safety_event'], 'string', 'who allowed the run', 'stored'),
@@ -161,6 +163,29 @@ export const FIELDS: Field[] = [
   f('result', ['retention_sweep'], 'string', 'complete ...', 'stored'),
   f('used_default', ['retention_sweep'], 'bool', 'the default period was used', 'stored'),
   f('transcripts_exempted_desktop', ['retention_sweep'], 'int', 'transcripts the Claude app kept', 'stored'),
+  // ---- Codex CLI (openai/codex, codex-rs/otel source; no real payload seen yet)
+  f('conversation.id', CODEX, 'id', 'the Codex session', 'column', { seen: false, only: 'Codex' }),
+  f('app.version', CODEX, 'string', 'Codex version', 'stored', { seen: false, only: 'Codex' }),
+  f('auth_mode', CODEX, 'string', 'how Codex signed in (ChatGPT account or API key)', 'stored', { seen: false, only: 'Codex' }),
+  f('originator', CODEX, 'string', 'which Codex program (CLI, exec, IDE extension); also its service.name', 'stored', { seen: false, only: 'Codex' }),
+  f('slug', CODEX, 'string', 'the model slug', 'stored', { seen: false, only: 'Codex' }),
+  f('event.kind', ['codex.sse_event'], 'string', 'the server-sent event; response.completed is the finished call that carries the tokens', 'stored', { seen: false, only: 'Codex' }),
+  f('input_token_count', ['codex.sse_event'], 'int', 'the whole input of the call, cached part and cache writes included (they are taken out of it)', 'counted', { seen: false, only: 'Codex' }),
+  f('cached_token_count', ['codex.sse_event'], 'int', 'input served from the cache', 'counted', { seen: false, only: 'Codex' }),
+  f('cache_write_token_count', ['codex.sse_event'], 'int', 'input written to the cache', 'counted', { seen: false, only: 'Codex' }),
+  f('output_token_count', ['codex.sse_event'], 'int', 'what the model wrote, reasoning included', 'counted', { seen: false, only: 'Codex' }),
+  f('reasoning_token_count', ['codex.sse_event'], 'int', 'the reasoning part of the output (already inside output_token_count)', 'stored', { seen: false, only: 'Codex' }),
+  f('tool_token_count', ['codex.sse_event'], 'int', 'despite its name, the total tokens of the call', 'stored', { seen: false, only: 'Codex' }),
+  f('service_tier', ['codex.sse_event'], 'string', 'the service tier of the request', 'stored', { seen: false, only: 'Codex' }),
+  f('model_reasoning_effort', ['codex.sse_event'], 'string', 'reasoning effort setting', 'stored', { seen: false, only: 'Codex' }),
+  f('http.response.status_code', ['codex.api_request'], 'int', 'HTTP status of the request', 'stored', { seen: false, only: 'Codex' }),
+  f('error.message', ['codex.api_request', 'codex.sse_event'], 'string', 'the error message (may hold text)', 'content', { seen: false, only: 'Codex' }),
+  f('call_id', ['codex.tool_decision', 'codex.tool_result'], 'id', 'the tool call', 'stored', { seen: false, only: 'Codex' }),
+  f('arguments', ['codex.tool_result'], 'string', 'the arguments of the tool call (commands, paths)', 'content', { seen: false, only: 'Codex' }),
+  f('output', ['codex.tool_result'], 'string', 'what the tool returned', 'content', { seen: false, only: 'Codex' }),
+  f('turn.id', ['codex.turn_cost'], 'id', 'the turn', 'stored', { seen: false, only: 'Codex' }),
+  f('usage.estimated_usd', ['codex.turn_cost'], 'float', "Codex's own price estimate of the turn in dollars (not read: the page prices the tokens itself)", 'stored', { seen: false, only: 'Codex' }),
+
   // ---- documented, not yet seen in a real payload (monitoring docs, second half)
   f('wsl.version', ALL, 'string', 'WSL version, only when running on Windows Subsystem for Linux', 'stored', { seen: false, only: 'WSL' }),
   f('trigger', ['compaction', 'permission_mode_changed'], 'string', 'what caused it: compaction auto or manual; a mode change shift_tab, exit_plan_mode, auto_gate_denied', 'stored', { seen: false }),

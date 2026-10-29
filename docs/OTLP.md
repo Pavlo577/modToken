@@ -38,15 +38,25 @@ type ModelCall = {
   is_subagent: boolean
 }
 ```
-| Field | Claude Code (**verified** in its monitoring docs: event `claude_code.api_request`) | Codex / Gemini CLI / Mistral Vibe (**not verified**: read their telemetry docs first) |
-|---|---|---|
-| `call_id` | `request_id` | the agent's request id; else a hash of `(session, timeUnixNano, sequence)` |
-| `session_id` | `session.id` | the agent's session / thread attribute |
-| `turn_key` | `prompt.id` | the agent's turn id / `prompt_id` (Gemini) / trace id (Mistral) |
-| `ts` | `timeUnixNano` (or `event.timestamp`) | the same |
-| tokens | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | Gemini counts cached inside input: subtract it; Codex `input` includes cached too |
-| `duration_ms` | `duration_ms` | the agent's duration attribute |
-| `is_subagent` | false until the attribute is verified (**assumption**: `agent.name`) | from the agent's metadata, never from text |
+| Field | Claude Code (**verified** in its monitoring docs: event `claude_code.api_request`) | Codex CLI (**read from its source**, `openai/codex` crate `codex-rs/otel`; no real payload yet) | Gemini CLI / Mistral Vibe (**not verified**: read their telemetry docs first) |
+|---|---|---|---|
+| service | `claude-code`, `claude-code-desktop` ... | the originator, any name starting with `codex` (`codex_cli_rs`, `codex_exec` ...: the exact values are not verified) | |
+| event | `claude_code.api_request` | `codex.sse_event` with `event.kind` = `response.completed`; `codex.user_prompt` for the turn | |
+| `call_id` | `request_id` | none in the event: `conversation.id` + `timeUnixNano` | the agent's request id; else a hash of `(session, timeUnixNano, sequence)` |
+| `session_id` | `session.id` | `conversation.id` | the agent's session / thread attribute |
+| `turn_key` | `prompt.id` | none on the call (only `codex.turn_cost` has `turn.id`): each call is a `step` row, each `codex.user_prompt` a `main` row with no tokens | `prompt_id` (Gemini) / trace id (Mistral) |
+| `ts` | `timeUnixNano` (or `event.timestamp`) | the same | the same |
+| tokens | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | `input_token_count` minus `cached_token_count` and `cache_write_token_count` (the input includes both: Codex's own `non_cached_input()` subtracts the cached part); `output_token_count` (reasoning included); `cached_token_count`; `cache_write_token_count` | Gemini counts cached inside input: subtract it |
+| `duration_ms` | `duration_ms` | `duration_ms` when present (the completed event has `ttft_ms`) | the agent's duration attribute |
+| `is_subagent` | `agent_id` / `query_source` | false | from the agent's metadata, never from text |
+
+**Codex setup** (`~/.codex/config.toml`; `protocol` has no default and must be given, the Worker reads JSON):
+```toml
+[otel]
+log_user_prompt = false   # the default; keeps the message text out ("[REDACTED]")
+exporter = { otlp-http = { endpoint = "https://<site>/v1/logs", protocol = "json", headers = { "x-device-token" = "<device token>" } } }
+```
+Codex also sends `user.email` and `user.account_id` on every event and the tool `arguments` / `output` on `codex.tool_result`: the Worker drops them on arrival (the allow-list), but they do travel. Its metrics go to OpenAI's own exporter (`metrics_exporter`, default `statsig`), not here.
 
 **How calls become a turn row.** Each call has a kind, from `agent_id` / `query_source`: `main` (repl_main_thread, sdk or none: the session's own work), `sub` (a sub-agent: `agent_id`, `subagent`, `agent:<type>`) or `bg` (anything else: Claude working by itself, e.g. `prompt_suggestion` after every answer, `generate_session_title`, `away_summary`, compaction). The `turn_key` is the `prompt.id` for `main`, and `prompt.id:kind:model` for the others, so a sub-agent's or a background request's tokens get rows of their own (`token_events.kind`) instead of being counted as the prompt's model; only `main` rows count as turns. The Worker groups calls by `(device, provider, session_id, turn_key)`; the row has `turn_id = otlp:<provider>:<session_id>:<turn_key>`, `ts` = the last call's time, `model` = the model of the last call that had output, and the four token counters are **sums** of the calls (additive, unlike section 2 where a resend keeps the maximum). A call is added once: a table `otlp_calls (device_id, call_id)` (kept 14 days) records what was counted, and a call that is already there changes nothing. `duration_ms` is the sum of the calls' durations, so it is shorter than a log-based turn (which is prompt to last reply, waiting included): 
 

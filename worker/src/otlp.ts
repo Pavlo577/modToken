@@ -4,7 +4,7 @@ import { int, str } from './util.ts'
 
 /** One request to the model, whatever the agent. */
 export interface ModelCall {
-  provider: 'claude'
+  provider: 'claude' | 'codex'
   /** The same call sent twice is counted once. */
   call_id: string
   session_id: string
@@ -21,11 +21,14 @@ export interface ModelCall {
   /** The agent's own price estimate of the call in millionths of a dollar (Claude Code: cost_usd_micros); 0 when it does not say. */
   cost_micros: number
   is_subagent: boolean
-  /** main: the session's own work; sub: a sub-agent; bg: background requests Claude makes by itself (prompt suggestions, titles, summaries, compaction) */
+  /**
+   * main: the session's own work (one row per prompt, counted as a turn); sub: a sub-agent; bg: background requests Claude makes by itself
+   * (prompt suggestions, titles, summaries, compaction); step: one model call of a turn that has its main row elsewhere (Codex)
+   */
   kind: CallKind
 }
 
-export type CallKind = 'main' | 'sub' | 'bg'
+export type CallKind = 'main' | 'sub' | 'bg' | 'step'
 /** query_source of the session's own requests (terminal / IDE, the app and the cloud); an empty one is the main session too */
 const MAIN_SOURCES = new Set(['', 'repl_main_thread', 'sdk'])
 
@@ -102,13 +105,46 @@ function claudeCall(a: Attrs, rec: LogRecord): ModelCall | null {
   }
 }
 
-/** Which agent an exporter is, by its `service.name`; one adapter per agent (Codex, Gemini and Mistral follow once their telemetry is read). */
-const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) | undefined> = {
-  'claude-code': claudeCall,
+/**
+ * Codex CLI (openai/codex, crate codex-rs/otel; not yet checked against a real payload). Every event carries `conversation.id` and `model`.
+ * - `codex.sse_event` with `event.kind` = response.completed: one model call. `input_token_count` holds the whole input, the cached part
+ *   (`cached_token_count`) and the cache writes (`cache_write_token_count`) included, so both are taken out of it; `output_token_count`
+ *   already holds `reasoning_token_count`. The event has no turn id, so each call is a `step` row of its own.
+ * - `codex.user_prompt`: the user's message (its text is "[REDACTED]" unless log_user_prompt is on, and never read here) becomes the
+ *   turn's `main` row with no tokens, so that a turn is counted once whatever the number of calls it makes.
+ */
+function codexCall(a: Attrs, rec: LogRecord): ModelCall | null {
+  const name = text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : '')
+  const ts = isoFromNanos(rec.timeUnixNano) || (Date.parse(text(a, 'event.timestamp')) ? new Date(text(a, 'event.timestamp')).toISOString() : '')
+  const session = text(a, 'conversation.id')
+  if (!ts || !session) return null
+  const at = String(rec.timeUnixNano ?? ts)
+  const model = text(a, 'model') || 'unknown'
+  const base = { provider: 'codex' as const, session_id: session, ts, model, duration_ms: count(a, 'duration_ms'), cost_micros: 0, is_subagent: false }
+  if (name === 'codex.user_prompt') {
+    const id = str(`${session}:prompt:${at}`)
+    return { ...base, call_id: id, turn_key: id, kind: 'main', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }
+  }
+  if (name !== 'codex.sse_event' || text(a, 'event.kind') !== 'response.completed') return null
+  const read = count(a, 'cached_token_count'), write = count(a, 'cache_write_token_count'), output = count(a, 'output_token_count')
+  const input = Math.max(0, count(a, 'input_token_count') - read - write)
+  if (input + output + read + write === 0) return null
+  const id = str(`${session}:call:${at}`)
+  return { ...base, call_id: id, turn_key: id, kind: 'step', input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write }
 }
 
-/** `claude-code` (terminal), `claude-code-desktop` (the Claude app) and the like: one adapter, matched by the start of the name. */
-const adapterFor = (service: string) => ADAPTERS[service] ?? (service.startsWith('claude-code') ? ADAPTERS['claude-code'] : undefined)
+/** Which agent an exporter is, by its `service.name`; one adapter per agent (Gemini and Mistral follow once their telemetry is read). */
+const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) | undefined> = {
+  'claude-code': claudeCall,
+  codex: codexCall,
+}
+
+/**
+ * `claude-code` (terminal), `claude-code-desktop` (the Claude app) and the like: one adapter, matched by the start of the name. Codex names
+ * the service after its originator (codex_cli_rs, codex_exec, codex_vscode ...), so every name that starts with `codex` is Codex.
+ */
+const adapterFor = (service: string) =>
+  ADAPTERS[service] ?? (service.startsWith('claude-code') ? ADAPTERS['claude-code'] : service.startsWith('codex') ? ADAPTERS.codex : undefined)
 
 export const MAX_RECORDS = 5000
 
@@ -116,7 +152,7 @@ export const MAX_RECORDS = 5000
 export interface Seen { service: string; event: string; keys: string; lens: string; sample: string; n: number }
 
 /** Attributes that may carry the text of the conversation. Only their LENGTH (and whether they look like a redaction placeholder) is ever reported. */
-const CONTENT_KEYS = ['prompt', 'prompt_text', 'response', 'tool_input', 'tool_parameters', 'tool_result', 'tool_output', 'error', 'body']
+const CONTENT_KEYS = ['prompt', 'prompt_text', 'response', 'tool_input', 'tool_parameters', 'tool_result', 'tool_output', 'error', 'body', 'arguments', 'output', 'error.message']
 /** Identity attributes: in a sample only their length is shown. */
 const MASKED_KEYS = ['user.email', 'user.id', 'user.account_uuid', 'user.account_id', 'organization.id', 'process.owner']
 /**
@@ -158,7 +194,7 @@ export interface EventRow {
 /** Attributes that are never kept: who the user is, and anything that may hold the text of the conversation. */
 const NEVER_KEPT = new Set([...MASKED_KEYS, ...CONTENT_KEYS, 'user.email', 'user.groups', 'identity.source', 'server_name', 'hook_matcher', 'hook_definitions', 'managed_settings.helper.path', 'managed_settings.settings'])
 /** Attributes that already have a column of their own. */
-const COLUMN_KEYS = new Set(['event.name', 'event.timestamp', 'session.id', 'prompt.id', 'terminal.type', 'service.name'])
+const COLUMN_KEYS = new Set(['event.name', 'event.timestamp', 'session.id', 'conversation.id', 'prompt.id', 'terminal.type', 'service.name'])
 
 /**
  * The attributes worth keeping, by construction safe: numbers, flags and short identifier-like words only (no spaces, no '@'), so a
@@ -182,7 +218,7 @@ function eventRowOf(service: string, a: Attrs, rec: LogRecord): EventRow | null 
   const name = NAME((text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : '')).replace(/^claude_code\./, ''))
   const ts = isoFromNanos(rec.timeUnixNano) || (Date.parse(text(a, 'event.timestamp')) ? new Date(text(a, 'event.timestamp')).toISOString() : '')
   if (!name || !ts) return null
-  const session = text(a, 'session.id')
+  const session = text(a, 'session.id') || text(a, 'conversation.id') // conversation.id: Codex
   return {
     dedupe: `${session}|${name}|${text(a, 'event.sequence')}|${ts}`.slice(0, 200), ts, name, service: NAME(service), session_id: session, prompt_id: text(a, 'prompt.id'),
     surface: NAME(text(a, 'terminal.type')), attrs: JSON.stringify(safeAttrs(a)).slice(0, 3000),

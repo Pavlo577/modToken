@@ -157,3 +157,49 @@ test('otlp: a sub-agent and a background request get turn rows of their own, by 
     ['main', false, 'prompt-1'], ['sub', true, 'prompt-1:sub:claude-sonnet-x'], ['sub', true, 'prompt-1:sub:claude-sonnet-x'],
   ])
 })
+
+// ---- Codex (openai/codex, codex-rs/otel): a synthetic payload, built from its source, until a real one is captured
+const codexRec = (name, extra = [], ns = '1761300000123456789') => ({
+  timeUnixNano: ns,
+  attributes: [s('event.name', name), s('conversation.id', 'conv-1'), s('model', 'gpt-5.1-codex'), s('app.version', '0.50.0'), s('originator', 'codex_cli_rs'),
+    s('user.email', 'me@example.com'), s('user.account_id', 'acct-SECRET'), ...extra],
+})
+const completed = (extra = [], ns) => codexRec('codex.sse_event', [s('event.kind', 'response.completed'), i('input_token_count', 12000), i('cached_token_count', 9000),
+  i('cache_write_token_count', 0), i('output_token_count', 700), i('reasoning_token_count', 300), i('tool_token_count', 12700), i('ttft_ms', 800), ...extra], ns)
+
+test('otlp: a Codex response.completed becomes one step row, the cached input taken out of the input', () => {
+  const { calls, ignored } = parseOtlpLogs(payload([completed()], 'codex_cli_rs'))
+  assert.equal(ignored, 0)
+  assert.deepEqual(calls, [{
+    provider: 'codex', call_id: 'conv-1:call:1761300000123456789', session_id: 'conv-1', turn_key: 'conv-1:call:1761300000123456789', ts: '2025-10-24T10:00:00.123Z',
+    model: 'gpt-5.1-codex', input_tokens: 3000, output_tokens: 700, cache_read_tokens: 9000, cache_creation_tokens: 0, duration_ms: 0, cost_micros: 0, is_subagent: false, kind: 'step',
+  }])
+})
+
+test('otlp: a Codex user prompt is the turn: a main row with no tokens and none of its text', () => {
+  const { calls } = parseOtlpLogs(payload([codexRec('codex.user_prompt', [s('prompt', 'SECRET PROMPT'), i('prompt_length', 13)])], 'codex_exec'))
+  assert.equal(calls.length, 1)
+  assert.deepEqual([calls[0].provider, calls[0].kind, calls[0].session_id, calls[0].input_tokens + calls[0].output_tokens], ['codex', 'main', 'conv-1', 0])
+})
+
+test('otlp: Codex events without tokens, other SSE kinds and records without a conversation are not calls; nothing secret survives', () => {
+  const r = parseOtlpLogs(payload([
+    codexRec('codex.sse_event', [s('event.kind', 'response.output_text.delta')]),
+    codexRec('codex.tool_result', [s('tool_name', 'shell'), s('arguments', 'cat SECRET-FILE'), s('output', 'SECRET OUTPUT'), s('call_id', 'call_1'), { key: 'success', value: { boolValue: true } }]),
+    codexRec('codex.api_request', [s('error.message', 'SECRET ERROR'), i('attempt', 1)]),
+    { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'codex.sse_event'), s('event.kind', 'response.completed'), i('input_token_count', 5)] },
+    completed([], '1761300000999999999'),
+  ], 'codex_cli_rs'))
+  assert.equal(r.calls.length, 1)
+  assert.equal(r.ignored, 4)
+  const text = JSON.stringify(r)
+  for (const bad of ['me@example.com', 'acct-SECRET', 'SECRET-FILE', 'SECRET OUTPUT', 'SECRET ERROR']) assert.equal(text.includes(bad), false, bad)
+  const tool = r.events.find(e => e.name === 'codex.tool_result')
+  assert.equal(tool.session_id, 'conv-1')
+  assert.deepEqual(Object.keys(JSON.parse(tool.attrs)).sort(), ['app.version', 'call_id', 'model', 'originator', 'success', 'tool_name'])
+})
+
+test('otlp: a Codex call whose cached count exceeds its input never goes negative', () => {
+  const [c] = parseOtlpLogs(payload([completed([i('input_token_count', 100), i('cached_token_count', 150)])], 'codex_cli_rs')).calls
+  assert.equal(c.input_tokens, 0)
+})
