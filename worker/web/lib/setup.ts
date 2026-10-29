@@ -32,3 +32,10 @@ export function cloudEnv(origin: string, token: string): string {
 const RAW_SCRIPTS = 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker/scripts'
 export const pcInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
 export const pcInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install.ps1))) ${origin.replace(/\/$/, '')} ${token}`
+
+// Codex CLI: the [otel] table of ~/.codex/config.toml (the HTTP protocol has no default there and must be json for this site), written by
+// scripts/install-codex.sh / install-codex.ps1, or added by hand.
+export const codexToml = (origin: string, token: string): string =>
+  `[otel]\nlog_user_prompt = false\nexporter = { otlp-http = { endpoint = "${origin.replace(/\/$/, '')}/v1/logs", protocol = "json", headers = { "x-device-token" = "${token}" } } }`
+export const codexInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install-codex.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
+export const codexInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install-codex.ps1))) ${origin.replace(/\/$/, '')} ${token}`

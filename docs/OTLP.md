@@ -50,7 +50,7 @@ type ModelCall = {
 | `duration_ms` | `duration_ms` | `duration_ms` when present (the completed event has `ttft_ms`) | the agent's duration attribute |
 | `is_subagent` | `agent_id` / `query_source` | false | from the agent's metadata, never from text |
 
-**Codex setup** (`~/.codex/config.toml`; `protocol` has no default and must be given, the Worker reads JSON):
+**Codex setup**: `scripts/install-codex.sh` / `install-codex.ps1` (the dashboard's "Add device" box shows the line) writes this into `~/.codex/config.toml` between marker lines; by hand it is (`protocol` has no default and must be given, the Worker reads JSON):
 ```toml
 [otel]
 log_user_prompt = false   # the default; keeps the message text out ("[REDACTED]")

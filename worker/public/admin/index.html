@@ -241,6 +241,12 @@
         <pre class="snip" id="setup-cloud"></pre><button type="button" id="copy-cloud">Копіювати</button>
         <p class="sub" style="margin:16px 0 6px">а в «Змінні середовища» додай ці рядки (скрипт налаштування їх не бачить, тому токен лише тут). У «Доступі до мережі» дозволь цей домен і <code>raw.githubusercontent.com</code>.</p>
         <pre class="snip" id="setup-cloud-env"></pre><button type="button" id="copy-cloud-env">Копіювати</button>
+        <p class="sub" style="margin:22px 0 6px"><b>Codex CLI</b> (той самий токен): одна команда допише в <code>~/.codex/config.toml</code> експорт OpenTelemetry. macOS / Linux:</p>
+        <pre class="snip" id="setup-codex-sh"></pre><button type="button" id="copy-codex-sh">Копіювати</button>
+        <p class="sub" style="margin:16px 0 6px">Windows, у PowerShell:</p>
+        <pre class="snip" id="setup-codex-ps"></pre><button type="button" id="copy-codex-ps">Копіювати</button>
+        <p class="sub" style="margin:16px 0 6px">Або вручну, в кінець <code>~/.codex/config.toml</code> (на Windows <code>%USERPROFILE%\.codex\config.toml</code>); якщо там уже є секція <code>[otel]</code>, додай ці ключі в неї. Потім перезапусти Codex.</p>
+        <pre class="snip" id="setup-codex-toml"></pre><button type="button" id="copy-codex-toml">Копіювати</button>
         <p class="note">Токен показується один раз і діє лише для надсилання даних. Втратиш: створи новий пристрій і відклич старий. Нові сесії Claude Code почнуть надсилати дані після перезапуску. У хмарному середовищі домен <code id="setup-host"></code> має бути в дозволених (Network access).</p>
       </div>
     </div>

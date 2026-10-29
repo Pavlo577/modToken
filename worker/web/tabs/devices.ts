@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
-import { cloudEnv, cloudScript, pcInstallPs, pcInstallSh, settingsJson, shellEnv } from '../lib/setup.ts'
+import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, pcInstallPs, pcInstallSh, settingsJson, shellEnv } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
@@ -59,6 +59,9 @@ export function initDevices(): void {
   $('copy-pc-ps').onclick = copy('setup-pc-ps', $('copy-pc-ps'))
   $('copy-cloud').onclick = copy('setup-cloud', $('copy-cloud'))
   $('copy-cloud-env').onclick = copy('setup-cloud-env', $('copy-cloud-env'))
+  $('copy-codex-sh').onclick = copy('setup-codex-sh', $('copy-codex-sh'))
+  $('copy-codex-ps').onclick = copy('setup-codex-ps', $('copy-codex-ps'))
+  $('copy-codex-toml').onclick = copy('setup-codex-toml', $('copy-codex-toml'))
 
   $('new-device').addEventListener('submit', async e => {
     e.preventDefault()
@@ -71,6 +74,9 @@ export function initDevices(): void {
       $('setup-pc-ps').textContent = pcInstallPs(location.origin, token)
       $('setup-cloud').textContent = cloudScript()
       $('setup-cloud-env').textContent = cloudEnv(location.origin, token)
+      $('setup-codex-sh').textContent = codexInstallSh(location.origin, token)
+      $('setup-codex-ps').textContent = codexInstallPs(location.origin, token)
+      $('setup-codex-toml').textContent = codexToml(location.origin, token)
       $('setup-host').textContent = location.hostname
       $('setup-box').classList.remove('hide')
       name.value = ''

@@ -1,7 +1,11 @@
 // The settings a device pastes: they point Claude Code's logs at /v1/logs as JSON, keep metrics and traces off and never ask for prompt text.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cloudEnv, cloudScript, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -39,4 +43,35 @@ test('setup: the cloud variant is the minimum OTLP set plus the mod folder; the 
 test('setup: the computer one-liners pass the site and the token to the install scripts', () => {
   assert.ok(pcInstallSh('https://x.test/', 'tok').endsWith('/install.sh | bash -s -- https://x.test tok'))
   assert.ok(pcInstallPs('https://x.test/', 'tok').endsWith('/install.ps1))) https://x.test tok'))
+})
+
+test('setup: the Codex one-liners and the [otel] table: logs endpoint, JSON, the token header, the prompt text off', () => {
+  assert.ok(codexInstallSh('https://x.test/', 'tok').endsWith('/install-codex.sh | bash -s -- https://x.test tok'))
+  assert.ok(codexInstallPs('https://x.test/', 'tok').endsWith('/install-codex.ps1))) https://x.test tok'))
+  const toml = codexToml('https://x.test/', 'tok')
+  for (const part of ['[otel]', 'log_user_prompt = false', 'endpoint = "https://x.test/v1/logs"', 'protocol = "json"', '"x-device-token" = "tok"']) assert.ok(toml.includes(part), part)
+})
+
+test('setup: install-codex.sh appends its block once, replaces it on a second run and leaves an [otel] of the user\'s own alone', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tt-codex-'))
+  const run = (...args) => spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, ...args], { env: { ...process.env, CODEX_HOME: home }, encoding: 'utf8' })
+  const config = join(home, 'config.toml')
+  writeFileSync(config, 'model = "gpt-5.1-codex"\n\n[profiles.fast]\nmodel = "gpt-5-mini"\n')
+  assert.equal(run('https://x.test/', 'tok1').status, 0)
+  assert.equal(run('https://x.test', 'tok2').status, 0)
+  const text = readFileSync(config, 'utf8')
+  assert.equal(text.split('[otel]').length, 2) // one table, the second run replaced the first
+  assert.ok(text.startsWith('model = "gpt-5.1-codex"\n\n[profiles.fast]\nmodel = "gpt-5-mini"\n\n# >>> token-tracker'))
+  assert.ok(text.includes('"x-device-token" = "tok2"') && !text.includes('tok1'))
+  assert.ok(text.includes('endpoint = "https://x.test/v1/logs", protocol = "json"'))
+  const out = run('https://x.test', 'tok3')
+  assert.equal(out.status, 0)
+  assert.ok(!out.stdout.includes('tok3')) // the token is never printed
+
+  writeFileSync(config, '[otel]\nenvironment = "prod"\n')
+  const own = run('https://x.test', 'tok4')
+  assert.equal(own.status, 1)
+  assert.equal(readFileSync(config, 'utf8'), '[otel]\nenvironment = "prod"\n')
+  assert.ok(!own.stdout.includes('tok4'))
+  assert.equal(run('https://x.test').status, 1) // no token: nothing written
 })
