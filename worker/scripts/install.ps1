@@ -6,7 +6,7 @@ param([Parameter(Mandatory = $true)][string]$Origin, [Parameter(Mandatory = $tru
 $ErrorActionPreference = 'Stop'
 $Origin = $Origin.TrimEnd('/')
 $dir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
-$raw = if ($env:TT_RAW) { $env:TT_RAW } else { 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker' }
+$raw = if ($env:TT_RAW) { $env:TT_RAW } else { 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker' }
 $mods = Join-Path $dir 'mods'; $mod = Join-Path $mods 'token-tracker'
 Write-Host "Token Tracker: встановлення в $dir"
 

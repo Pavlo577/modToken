@@ -19,7 +19,7 @@ export const shellEnv = (origin: string, token: string): string =>
 // A cloud session (claude.ai/code) is a fresh container each time. Its "Setup script" cannot read the environment's saved variables, so it only
 // installs the mod (scripts/cloud-setup.sh); the OTLP settings, the token and CLAUDE_CODE_PLUGIN_DIRS go into "Environment variables" as KEY=value lines.
 // The minimum: metrics and traces are off unless an exporter is named, and the mod reads the site and the token from the OTLP variables.
-export const CLOUD_SCRIPT_URL = 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts/cloud-setup.sh'
+export const CLOUD_SCRIPT_URL = 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker/scripts/cloud-setup.sh'
 export const CLOUD_MOD_DIR = '/root/.claude/mods/token-tracker'
 export const cloudScript = (): string => `curl -fsSL ${CLOUD_SCRIPT_URL} | bash`
 export function cloudEnv(origin: string, token: string): string {
@@ -29,6 +29,6 @@ export function cloudEnv(origin: string, token: string): string {
 }
 
 // A computer: one command does all of it (scripts/install.sh, scripts/install.ps1): the OTLP settings with the token, and the mod as a plugin.
-const RAW_SCRIPTS = 'https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker/scripts'
+const RAW_SCRIPTS = 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker/scripts'
 export const pcInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
 export const pcInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install.ps1))) ${origin.replace(/\/$/, '')} ${token}`

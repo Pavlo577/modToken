@@ -9,7 +9,7 @@ set -u
 ORIGIN="${1%/}"; TOKEN="${2:-}"
 [ -z "$ORIGIN" ] || [ -z "$TOKEN" ] && { echo "Використання: curl -fsSL …/install.sh | bash -s -- https://<сайт> <токен пристрою>"; exit 1; }
 DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker}"
+RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/main/worker}"
 MODS="$DIR/mods"; MOD="$MODS/token-tracker"
 echo "Token Tracker: встановлення в $DIR"
 

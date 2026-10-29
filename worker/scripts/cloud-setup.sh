@@ -8,7 +8,7 @@ mkdir -p "$HOME/.claude"
 LOG="$HOME/.claude/token-tracker-setup.log"
 say() { echo "Token Tracker: $*"; echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
 say "start: user=$(id -un) home=$HOME"
-RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/claudesolo/worker}"
+RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/main/worker}"
 for name in token-tracker; do
   MOD="$HOME/.claude/mods/$name"
   mkdir -p "$MOD/.claude-plugin" "$MOD/hooks"
