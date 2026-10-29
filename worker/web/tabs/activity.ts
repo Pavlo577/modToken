@@ -87,7 +87,7 @@ export function renderActivity(agg: S.Aggregate): void {
         if (state.device && t.device !== state.device) continue
         if (state.provider && t.provider !== state.provider) continue
         const p = tz.parts(Date.parse(t.ts)), a = acc[Math.floor(p.min / 5)][p.h]
-        a.output += t.output; a.input += S.freshInput(t); a.turns++
+        a.output += t.output; a.input += S.freshInput(t); if (!t.kind || t.kind === 'main') a.turns++ // a turn = the main loop's row
         a.by.set(t.device, (a.by.get(t.device) ?? 0) + t.output)
       }
       heatGrid(box, {

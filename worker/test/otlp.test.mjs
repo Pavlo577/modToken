@@ -185,7 +185,7 @@ test('otlp: a Codex user prompt is the turn: a main row with no tokens and none 
 test('otlp: Codex events without tokens, other SSE kinds and records without a conversation are not calls; nothing secret survives', () => {
   const r = parseOtlpLogs(payload([
     codexRec('codex.sse_event', [s('event.kind', 'response.output_text.delta')]),
-    codexRec('codex.tool_result', [s('tool_name', 'shell'), s('arguments', 'cat SECRET-FILE'), s('output', 'SECRET OUTPUT'), s('call_id', 'call_1'), { key: 'success', value: { boolValue: true } }]),
+    codexRec('codex.tool_result', [s('tool_name', 'shell'), s('arguments', 'cat SECRET-FILE'), s('output', 'SECRET OUTPUT'), s('call_id', 'call_1'), s('mcp_server', 'SECRET-SRV'), s('mcp_server_origin', 'https://SECRET.example/mcp'), { key: 'success', value: { boolValue: true } }]),
     codexRec('codex.api_request', [s('error.message', 'SECRET ERROR'), i('attempt', 1)]),
     { timeUnixNano: '1761300000000000000', attributes: [s('event.name', 'codex.sse_event'), s('event.kind', 'response.completed'), i('input_token_count', 5)] },
     completed([], '1761300000999999999'),
@@ -193,7 +193,7 @@ test('otlp: Codex events without tokens, other SSE kinds and records without a c
   assert.equal(r.calls.length, 1)
   assert.equal(r.ignored, 4)
   const text = JSON.stringify(r)
-  for (const bad of ['me@example.com', 'acct-SECRET', 'SECRET-FILE', 'SECRET OUTPUT', 'SECRET ERROR']) assert.equal(text.includes(bad), false, bad)
+  for (const bad of ['me@example.com', 'acct-SECRET', 'SECRET-FILE', 'SECRET OUTPUT', 'SECRET ERROR', 'SECRET-SRV', 'SECRET.example']) assert.equal(text.includes(bad), false, bad)
   const tool = r.events.find(e => e.name === 'codex.tool_result')
   assert.equal(tool.session_id, 'conv-1')
   assert.deepEqual(Object.keys(JSON.parse(tool.attrs)).sort(), ['app.version', 'call_id', 'model', 'originator', 'success', 'tool_name'])
@@ -202,4 +202,17 @@ test('otlp: Codex events without tokens, other SSE kinds and records without a c
 test('otlp: a Codex call whose cached count exceeds its input never goes negative', () => {
   const [c] = parseOtlpLogs(payload([completed([i('input_token_count', 100), i('cached_token_count', 150)])], 'codex_cli_rs')).calls
   assert.equal(c.input_tokens, 0)
+})
+
+test('otlp: Codex writes input and output counts as strings of digits (a real Codex Desktop payload): they are counted', () => {
+  // codex-app-server / Codex_Desktop 0.146: input_token_count and output_token_count arrive as stringValue, the cached count as intValue
+  const rec = codexRec('codex.sse_event', [s('event.kind', 'response.completed'), s('input_token_count', '25940'), i('cached_token_count', 25728), i('cache_write_token_count', 0),
+    s('output_token_count', '115'), i('reasoning_token_count', 7), s('tool_token_count', '26055')])
+  const [c] = parseOtlpLogs(payload([rec], 'codex-app-server')).calls
+  assert.deepEqual([c.input_tokens, c.output_tokens, c.cache_read_tokens], [212, 115, 25728])
+  // no cache at all: still a call (it was dropped as empty while the strings were not read)
+  const cold = codexRec('codex.sse_event', [s('event.kind', 'response.completed'), s('input_token_count', '7245'), i('cached_token_count', 0), s('output_token_count', '0')], '1761300000999000000')
+  assert.equal(parseOtlpLogs(payload([cold], 'codex-app-server')).calls[0].input_tokens, 7245)
+  // a word is not a number
+  assert.equal(parseOtlpLogs(payload([codexRec('codex.sse_event', [s('event.kind', 'response.completed'), s('input_token_count', '12 tokens'), i('cached_token_count', 1)])], 'codex-app-server')).calls[0].input_tokens, 0)
 })

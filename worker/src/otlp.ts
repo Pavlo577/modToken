@@ -58,9 +58,10 @@ const text = (a: Attrs, key: string, n = 200): string => {
   const v = a.get(key)
   return typeof v === 'string' ? str(v, n) : typeof v === 'number' ? String(v) : ''
 }
+/** A count as a number; also when the exporter writes it as a string of digits (Codex formats input_token_count and output_token_count with Display). */
 const count = (a: Attrs, key: string): number => {
   const v = a.get(key)
-  return typeof v === 'number' ? int(v) : 0
+  return typeof v === 'number' ? int(v) : typeof v === 'string' && /^\d{1,15}$/.test(v) ? int(Number(v)) : 0
 }
 
 /** Nanoseconds since the epoch (a string of up to 19 digits) to an ISO time; '' when it is not one. */
@@ -152,7 +153,7 @@ export const MAX_RECORDS = 5000
 export interface Seen { service: string; event: string; keys: string; lens: string; sample: string; n: number }
 
 /** Attributes that may carry the text of the conversation. Only their LENGTH (and whether they look like a redaction placeholder) is ever reported. */
-const CONTENT_KEYS = ['prompt', 'prompt_text', 'response', 'tool_input', 'tool_parameters', 'tool_result', 'tool_output', 'error', 'body', 'arguments', 'output', 'error.message']
+const CONTENT_KEYS = ['prompt', 'prompt_text', 'response', 'tool_input', 'tool_parameters', 'tool_result', 'tool_output', 'error', 'body', 'arguments', 'output', 'error.message', 'mcp_server', 'mcp_server_origin', 'mcp_servers']
 /** Identity attributes: in a sample only their length is shown. */
 const MASKED_KEYS = ['user.email', 'user.id', 'user.account_uuid', 'user.account_id', 'organization.id', 'process.owner']
 /**

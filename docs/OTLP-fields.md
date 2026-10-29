@@ -115,23 +115,24 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `duration_ms` | int | how long the call / tool / connection took | counted |
 | `model` | string | model id | counted |
 | `attempt` | int | which attempt was refused (Codex: the attempt number of the request) | stored |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
-| `http.response.status_code` | int | HTTP status of the request *(only: Codex)* *(documented only)* | stored |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
+| `http.response.status_code` | int | HTTP status of the request *(only: Codex)* | stored |
 | `error.message` | string | the error message (may hold text) *(only: Codex)* *(documented only)* | content |
 
 ## `codex.conversation_starts`
 | field | type | meaning | handling |
 |---|---|---|---|
 | `model` | string | model id | counted |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
+| `mcp_servers` | string | the configured MCP servers *(only: Codex)* | content |
 
 ## `codex.sse_event`
 | field | type | meaning | handling |
@@ -139,20 +140,20 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `duration_ms` | int | how long the call / tool / connection took | counted |
 | `ttft_ms` | int | time to the first token | stored |
 | `model` | string | model id | counted |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
-| `event.kind` | string | the server-sent event; response.completed is the finished call that carries the tokens *(only: Codex)* *(documented only)* | stored |
-| `input_token_count` | int | the whole input of the call, cached part and cache writes included (they are taken out of it) *(only: Codex)* *(documented only)* | counted |
-| `cached_token_count` | int | input served from the cache *(only: Codex)* *(documented only)* | counted |
-| `cache_write_token_count` | int | input written to the cache *(only: Codex)* *(documented only)* | counted |
-| `output_token_count` | int | what the model wrote, reasoning included *(only: Codex)* *(documented only)* | counted |
-| `reasoning_token_count` | int | the reasoning part of the output (already inside output_token_count) *(only: Codex)* *(documented only)* | stored |
-| `tool_token_count` | int | despite its name, the total tokens of the call *(only: Codex)* *(documented only)* | stored |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
+| `event.kind` | string | the server-sent event; response.completed is the finished call that carries the tokens *(only: Codex)* | stored |
+| `input_token_count` | int | the whole input of the call, cached part and cache writes included (they are taken out of it) *(only: Codex)* | counted |
+| `cached_token_count` | int | input served from the cache *(only: Codex)* | counted |
+| `cache_write_token_count` | int | input written to the cache *(only: Codex)* | counted |
+| `output_token_count` | int | what the model wrote, reasoning included *(only: Codex)* | counted |
+| `reasoning_token_count` | int | the reasoning part of the output (already inside output_token_count) *(only: Codex)* | stored |
+| `tool_token_count` | int | despite its name, the total of the call: input_token_count + output_token_count *(only: Codex)* | stored |
 | `service_tier` | string | the service tier of the request *(only: Codex)* *(documented only)* | stored |
-| `model_reasoning_effort` | string | reasoning effort setting *(only: Codex)* *(documented only)* | stored |
+| `model_reasoning_effort` | string | reasoning effort setting *(only: Codex)* | stored |
 | `error.message` | string | the error message (may hold text) *(only: Codex)* *(documented only)* | content |
 
 ## `codex.tool_decision`
@@ -161,12 +162,12 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `model` | string | model id | counted |
 | `tool_name` | string | the tool (Bash, Read, Edit, PowerShell ...) | stored |
 | `decision` | string | accept or reject | stored |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
-| `call_id` | id | the tool call *(only: Codex)* *(documented only)* | stored |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
+| `call_id` | id | the tool call *(only: Codex)* | stored |
 
 ## `codex.tool_result`
 | field | type | meaning | handling |
@@ -175,24 +176,26 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `model` | string | model id | counted |
 | `tool_name` | string | the tool (Bash, Read, Edit, PowerShell ...) | stored |
 | `success` | bool | the tool finished without an error | stored |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
-| `call_id` | id | the tool call *(only: Codex)* *(documented only)* | stored |
-| `arguments` | string | the arguments of the tool call (commands, paths) *(only: Codex)* *(documented only)* | content |
-| `output` | string | what the tool returned *(only: Codex)* *(documented only)* | content |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
+| `call_id` | id | the tool call *(only: Codex)* | stored |
+| `arguments` | string | the arguments of the tool call (commands, paths) *(only: Codex)* | content |
+| `output` | string | what the tool returned *(only: Codex)* | content |
+| `mcp_server` | string | the MCP server of the tool call *(only: Codex)* | content |
+| `mcp_server_origin` | string | where the MCP server is (may be a URL) *(only: Codex)* | content |
 
 ## `codex.turn_cost`
 | field | type | meaning | handling |
 |---|---|---|---|
 | `model` | string | model id | counted |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
 | `turn.id` | id | the turn *(only: Codex)* *(documented only)* | stored |
 | `usage.estimated_usd` | float | Codex's own price estimate of the turn in dollars (not read: the page prices the tokens itself) *(only: Codex)* *(documented only)* | stored |
 
@@ -202,11 +205,11 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `model` | string | model id | counted |
 | `prompt` | string | the text of the message (arrives as <REDACTED>) | content |
 | `prompt_length` | int | length of the message in characters | stored |
-| `conversation.id` | id | the Codex session *(only: Codex)* *(documented only)* | column |
-| `app.version` | string | Codex version *(only: Codex)* *(documented only)* | stored |
-| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* *(documented only)* | stored |
-| `originator` | string | which Codex program (CLI, exec, IDE extension); also its service.name *(only: Codex)* *(documented only)* | stored |
-| `slug` | string | the model slug *(only: Codex)* *(documented only)* | stored |
+| `conversation.id` | id | the Codex session *(only: Codex)* | column |
+| `app.version` | string | Codex version *(only: Codex)* | stored |
+| `auth_mode` | string | how Codex signed in (ChatGPT account or API key) *(only: Codex)* | stored |
+| `originator` | string | which Codex program (Codex_Desktop, the CLI, exec ...) *(only: Codex)* | stored |
+| `slug` | string | the model slug *(only: Codex)* | stored |
 
 ## `compaction`
 | field | type | meaning | handling |
@@ -435,4 +438,4 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 
 ## Totals
 
-184 fields: 15 counted, 7 columns, 143 stored, 6 identity (never kept), 13 content (never kept).
+187 fields: 15 counted, 7 columns, 143 stored, 6 identity (never kept), 16 content (never kept).

@@ -153,11 +153,13 @@ export async function renderDay(): Promise<void> {
   let out = 0, inp = 0, ms = 0
   for (const t of turns) {
     const h = tz.parts(Date.parse(t.ts)).h
-    hrs[h].output += t.output; hrs[h].input += S.freshInput(t); hrs[h].turns++
+    const turn = !t.kind || t.kind === 'main' // a turn = the main loop's row; sub-agent, background and step rows only add tokens
+    hrs[h].output += t.output; hrs[h].input += S.freshInput(t); if (turn) hrs[h].turns++
     out += t.output; inp += S.freshInput(t); ms += t.duration_ms
   }
-  const facts: [string, string][] = [['Вихідні', fmt(out)], ['Вхідні (нові)', fmt(inp)], ['Ходів', String(turns.length)], ['Активний час', dur(ms)]]
-  if (turns.length) facts.push(['Перший хід', timeOf(Date.parse(turns[0].ts))], ['Останній хід', timeOf(Date.parse(turns[turns.length - 1].ts))])
+  const main = turns.filter(t => !t.kind || t.kind === 'main')
+  const facts: [string, string][] = [['Вихідні', fmt(out)], ['Вхідні (нові)', fmt(inp)], ['Ходів', String(main.length)], ['Активний час', dur(ms)]]
+  if (main.length) facts.push(['Перший хід', timeOf(Date.parse(main[0].ts))], ['Останній хід', timeOf(Date.parse(main[main.length - 1].ts))])
   $('day-summary').replaceChildren(...facts.map(([l, v]) => el('div', {}, el('b', {}, v), l)))
   barChart($('day-chart'), {
     labels: hrs.map((_, h) => `${h}:00`), height: 200,
