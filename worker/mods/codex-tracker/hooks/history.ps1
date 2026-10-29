@@ -2,13 +2,19 @@
 # Codex's session files (%USERPROFILE%\.codex\sessions and archived_sessions) on the device, sent as numbers to POST /v1/import
 # (provider codex) by the SessionStart hook until one import has gone through (then a marker in the plugin's data folder stops it).
 # Only session_meta, turn_context, task_started and token_count lines are parsed; the conversation is not. Nothing is printed; a failure
-# leaves its message in last-error.txt.
+# leaves its message in last-error.txt. Codex does not run async hooks yet, so the hook only starts the import as a hidden process of its
+# own (-Run) and returns at once.
+param([switch]$Run)
 $ErrorActionPreference = 'Stop'
 $home_ = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $data = if ($env:PLUGIN_DATA) { $env:PLUGIN_DATA } else { Join-Path $home_ 'token-tracker' }
 $marker = Join-Path $data 'history-imported'
 try {
   if (Test-Path $marker) { exit 0 }
+  if (-not $Run) {
+    Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Run')
+    exit 0
+  }
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $config = Get-Content -Raw (Join-Path $home_ 'config.toml')
   $site = [regex]::Match($config, 'endpoint = "(https?://[^"]+?)/v1/logs"')

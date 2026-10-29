@@ -93,7 +93,7 @@ test('codex plugin: the manifest points at the hooks file, the Stop hook runs th
   const hooks = JSON.parse(readFileSync(PLUGIN + manifest.hooks.replace(/^\.\//, ''), 'utf8'))
   assert.deepEqual(Object.keys(hooks).sort(), ['description', 'hooks']) // Codex reads a hooks file with deny_unknown_fields
   assert.deepEqual(Object.keys(hooks.hooks).sort(), ['SessionStart', 'Stop'])
-  assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, true) // the history import must not hold up the start of a session
+  assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, undefined) // Codex skips async hooks: the script detaches itself instead
   for (const [event, script] of [['Stop', 'limits'], ['SessionStart', 'history']]) {
     const [h] = hooks.hooks[event][0].hooks
     assert.equal(h.type, 'command')
@@ -120,8 +120,8 @@ test('codex limits: a failed send leaves only its message in the data folder, ne
 
 // ---- the history import (hooks/history.py, run by the SessionStart hook)
 const HISTORY = PLUGIN + 'hooks/history.py'
-const runHistory = (home, data) => new Promise(done => {
-  const p = spawn('python3', [HISTORY], { env: { ...process.env, CODEX_HOME: home, PLUGIN_DATA: data } })
+const runHistory = (home, data, args = ['--run']) => new Promise(done => {
+  const p = spawn('python3', [HISTORY, ...args], { env: { ...process.env, CODEX_HOME: home, PLUGIN_DATA: data } })
   p.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd: '/home/SECRET-CWD' }))
   let out = ''
   p.stdout.on('data', d => (out += d)); p.stderr.on('data', d => (out += d))
@@ -183,5 +183,24 @@ test('codex history: a session Codex started by itself (no approvals, read-only)
     assert.equal(r.out, '')
     assert.equal(existsSync(join(failed, 'history-imported')), false) // tried again at the next session start
     assert.ok(readFileSync(join(failed, 'last-error.txt'), 'utf8').includes('history'))
+  } finally { s.close() }
+})
+
+test('codex history: as the hook runs it (no --run), it returns at once and the import goes on in a detached process', async () => {
+  const s = await site()
+  try {
+    const home = codexHome(s.origin, [
+      { timestamp: '2026-10-20T11:00:00.000Z', type: 'session_meta', payload: { id: SID } },
+      ev('2026-10-20T11:00:01.000Z', { type: 'task_started', turn_id: 't1' }),
+      ev('2026-10-20T11:00:02.000Z', { type: 'token_count', info: usage(500, 0, 10, 510) }),
+    ])
+    const data = mkdtempSync(join(tmpdir(), 'tt-codex-hist-'))
+    const started = Date.now()
+    const r = await runHistory(home, data, [])
+    assert.equal(r.code, 0); assert.equal(r.out, '')
+    assert.ok(Date.now() - started < 3000)
+    for (let i = 0; i < 50 && !existsSync(join(data, 'history-imported')); i++) await new Promise(ok => setTimeout(ok, 100))
+    assert.equal(s.got.length, 1)
+    assert.equal(JSON.parse(s.got[0].body).turns[0].input, 500)
   } finally { s.close() }
 })

@@ -8,8 +8,7 @@
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/hooks/history.py\"",
             "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\history.ps1\"",
-            "async": true,
-            "timeout": 600
+            "timeout": 15
           }
         ]
       }

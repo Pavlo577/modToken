@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # Token Tracker plugin for Codex: the token history from before OpenTelemetry was switched on, read from Codex's own session files
 # ($CODEX_HOME/sessions and archived_sessions, rollout-*.jsonl) on the device and sent as numbers to POST /v1/import (provider codex).
-# The plugin's SessionStart hook runs it (asynchronously) until one import has gone through; then a marker in the plugin's data folder stops it.
+# The plugin's SessionStart hook runs it until one import has gone through; then a marker in the plugin's data folder stops it. Codex does
+# not run async hooks yet, so the hook only starts the import as a detached process of its own and returns at once.
 # The server keeps only calls from before the device's first Codex OTLP call (later ones OTLP counted), and an import sent twice counts once.
 # Of a session file only four kinds of line are read: session_meta (the session id), turn_context (the model, and whether Codex started the
 # session by itself: no approvals and a read-only sandbox), task_started (a new turn) and token_count (the numbers); a line of any other
 # kind, the conversation included, is not even parsed. Nothing is printed; a failure leaves its message in last-error.txt.
-import json, os, re, sys, urllib.request
+import json, os, re, subprocess, sys, urllib.request
 from datetime import datetime, timezone
 
 HOME = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
@@ -108,9 +109,18 @@ def main():
         f.write(f'{datetime.now(timezone.utc).isoformat()} {len(rows)}\n')
 
 
+def detach():
+    """Runs the import in a process of its own (outliving the hook) and returns at once; nothing to do once the marker is there."""
+    if os.path.exists(MARKER):
+        return
+    flags = 0x00000008 | 0x00000200 if os.name == 'nt' else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen([sys.executable, os.path.abspath(__file__), '--run'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, close_fds=True, start_new_session=os.name != 'nt', creationflags=flags)
+
+
 if __name__ == '__main__':
     try:
-        main()
+        main() if '--run' in sys.argv[1:] else detach()
     except Exception as e:
         try:
             os.makedirs(DATA, exist_ok=True)
