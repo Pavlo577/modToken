@@ -1,0 +1,17 @@
+{
+  "description": "Token Tracker: after every turn, the rate-limit windows of the session (numbers only) to the site",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/limits.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\limits.ps1\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

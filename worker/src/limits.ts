@@ -1,5 +1,5 @@
 // POST /v1/limits: the subscription's rate-limit windows, sent by the token-tracker mod (mods/token-tracker), which reads them from the session,
-// and for Codex by scripts/codex-limits.py / .ps1, which read them from Codex's own session files.
+// and for Codex by the token-tracker Codex plugin (mods/codex-tracker), whose Stop hook reads them from Codex's own session files.
 // Body: { provider?, limits: [{ kind, percentUsed, resetsAt? }] }. Only the agent, the window's name, a percent and a time are read; anything else is ignored.
 // A reading equal to the device's last one for that window is not stored again.
 import type { Env } from './env.ts'

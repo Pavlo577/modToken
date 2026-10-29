@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-# Token Tracker for Codex: the subscription's rate-limit windows, sent to the site (POST /v1/limits, provider codex).
+# Token Tracker plugin for Codex: the subscription's rate-limit windows, sent to the site (POST /v1/limits, provider codex).
 # OTLP carries none, but Codex writes them into its session files: every `token_count` event of
 # $CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl has `rate_limits` { primary, secondary: { used_percent, window_minutes, resets_at } }.
-# Codex runs this after every turn (`notify` in config.toml, written by install-codex.sh). It reads only those numbers from the newest
-# session file; never the conversation, and not the argument Codex appends to the command (it holds the turn's text).
-# The site and the device token come from the [otel] block install-codex.sh wrote; nothing is printed, a failure is silent.
+# The plugin's Stop hook runs this after every turn. Of the hook's input it reads `transcript_path` only (the input also holds the last
+# answer, which is never looked at); of the session file only those numbers. Without a transcript path, the newest session file is read.
+# The site and the device token come from the [otel] block install-codex.sh wrote; nothing is printed (a Stop hook's output would be
+# read by Codex), a failure is silent.
 import json, os, re, sys, urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +24,8 @@ def site_and_token():
 def newest_sessions(n=3):
     """The most recently written session files, from the last two day folders (sessions/YYYY/MM/DD)."""
     root = os.path.join(HOME, 'sessions')
+    if not os.path.isdir(root):
+        return []
     days = []
     for y in sorted(os.listdir(root), reverse=True)[:2]:
         for m in sorted(os.listdir(os.path.join(root, y)), reverse=True)[:2]:
@@ -67,11 +70,23 @@ def readings(rl, stamp):
     return out
 
 
+def transcript():
+    """The session file the Stop hook names, if it is one of Codex's session files."""
+    try:
+        if sys.stdin is None or sys.stdin.isatty():
+            return None
+        path = json.loads(sys.stdin.read(4 * 1024 * 1024) or '{}').get('transcript_path')
+    except (ValueError, AttributeError, OSError):
+        return None
+    return path if isinstance(path, str) and path.endswith('.jsonl') and os.path.isfile(path) else None
+
+
 def main():
     site, token = site_and_token()
     if not site:
         return
-    for path in newest_sessions():
+    named = transcript()
+    for path in ([named] if named else []) + newest_sessions():
         rl, stamp = latest_rate_limits(path)
         if rl:
             limits = readings(rl, stamp)

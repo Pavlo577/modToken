@@ -84,12 +84,12 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
   const win = place === 'windows'
   return {
     steps: [
-      { text: win ? 'Відкрий PowerShell і виконай (допише в config.toml Codex експорт OpenTelemetry і збирач лімітів):' : 'У терміналі виконай (допише в config.toml Codex експорт OpenTelemetry і збирач лімітів; для лімітів потрібен `python3`):', code: win ? codexInstallPs(origin, token) : codexInstallSh(origin, token) },
-      { text: "Перезапусти Codex; дані з'являться після першого запиту." },
+      { text: win ? 'Відкрий PowerShell і виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін лімітів):' : 'У терміналі виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін лімітів; йому потрібен `python3`):', code: win ? codexInstallPs(origin, token) : codexInstallSh(origin, token) },
+      { text: "Перезапусти Codex. Коли Codex спитає про хук плагіна token-tracker, дозволь його: він надсилає ліміти. Дані з'являться після першого запиту." },
     ],
     manual: [
       { text: `Допиши в кінець \`${win ? '%USERPROFILE%\\.codex\\config.toml' : '~/.codex/config.toml'}\`; якщо там уже є секція \`[otel]\`, додай ці ключі в неї:`, code: toml },
-      { text: "`protocol = \"json\"` обов'язковий: іншого формату сайт не приймає. Текст запитів лишається вимкненим (`log_user_prompt = false`). Так приходять лише токени: ліміти надсилає збирач, якого ставить команда вище (рядок `notify` на початку config.toml)." },
+      { text: "`protocol = \"json\"` обов'язковий: іншого формату сайт не приймає. Текст запитів лишається вимкненим (`log_user_prompt = false`). Так приходять лише токени: ліміти надсилає плагін token-tracker для Codex, його ставить команда вище (`codex plugin add token-tracker@token-tracker-local`)." },
     ],
   }
 }

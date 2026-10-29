@@ -52,10 +52,10 @@ test('setup: the Codex one-liners and the [otel] table: logs endpoint, JSON, the
   for (const part of ['[otel]', 'log_user_prompt = false', 'endpoint = "https://x.test/v1/logs"', 'protocol = "json"', '"x-device-token" = "tok"']) assert.ok(toml.includes(part), part)
 })
 
-test('setup: install-codex.sh writes its blocks once (notify first, [otel] last), replaces them on a second run, leaves the user\'s own alone', () => {
+test('setup: install-codex.sh writes its [otel] block once, replaces it on a second run, puts the plugin in place, leaves the user\'s own alone', () => {
   const home = mkdtempSync(join(tmpdir(), 'tt-codex-'))
-  const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '') // the limits script from this checkout, not the network
-  const run = (...args) => spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, ...args], { env: { ...process.env, CODEX_HOME: home, TT_RAW: raw }, encoding: 'utf8' })
+  const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '') // the plugin from this checkout, not the network
+  const run = (...args) => spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, ...args], { env: { ...process.env, CODEX_HOME: home, TT_RAW: raw, PATH: '/usr/bin:/bin' }, encoding: 'utf8' })
   const config = join(home, 'config.toml')
   const user = 'model = "gpt-5.1-codex"\n\n[profiles.fast]\nmodel = "gpt-5-mini"\n'
   writeFileSync(config, user)
@@ -66,22 +66,20 @@ test('setup: install-codex.sh writes its blocks once (notify first, [otel] last)
   const text = readFileSync(config, 'utf8')
   assert.equal(text, first.replace('tok1', 'tok2')) // a second and a third run change nothing but the token
   assert.equal(text.split('[otel]').length, 2)
-  assert.equal(text.split('notify =').length, 2)
-  assert.ok(text.startsWith('# >>> token-tracker'))
-  assert.ok(text.includes(`notify = ['python3', '${join(home, 'token-tracker', 'codex-limits.py')}']`))
-  assert.ok(text.includes(user + '\n# >>> token-tracker')) // the user's config stays as it was, between the two blocks
+  assert.ok(!text.includes('notify'))
+  assert.ok(text.startsWith(user + '\n# >>> token-tracker')) // the user's config stays as it was, the block comes after it
   assert.ok(text.includes('"x-device-token" = "tok2"') && !text.includes('tok1'))
-  assert.ok(readFileSync(join(home, 'token-tracker', 'codex-limits.py'), 'utf8').includes('rate_limits'))
-  const toml = spawnSync('python3', ['-c', 'import tomllib,sys,json; d=tomllib.load(open(sys.argv[1],"rb")); print(json.dumps([d["notify"][0], d["model"], d["profiles"]["fast"]["model"], d["otel"]["exporter"]["otlp-http"]["protocol"]]))', config], { encoding: 'utf8' })
-  assert.deepEqual(JSON.parse(toml.stdout), ['python3', 'gpt-5.1-codex', 'gpt-5-mini', 'json']) // valid TOML: notify at the top level, not inside a table
+  assert.ok(text.includes('endpoint = "https://x.test/v1/logs", protocol = "json"'))
+  // the plugin and its local marketplace, ready for `codex plugin add token-tracker@token-tracker-local`
+  const market = JSON.parse(readFileSync(join(home, 'token-tracker', '.agents', 'plugins', 'marketplace.json'), 'utf8'))
+  assert.deepEqual(market, { name: 'token-tracker-local', plugins: [{ name: 'token-tracker', source: './plugins/token-tracker' }] })
+  for (const f of ['.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1']) {
+    assert.equal(readFileSync(join(home, 'token-tracker', 'plugins', 'token-tracker', f), 'utf8'), readFileSync(new URL('../mods/codex-tracker/' + f, import.meta.url), 'utf8'), f)
+  }
   const out = run('https://x.test', 'tok3')
   assert.equal(out.status, 0)
   assert.ok(!out.stdout.includes('tok3')) // the token is never printed
-
-  writeFileSync(config, 'notify = ["notify-send"]\n')
-  assert.equal(run('https://x.test', 'tok5').status, 0)
-  const own = readFileSync(config, 'utf8')
-  assert.ok(own.startsWith('notify = ["notify-send"]') && own.split('notify =').length === 2) // the user's notify stays, ours is not added
+  assert.ok(out.stdout.includes('codex plugin add token-tracker@token-tracker-local')) // no codex command here: how to install it by hand
 
   writeFileSync(config, '[otel]\nenvironment = "prod"\n')
   const otel = run('https://x.test', 'tok4')

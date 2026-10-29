@@ -5,15 +5,16 @@
 # ~/.codex/config.toml ($CODEX_HOME if set), between marker lines, so running it again replaces only that block. A config that
 # already has an [otel] table of its own is left as it is (TOML allows one): the script says what to add by hand.
 # The prompt text stays off (log_user_prompt = false). The token is written to config.toml only, never printed.
-# Limits: OTLP carries none, so codex-limits.py is put into ~/.codex/token-tracker and run by Codex after every turn (`notify`, a top-level
-# key, in a second marked block at the top of the file); it needs python3. A `notify` of the user's own is left as it is.
+# Limits: OTLP carries none, so the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files,
+# needs python3) goes into a local marketplace in ~/.codex/token-tracker and is installed with `codex plugin`. Codex runs a plugin's hook
+# only after the user approves it once in Codex.
 set -u
 ORIGIN="${1%/}"; TOKEN="${2:-}"
 [ -z "$ORIGIN" ] || [ -z "$TOKEN" ] && { echo "Використання: curl -fsSL …/install-codex.sh | bash -s -- https://<сайт> <токен пристрою>"; exit 1; }
 DIR="${CODEX_HOME:-$HOME/.codex}"
 CONFIG="$DIR/config.toml"
 RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/main/worker}"
-LIMITS="$DIR/token-tracker/codex-limits.py"
+MARKET="$DIR/token-tracker"; PLUGIN="$MARKET/plugins/token-tracker"
 BEGIN='# >>> token-tracker (written by the Token Tracker install command; run it again to update)'
 END='# <<< token-tracker'
 echo "Token Tracker для Codex: $CONFIG"
@@ -28,26 +29,34 @@ if printf '%s\n' "$REST" | grep -Eq '^[[:space:]]*\[otel(\]|\.)'; then
   exit 1
 fi
 
-# the limits: the script, and `notify` unless the config has one of its own
-NOTIFY=''
-if printf '%s\n' "$REST" | grep -Eq '^[[:space:]]*notify[[:space:]]*='; then
-  echo "  У $CONFIG уже є свій notify; ліміти Codex не надсилатимуться (запусти з нього: python3 \"$LIMITS\")"
-elif ! command -v python3 >/dev/null; then
-  echo "  Немає python3: ліміти Codex не надсилатимуться"
-elif mkdir -p "$DIR/token-tracker" && curl -fsSL --max-time 30 "$RAW/scripts/codex-limits.py" -o "$LIMITS"; then
-  NOTIFY="notify = ['python3', '$LIMITS']"
-  echo "  збирач лімітів встановлено"
-else
-  echo "  Не вдалося завантажити codex-limits.py: ліміти Codex не надсилатимуться"
-fi
-
-# `notify` is a top-level key, so its block goes first; a table goes at the end: keys above it stay at the top level
+# a table goes at the end: keys above it stay at the top level
 {
-  [ -n "$NOTIFY" ] && printf '%s\n' "$BEGIN" "$NOTIFY" "$END" ''
   [ -n "$REST" ] && printf '%s\n\n' "$REST"
   printf '%s\n' "$BEGIN" '[otel]' 'log_user_prompt = false' \
     "exporter = { otlp-http = { endpoint = \"$ORIGIN/v1/logs\", protocol = \"json\", headers = { \"x-device-token\" = \"$TOKEN\" } } }" "$END"
 } > "$CONFIG.tt-new" && mv "$CONFIG.tt-new" "$CONFIG"
 chmod 600 "$CONFIG" 2>/dev/null
 echo "  OpenTelemetry налаштовано"
+
+# the limits: the plugin in a local marketplace, installed when the codex command is there (after the config is written: `codex plugin`
+# adds its own entries to it)
+mkdir -p "$MARKET/.agents/plugins" "$PLUGIN/.codex-plugin" "$PLUGIN/hooks"
+GOT=1
+for f in .codex-plugin/plugin.json hooks/hooks.json hooks/limits.py hooks/limits.ps1; do
+  curl -fsSL --max-time 30 "$RAW/mods/codex-tracker/$f" -o "$PLUGIN/$f" || GOT=0
+done
+cat > "$MARKET/.agents/plugins/marketplace.json" <<'JSON'
+{ "name": "token-tracker-local", "plugins": [{ "name": "token-tracker", "source": "./plugins/token-tracker" }] }
+JSON
+if [ "$GOT" = 0 ]; then
+  echo "  Не вдалося завантажити плагін: ліміти Codex не надсилатимуться"
+elif command -v codex >/dev/null; then
+  codex plugin marketplace add "$MARKET" >/dev/null 2>&1
+  if codex plugin add token-tracker@token-tracker-local >/dev/null 2>&1; then echo "  плагін лімітів встановлено (у Codex дозволь його хук, коли спитає)"
+  else echo "  плагін не вдалося встановити: codex plugin marketplace add \"$MARKET\" && codex plugin add token-tracker@token-tracker-local"; fi
+  command -v python3 >/dev/null || echo "  Немає python3: плагін не зможе надсилати ліміти"
+else
+  echo "  Команди codex не знайдено. Плагін лімітів лежить у $MARKET; встанови його:"
+  echo "    codex plugin marketplace add \"$MARKET\" && codex plugin add token-tracker@token-tracker-local"
+fi
 echo "Готово. Перезапусти Codex; дані з'являться на дашборді після першого запиту."

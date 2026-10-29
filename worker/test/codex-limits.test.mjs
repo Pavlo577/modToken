@@ -1,17 +1,20 @@
-// scripts/codex-limits.py: Codex's rate-limit windows from its session files to POST /v1/limits, and nothing else (synthetic files, a local server).
+// The token-tracker plugin for Codex (mods/codex-tracker): its Stop hook sends the rate-limit windows from Codex's session files to
+// POST /v1/limits, and nothing else (synthetic files, a local server).
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const SCRIPT = new URL('../scripts/codex-limits.py', import.meta.url).pathname
+const PLUGIN = new URL('../mods/codex-tracker/', import.meta.url).pathname
+const SCRIPT = PLUGIN + 'hooks/limits.py'
 const TOKEN = 'ab'.repeat(32)
 
-const run = (home, args = []) => new Promise(done => {
+const run = (home, args = [], stdin = '') => new Promise(done => {
   const p = spawn('python3', [SCRIPT, ...args], { env: { ...process.env, CODEX_HOME: home } })
+  p.stdin.end(stdin)
   let out = ''
   p.stdout.on('data', d => (out += d)); p.stderr.on('data', d => (out += d))
   p.on('close', code => done({ code, out }))
@@ -28,12 +31,12 @@ async function site() {
   return { got, origin: `http://127.0.0.1:${server.address().port}`, close: () => server.close() }
 }
 
-function codexHome(origin, lines) {
+function codexHome(origin, lines, name = 'rollout-2026-10-29T20-24-22-01a18955.jsonl') {
   const home = mkdtempSync(join(tmpdir(), 'tt-codex-limits-'))
   writeFileSync(join(home, 'config.toml'), `model = "gpt-5.6-sol"\n\n# >>> token-tracker\n[otel]\nexporter = { otlp-http = { endpoint = "${origin}/v1/logs", protocol = "json", headers = { "x-device-token" = "${TOKEN}" } } }\n# <<< token-tracker\n`)
   const day = join(home, 'sessions', '2026', '10', '29')
   mkdirSync(day, { recursive: true })
-  writeFileSync(join(day, 'rollout-2026-10-29T20-24-22-01a18955.jsonl'), lines.map(l => JSON.stringify(l)).join('\n') + '\n')
+  writeFileSync(join(day, name), lines.map(l => JSON.stringify(l)).join('\n') + '\n')
   return home
 }
 
@@ -49,7 +52,7 @@ test('codex limits: the last token_count with rate_limits is sent as five_hour a
       tokenCount({ primary: { used_percent: 12.5, window_minutes: 300, resets_at: 1793322000 }, secondary: { used_percent: 41, window_minutes: 10080, resets_at: 1793700000 }, plan_type: 'plus', credits: { balance: '7' } }),
       tokenCount(null, '2026-10-29T20:27:19.000Z'), // a later count without limits does not hide the last one that had them
     ])
-    const r = await run(home, ['{"type":"agent-turn-complete","last-assistant-message":"SECRET ANSWER"}'])
+    const r = await run(home, [], JSON.stringify({ hook_event_name: 'Stop', session_id: 's', transcript_path: null, last_assistant_message: 'SECRET ANSWER', cwd: '/home/SECRET-CWD' }))
     assert.equal(r.code, 0); assert.equal(r.out, '')
     assert.equal(s.got.length, 1)
     assert.equal(s.got[0].url, '/v1/limits'); assert.equal(s.got[0].token, TOKEN)
@@ -71,4 +74,28 @@ test('codex limits: older files with resets_in_seconds, other windows by name; n
     const nowhere = await run(mkdtempSync(join(tmpdir(), 'tt-codex-empty-')))
     assert.equal(nowhere.code, 0); assert.equal(nowhere.out, '')
   } finally { s.close() }
+})
+
+test('codex limits: the Stop hook names the session file: that one is read, not the newest', async () => {
+  const s = await site()
+  try {
+    const home = codexHome(s.origin, [tokenCount({ primary: { used_percent: 90, window_minutes: 300, resets_at: 1793322000 } })], 'rollout-2026-10-29T23-00-00-newest.jsonl')
+    const other = join(home, 'sessions', '2026', '10', '29', 'rollout-2026-10-29T20-00-00-named.jsonl')
+    writeFileSync(other, JSON.stringify(tokenCount({ primary: { used_percent: 5, window_minutes: 300, resets_at: 1793322000 } })) + '\n')
+    await run(home, [], JSON.stringify({ hook_event_name: 'Stop', transcript_path: other, last_assistant_message: 'SECRET' }))
+    assert.deepEqual(JSON.parse(s.got[0].body).limits.map(l => l.percentUsed), [5])
+  } finally { s.close() }
+})
+
+test('codex plugin: the manifest points at the hooks file, the Stop hook runs the collector that is in the plugin', () => {
+  const manifest = JSON.parse(readFileSync(PLUGIN + '.codex-plugin/plugin.json', 'utf8'))
+  assert.equal(manifest.name, 'token-tracker')
+  const hooks = JSON.parse(readFileSync(PLUGIN + manifest.hooks.replace(/^\.\//, ''), 'utf8'))
+  assert.deepEqual(Object.keys(hooks).sort(), ['description', 'hooks']) // Codex reads a hooks file with deny_unknown_fields
+  const [stop] = hooks.hooks.Stop[0].hooks
+  assert.equal(stop.type, 'command')
+  for (const cmd of [stop.command, stop.commandWindows]) {
+    const file = /\$\{PLUGIN_ROOT\}[/\\](hooks[/\\]limits\.(py|ps1))/.exec(cmd)[1].replace(/\\/g, '/')
+    assert.ok(existsSync(PLUGIN + file), file)
+  }
 })

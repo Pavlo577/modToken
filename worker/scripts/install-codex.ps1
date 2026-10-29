@@ -3,15 +3,15 @@
 # Same as install-codex.sh: the [otel] table that exports Codex's log events to the site goes into %USERPROFILE%\.codex\config.toml
 # ($env:CODEX_HOME if set) between marker lines, replaced on every run; a config with an [otel] table of its own is left as it is.
 # The prompt text stays off (log_user_prompt = false). The token is never printed.
-# Limits: codex-limits.ps1 goes into .codex\token-tracker and Codex runs it after every turn (`notify`, a top-level key, in a second
-# marked block at the top of the file). A `notify` of the user's own is left as it is.
+# Limits: the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files) goes into a local
+# marketplace in .codex\token-tracker and is installed with `codex plugin`; Codex runs its hook after the user approves it once.
 param([Parameter(Mandatory = $true)][string]$Origin, [Parameter(Mandatory = $true)][string]$Token)
 $ErrorActionPreference = 'Stop'
 $Origin = $Origin.TrimEnd('/')
 $dir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $config = Join-Path $dir 'config.toml'
 $raw = if ($env:TT_RAW) { $env:TT_RAW } else { 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker' }
-$limits = Join-Path $dir 'token-tracker\codex-limits.ps1'
+$market = Join-Path $dir 'token-tracker'; $plugin = Join-Path $market 'plugins\token-tracker'
 $begin = '# >>> token-tracker (written by the Token Tracker install command; run it again to update)'
 $end = '# <<< token-tracker'
 Write-Host "Token Tracker для Codex: $config"
@@ -34,25 +34,34 @@ if ($rest | Where-Object { $_ -match '^\s*\[otel(\]|\.)' }) {
   exit 1
 }
 
-# the limits: the script, and `notify` unless the config has one of its own
-$notify = $null
-if ($rest | Where-Object { $_ -match '^\s*notify\s*=' }) {
-  Write-Host "  У $config уже є свій notify; ліміти Codex не надсилатимуться (запусти з нього: powershell -File `"$limits`")"
-} else {
-  try {
-    New-Item -ItemType Directory -Force (Split-Path $limits) | Out-Null
-    Invoke-RestMethod "$raw/scripts/codex-limits.ps1" -OutFile $limits
-    $notify = "notify = ['powershell.exe', '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', '$limits']"
-    Write-Host '  збирач лімітів встановлено'
-  } catch { Write-Host '  Не вдалося завантажити codex-limits.ps1: ліміти Codex не надсилатимуться' }
-}
-
-# `notify` is a top-level key, so its block goes first; a table goes at the end: keys above it stay at the top level
+# a table goes at the end: keys above it stay at the top level
 $out = New-Object System.Collections.Generic.List[string]
-if ($notify) { $out.AddRange([string[]]@($begin, $notify, $end, '')) }
 if ($rest.Count) { $out.AddRange($rest); $out.Add('') }
 $out.AddRange([string[]]@($begin, '[otel]', 'log_user_prompt = false',
   "exporter = { otlp-http = { endpoint = `"$Origin/v1/logs`", protocol = `"json`", headers = { `"x-device-token`" = `"$Token`" } } }", $end))
 [System.IO.File]::WriteAllLines($config, $out, (New-Object System.Text.UTF8Encoding $false)) # TOML: UTF-8 without a BOM
 Write-Host '  OpenTelemetry налаштовано'
+
+# the limits: the plugin in a local marketplace, installed when the codex command is there (after the config is written: `codex plugin`
+# adds its own entries to it)
+$got = $true
+foreach ($f in '.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1') {
+  $p = Join-Path $plugin $f
+  New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
+  try { Invoke-RestMethod "$raw/mods/codex-tracker/$f" -OutFile $p } catch { $got = $false }
+}
+New-Item -ItemType Directory -Force (Join-Path $market '.agents\plugins') | Out-Null
+'{ "name": "token-tracker-local", "plugins": [{ "name": "token-tracker", "source": "./plugins/token-tracker" }] }' |
+  Set-Content -Encoding ascii (Join-Path $market '.agents\plugins\marketplace.json')
+if (-not $got) { Write-Host '  Не вдалося завантажити плагін: ліміти Codex не надсилатимуться' }
+elseif (Get-Command codex -ErrorAction SilentlyContinue) {
+  $ErrorActionPreference = 'Continue'
+  codex plugin marketplace add $market *> $null
+  codex plugin add token-tracker@token-tracker-local *> $null
+  if ($LASTEXITCODE) { Write-Host "  плагін не вдалося встановити: codex plugin marketplace add `"$market`"; codex plugin add token-tracker@token-tracker-local" }
+  else { Write-Host '  плагін лімітів встановлено (у Codex дозволь його хук, коли спитає)' }
+} else {
+  Write-Host "  Команди codex не знайдено. Плагін лімітів лежить у $market; встанови його:"
+  Write-Host "    codex plugin marketplace add `"$market`"; codex plugin add token-tracker@token-tracker-local"
+}
 Write-Host "Готово. Перезапусти Codex; дані з'являться на дашборді після першого запиту."

@@ -1,7 +1,7 @@
-# Token Tracker for Codex on Windows: the subscription's rate-limit windows, sent to the site (POST /v1/limits, provider codex).
-# Same as codex-limits.py: Codex runs it after every turn (`notify` in config.toml, written by install-codex.ps1); it reads only the
-# numbers of the last `token_count` event's `rate_limits` in the newest session file of %USERPROFILE%\.codex\sessions\YYYY\MM\DD,
-# never the conversation and not the argument Codex appends (it holds the turn's text). Nothing is printed; a failure is silent.
+# Token Tracker plugin for Codex on Windows: the subscription's rate-limit windows, sent to the site (POST /v1/limits, provider codex).
+# Same as limits.py: the plugin's Stop hook runs it after every turn; of the hook's input it reads `transcript_path` only (the input also
+# holds the last answer, never looked at), of the session file only the numbers of the last `token_count` event's `rate_limits`; without
+# a transcript path, the newest file of %USERPROFILE%\.codex\sessions\YYYY\MM\DD. Nothing is printed; a failure is silent.
 $ErrorActionPreference = 'Stop'
 try {
   $home_ = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
@@ -10,13 +10,18 @@ try {
   $token = [regex]::Match($config, '"x-device-token" = "([0-9a-f]{16,128})"')
   if (-not $site.Success -or -not $token.Success) { exit 0 }
 
-  # the most recently written session files, from the last two day folders
+  # the session file the Stop hook names, then the most recently written ones from the last two day folders
+  $named = $null
+  if ([Console]::IsInputRedirected) {
+    try { $p = ([Console]::In.ReadToEnd() | ConvertFrom-Json).transcript_path; if ("$p" -like '*.jsonl' -and (Test-Path -LiteralPath "$p" -PathType Leaf)) { $named = Get-Item -LiteralPath "$p" } } catch { }
+  }
   $root = Join-Path $home_ 'sessions'
-  $days = Get-ChildItem $root -Directory | Sort-Object Name -Descending | Select-Object -First 2 |
+  $days = if (-not (Test-Path $root)) { @() } else { Get-ChildItem $root -Directory | Sort-Object Name -Descending | Select-Object -First 2 |
     ForEach-Object { Get-ChildItem $_.FullName -Directory | Sort-Object Name -Descending | Select-Object -First 2 } |
     ForEach-Object { Get-ChildItem $_.FullName -Directory | Sort-Object Name -Descending | Select-Object -First 2 } |
-    Sort-Object FullName -Descending | Select-Object -First 2
-  $files = $days | ForEach-Object { Get-ChildItem $_.FullName -File -Filter 'rollout-*.jsonl' } | Sort-Object LastWriteTime -Descending | Select-Object -First 3
+    Sort-Object FullName -Descending | Select-Object -First 2 }
+  $files = @($days | ForEach-Object { Get-ChildItem $_.FullName -File -Filter 'rollout-*.jsonl' } | Sort-Object LastWriteTime -Descending | Select-Object -First 3)
+  if ($named) { $files = @($named) + $files }
 
   foreach ($f in $files) {
     $lines = @(Get-Content $f.FullName -Tail 400)

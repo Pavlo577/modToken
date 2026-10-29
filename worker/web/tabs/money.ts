@@ -38,7 +38,7 @@ export function renderLimits(): void {
   const kinds = ([['five_hour', 'Поточна сесія', '5 годин'], ['seven_day', 'Тиждень', '7 днів']] as const).filter(([k]) => latest[k])
   if (!kinds.length) {
     $('limits').replaceChildren(el('div', { class: 'empty' }, lp === 'codex'
-      ? 'Ще немає даних про ліміти Codex. Їх надсилає збирач, якого ставить команда встановлення Codex (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Codex.'
+      ? 'Ще немає даних про ліміти Codex. Їх надсилає плагін token-tracker для Codex, якого ставить команда встановлення (Пристрої → Додати пристрій; у Codex дозволь його хук): вони з\'являться після першої відповіді Codex.'
       : 'Ще немає даних про ліміти. Їх надсилає мод token-tracker з пристроїв із підпискою (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Claude.'))
   } else {
     $('limits').replaceChildren(...kinds.map(([k, title, span]) => {
