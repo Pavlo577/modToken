@@ -5,7 +5,8 @@
 # ~/.codex/config.toml ($CODEX_HOME if set), between marker lines, so running it again replaces only that block. A config that
 # already has an [otel] table of its own is left as it is (TOML allows one): the script says what to add by hand.
 # The prompt text stays off (log_user_prompt = false). The token is written to config.toml only, never printed.
-# Limits: OTLP carries none, so the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files,
+# Limits: OTLP carries none, so the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files, and a SessionStart hook that imports the
+# token history from before OpenTelemetry once,
 # needs python3) goes into a local marketplace in ~/.codex/token-tracker and is installed with `codex plugin`. Codex runs a plugin's hook
 # only after the user approves it once in Codex.
 set -u
@@ -42,7 +43,7 @@ echo "  OpenTelemetry налаштовано"
 # adds its own entries to it)
 mkdir -p "$MARKET/.agents/plugins" "$PLUGIN/.codex-plugin" "$PLUGIN/hooks"
 GOT=1
-for f in .codex-plugin/plugin.json hooks/hooks.json hooks/limits.py hooks/limits.ps1; do
+for f in .codex-plugin/plugin.json hooks/hooks.json hooks/limits.py hooks/limits.ps1 hooks/history.py hooks/history.ps1; do
   curl -fsSL --max-time 30 "$RAW/mods/codex-tracker/$f" -o "$PLUGIN/$f" || GOT=0
 done
 cat > "$MARKET/.agents/plugins/marketplace.json" <<'JSON'

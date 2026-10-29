@@ -1,6 +1,6 @@
 {
   "name": "token-tracker",
-  "version": "1.1.0",
-  "description": "Token Tracker: the subscription's rate-limit windows from Codex's session files, as numbers (tokens come over OpenTelemetry)",
+  "version": "1.2.0",
+  "description": "Token Tracker: the subscription's rate-limit windows and the token history from before OpenTelemetry, read from Codex's session files, as numbers (live tokens come over OpenTelemetry)",
   "hooks": "./hooks/hooks.json"
 }

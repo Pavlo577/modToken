@@ -73,7 +73,7 @@ test('setup: install-codex.sh writes its [otel] block once, replaces it on a sec
   // the plugin and its local marketplace, ready for `codex plugin add token-tracker@token-tracker-local`
   const market = JSON.parse(readFileSync(join(home, 'token-tracker', '.agents', 'plugins', 'marketplace.json'), 'utf8'))
   assert.deepEqual(market, { name: 'token-tracker-local', plugins: [{ name: 'token-tracker', source: './plugins/token-tracker' }] })
-  for (const f of ['.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1']) {
+  for (const f of ['.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1', 'hooks/history.py', 'hooks/history.ps1']) {
     assert.equal(readFileSync(join(home, 'token-tracker', 'plugins', 'token-tracker', f), 'utf8'), readFileSync(new URL('../mods/codex-tracker/' + f, import.meta.url), 'utf8'), f)
   }
   const out = run('https://x.test', 'tok3')

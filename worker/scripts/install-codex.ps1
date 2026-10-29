@@ -3,7 +3,8 @@
 # Same as install-codex.sh: the [otel] table that exports Codex's log events to the site goes into %USERPROFILE%\.codex\config.toml
 # ($env:CODEX_HOME if set) between marker lines, replaced on every run; a config with an [otel] table of its own is left as it is.
 # The prompt text stays off (log_user_prompt = false). The token is never printed.
-# Limits: the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files) goes into a local
+# Limits: the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files, and a SessionStart hook that imports the
+# token history from before OpenTelemetry once) goes into a local
 # marketplace in .codex\token-tracker and is installed with `codex plugin`; Codex runs its hook after the user approves it once.
 param([Parameter(Mandatory = $true)][string]$Origin, [Parameter(Mandatory = $true)][string]$Token)
 $ErrorActionPreference = 'Stop'
@@ -45,7 +46,7 @@ Write-Host '  OpenTelemetry налаштовано'
 # the limits: the plugin in a local marketplace, installed when the codex command is there (after the config is written: `codex plugin`
 # adds its own entries to it)
 $got = $true
-foreach ($f in '.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1') {
+foreach ($f in '.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1', 'hooks/history.py', 'hooks/history.ps1') {
   $p = Join-Path $plugin $f
   New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
   try { Invoke-RestMethod "$raw/mods/codex-tracker/$f" -OutFile $p } catch { $got = $false }

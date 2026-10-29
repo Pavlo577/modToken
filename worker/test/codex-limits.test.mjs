@@ -92,11 +92,15 @@ test('codex plugin: the manifest points at the hooks file, the Stop hook runs th
   assert.equal(manifest.name, 'token-tracker')
   const hooks = JSON.parse(readFileSync(PLUGIN + manifest.hooks.replace(/^\.\//, ''), 'utf8'))
   assert.deepEqual(Object.keys(hooks).sort(), ['description', 'hooks']) // Codex reads a hooks file with deny_unknown_fields
-  const [stop] = hooks.hooks.Stop[0].hooks
-  assert.equal(stop.type, 'command')
-  for (const cmd of [stop.command, stop.commandWindows]) {
-    const file = /\$\{PLUGIN_ROOT\}[/\\](hooks[/\\]limits\.(py|ps1))/.exec(cmd)[1].replace(/\\/g, '/')
-    assert.ok(existsSync(PLUGIN + file), file)
+  assert.deepEqual(Object.keys(hooks.hooks).sort(), ['SessionStart', 'Stop'])
+  assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, true) // the history import must not hold up the start of a session
+  for (const [event, script] of [['Stop', 'limits'], ['SessionStart', 'history']]) {
+    const [h] = hooks.hooks[event][0].hooks
+    assert.equal(h.type, 'command')
+    for (const cmd of [h.command, h.commandWindows]) {
+      const file = /\$\{PLUGIN_ROOT\}[/\\](hooks[/\\]\w+\.(py|ps1))/.exec(cmd)[1].replace(/\\/g, '/')
+      assert.ok(file.startsWith('hooks/' + script + '.') && existsSync(PLUGIN + file), file)
+    }
   }
 })
 
@@ -112,4 +116,72 @@ test('codex limits: a failed send leaves only its message in the data folder, ne
   assert.equal(r.code, 0); assert.equal(r.out, '')
   const log = readFileSync(join(data, 'last-error.txt'), 'utf8')
   assert.ok(log.length > 20 && !log.includes(TOKEN))
+})
+
+// ---- the history import (hooks/history.py, run by the SessionStart hook)
+const HISTORY = PLUGIN + 'hooks/history.py'
+const runHistory = (home, data) => new Promise(done => {
+  const p = spawn('python3', [HISTORY], { env: { ...process.env, CODEX_HOME: home, PLUGIN_DATA: data } })
+  p.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd: '/home/SECRET-CWD' }))
+  let out = ''
+  p.stdout.on('data', d => (out += d)); p.stderr.on('data', d => (out += d))
+  p.on('close', code => done({ code, out }))
+})
+const usage = (input, cached, output, total) => ({ total_token_usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0, total_tokens: total },
+  last_token_usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: 0, total_tokens: input + output } })
+const SID = '01a189a3-0214-7c72-b88f-5c6d65b5c981'
+const ev = (timestamp, payload) => ({ timestamp, type: 'event_msg', payload })
+
+test('codex history: each new token_count is a call, the first after task_started is the turn; numbers only, sent once', async () => {
+  const s = await site()
+  try {
+    const home = codexHome(s.origin, [
+      { timestamp: '2026-10-20T10:00:00.000Z', type: 'session_meta', payload: { id: SID, cwd: '/home/SECRET-PATH', instructions: 'SECRET' } },
+      { timestamp: '2026-10-20T10:00:00.100Z', type: 'turn_context', payload: { cwd: '/home/SECRET-PATH', approval_policy: 'on-request', sandbox_policy: { type: 'workspace-write' }, model: 'gpt-5.6-sol' } },
+      ev('2026-10-20T10:00:01.000Z', { type: 'task_started', turn_id: 't1' }),
+      ev('2026-10-20T10:00:01.100Z', { type: 'user_message', message: 'SECRET PROMPT that mentions "token_count" on purpose' }),
+      ev('2026-10-20T10:00:03.000Z', { type: 'token_count', info: usage(11000, 9000, 120, 11120), rate_limits: null }),
+      ev('2026-10-20T10:00:03.500Z', { type: 'token_count', info: usage(11000, 9000, 120, 11120), rate_limits: { primary: { used_percent: 4 } } }), // the same totals: no call
+      { timestamp: '2026-10-20T10:00:04.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'SECRET ANSWER' }] } },
+      ev('2026-10-20T10:00:09.000Z', { type: 'token_count', info: usage(12000, 11000, 300, 23420) }),
+      ev('2026-10-20T10:01:00.000Z', { type: 'task_started', turn_id: 't2' }),
+      ev('2026-10-20T10:01:02.000Z', { type: 'token_count', info: usage(12500, 12000, 50, 35970) }),
+    ], `rollout-2026-10-20T10-00-00-${SID}.jsonl`)
+    const data = mkdtempSync(join(tmpdir(), 'tt-codex-hist-'))
+    const r = await runHistory(home, data)
+    assert.equal(r.code, 0); assert.equal(r.out, '')
+    assert.equal(s.got.length, 1); assert.equal(s.got[0].url, '/v1/import'); assert.equal(s.got[0].token, TOKEN)
+    const body = JSON.parse(s.got[0].body)
+    assert.equal(body.provider, 'codex')
+    assert.deepEqual(body.turns.map(t => [t.id, t.ts, t.model, t.input, t.cache_read, t.output, t.first, t.bg, t.duration_ms]), [
+      [`cx:${SID}:1`, '2026-10-20T10:00:03.000Z', 'gpt-5.6-sol', 2000, 9000, 120, true, false, 8000], // the turn lasts from task_started to its last call
+      [`cx:${SID}:2`, '2026-10-20T10:00:09.000Z', 'gpt-5.6-sol', 1000, 11000, 300, false, false, 0],
+      [`cx:${SID}:3`, '2026-10-20T10:01:02.000Z', 'gpt-5.6-sol', 500, 12000, 50, true, false, 2000],
+    ])
+    for (const bad of ['SECRET', 'home/']) assert.equal(s.got[0].body.includes(bad), false, bad)
+    // the marker: the next session start sends nothing
+    assert.ok(readFileSync(join(data, 'history-imported'), 'utf8').includes(' 3'))
+    await runHistory(home, data)
+    assert.equal(s.got.length, 1)
+  } finally { s.close() }
+})
+
+test('codex history: a session Codex started by itself (no approvals, read-only) is background; a failed send leaves no marker', async () => {
+  const s = await site()
+  try {
+    const lines = [
+      { timestamp: '2026-10-20T11:00:00.000Z', type: 'session_meta', payload: { id: SID } },
+      { timestamp: '2026-10-20T11:00:00.100Z', type: 'turn_context', payload: { cwd: '/x', approval_policy: 'never', sandbox_policy: { type: 'read-only' }, model: 'gpt-5.6-luna' } },
+      ev('2026-10-20T11:00:01.000Z', { type: 'task_started', turn_id: 't1' }),
+      ev('2026-10-20T11:00:02.000Z', { type: 'token_count', info: usage(8900, 7000, 40, 8940) }),
+    ]
+    const data = mkdtempSync(join(tmpdir(), 'tt-codex-hist-'))
+    await runHistory(codexHome(s.origin, lines), data)
+    assert.deepEqual(JSON.parse(s.got[0].body).turns.map(t => [t.bg, t.model]), [[true, 'gpt-5.6-luna']])
+    const failed = mkdtempSync(join(tmpdir(), 'tt-codex-hist-'))
+    const r = await runHistory(codexHome('http://127.0.0.1:1', lines), failed)
+    assert.equal(r.out, '')
+    assert.equal(existsSync(join(failed, 'history-imported')), false) // tried again at the next session start
+    assert.ok(readFileSync(join(failed, 'last-error.txt'), 'utf8').includes('history'))
+  } finally { s.close() }
 })

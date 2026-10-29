@@ -11,7 +11,7 @@ export const MOD_FIELDS = {
     'session': ['id', 'started_at', 'ended_at', 'end_reason', 'project', 'project_note'],
     'turns': ['id', 'session', 'ts', 'wall_ms', 'think_ms', 'outcome', 'context_pct', 'context_tokens', 'context_window', 'perm_asks', 'perm_denied', 'perm_wait_ms'],
   },
-  import: { '': ['turns'], 'turns': ['id', 'session', 'ts', 'model', 'input', 'output', 'cache_read', 'cache_creation', 'sub', 'first', 'duration_ms'] },
+  import: { '': ['provider', 'turns'], 'turns': ['id', 'session', 'ts', 'model', 'input', 'output', 'cache_read', 'cache_creation', 'sub', 'first', 'duration_ms', 'bg'] },
 } as const satisfies Record<string, Record<string, readonly string[]>>
 
 export type ModEndpoint = keyof typeof MOD_FIELDS

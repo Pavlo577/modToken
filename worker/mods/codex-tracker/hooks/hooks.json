@@ -1,6 +1,19 @@
 {
-  "description": "Token Tracker: after every turn, the rate-limit windows of the session (numbers only) to the site",
+  "description": "Token Tracker: after every turn the session's rate-limit windows, and once the token history from before OpenTelemetry (numbers only), to the site",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/history.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\history.ps1\"",
+            "async": true,
+            "timeout": 600
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

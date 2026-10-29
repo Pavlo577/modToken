@@ -84,8 +84,8 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
   const win = place === 'windows'
   return {
     steps: [
-      { text: win ? 'Відкрий PowerShell і виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін лімітів):' : 'У терміналі виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін лімітів; йому потрібен `python3`):', code: win ? codexInstallPs(origin, token) : codexInstallSh(origin, token) },
-      { text: "Перезапусти Codex. Коли Codex спитає про хук плагіна token-tracker, дозволь його: він надсилає ліміти. Дані з'являться після першого запиту." },
+      { text: win ? 'Відкрий PowerShell і виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін: ліміти й імпорт старої історії):' : 'У терміналі виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін: ліміти й імпорт старої історії; йому потрібен `python3`):', code: win ? codexInstallPs(origin, token) : codexInstallSh(origin, token) },
+      { text: "Перезапусти Codex. Коли Codex спитає про хуки плагіна token-tracker, дозволь їх: вони надсилають ліміти, а на початку першої сесії один раз імпортують стару історію. Дані з'являться після першого запиту." },
     ],
     manual: [
       { text: `Допиши в кінець \`${win ? '%USERPROFILE%\\.codex\\config.toml' : '~/.codex/config.toml'}\`; якщо там уже є секція \`[otel]\`, додай ці ключі в неї:`, code: toml },
