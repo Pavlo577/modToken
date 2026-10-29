@@ -1,6 +1,6 @@
-// Admin routes about devices: list, add (the token is shown once), what the mod may send about projects, and revoke.
+// Admin routes about devices: list, add (the token is shown once), a new token for a device, what the mod may send about projects, and revoke.
 import { PROJECT_MODES } from '../activity.ts'
-import { createDevice } from '../devices.ts'
+import { createDevice, newDeviceToken } from '../devices.ts'
 import { json, str, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -23,6 +23,12 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
     const mode = body?.project_mode ?? 'off'
     if (!isMode(mode)) return text('project_mode: off, name or hash', 400)
     return json({ token: await createDevice(env, email, name, mode), device: name })
+  }
+
+  const renew = path.match(/^\/devices\/([0-9a-f-]{36})\/token$/)
+  if (renew && req.method === 'POST') {
+    const r = await newDeviceToken(env, email, renew[1])
+    return r ? json({ token: r.token, device: r.name }) : text('not found', 404)
   }
 
   const dev = path.match(/^\/devices\/([0-9a-f-]{36})$/)

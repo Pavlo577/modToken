@@ -1,10 +1,13 @@
-// The Devices tab: add a device (its token and the OpenTelemetry settings to paste), the device list, revoke.
+// The Devices tab: add a device (its token and the OpenTelemetry settings to paste), the device list, a new token to set a device up again, revoke.
 import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
 import { setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
+
+/** Shows the setup steps for a token (a new device's, or a device's new one); set by initDevices. */
+let showSetup: (token: string, device: string) => void = () => {}
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
 
@@ -29,6 +32,13 @@ function deviceRow(d: DeviceRow): HTMLElement {
       el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
     d.revoked ? '' : el('div', { class: 'dev-actions' },
       projectSelect(d),
+      el('button', { title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
+        if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення (для кожного агента, що там працює).`)) return
+        try {
+          const { token } = await api<{ token: string }>('/devices/' + d.id + '/token', { method: 'POST' })
+          showSetup(token, d.name)
+        } catch (err) { alert('Не вдалося видати токен: ' + (err as Error).message) }
+      } }, 'Новий токен'),
       el('button', { class: 'danger', onclick: async () => {
         if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані.`)) return
         await api('/devices/' + d.id, { method: 'DELETE' })
@@ -73,7 +83,7 @@ function choice<T extends string>(id: string, onChange: (v: T) => void): () => T
 
 export function initDevices(): void {
   initHistory()
-  let token = '' // the new device's token: shown once, kept only while the page is open so the choice can still change
+  let token = '' // the token being set up: shown once, kept only while the page is open so the choice can still change
   const render = (): void => {
     if (!token) return
     const plan = setupPlan(agent(), place(), location.origin, token)
@@ -88,15 +98,22 @@ export function initDevices(): void {
     $('setup-manual-btn').textContent = box.classList.contains('hide') ? 'Встановити вручну' : 'Сховати ручне встановлення'
   })
 
+  showSetup = (t, device) => {
+    token = t
+    render()
+    $('setup-for').textContent = `Налаштування для «${device}»: обери агента й місце вгорі, команда вже з токеном цього пристрою.`
+    $('setup-manual').classList.add('hide')
+    $('setup-manual-btn').textContent = 'Встановити вручну'
+    $('setup-box').classList.remove('hide')
+    $('setup-pick').scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   $('new-device').addEventListener('submit', async e => {
     e.preventDefault()
     const name = $<HTMLInputElement>('dev-name')
     try {
-      ;({ token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) }))
-      render()
-      $('setup-manual').classList.add('hide')
-      $('setup-manual-btn').textContent = 'Встановити вручну'
-      $('setup-box').classList.remove('hide')
+      const r = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) })
+      showSetup(r.token, name.value.trim())
       name.value = ''
       void loadDevices()
     } catch (err) { alert('Не вдалося створити пристрій: ' + (err as Error).message) }

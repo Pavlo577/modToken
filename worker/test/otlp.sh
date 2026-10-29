@@ -69,14 +69,14 @@ post "$(cat <<'JSON'
 {"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"claude-code"}}]},"scopeLogs":[{"logRecords":[{"timeUnixNano":"1761300000000000000","attributes":[{"key":"event.name","value":{"stringValue":"claude_code.tool_result"}},{"key":"session.id","value":{"stringValue":"sess-ev"}},{"key":"event.sequence","value":{"intValue":"0"}},{"key":"tool_name","value":{"stringValue":"Bash"}}]}]}]}]}
 JSON
 )" > /dev/null
-EV() { npx wrangler d1 execute modtoken-events --local --json --command "$1" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])'; }
+EV() { npx wrangler d1 execute EVENTS --local --json --command "$1" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])'; }
 check "tool events were stored" "$(EV "SELECT COUNT(*) AS n FROM events WHERE name = 'tool_result' AND session_id = 'sess-ev'")" 3
 check "no email, identity, text or prose in any stored attribute" "$(EV "SELECT COUNT(*) AS n FROM events WHERE attrs LIKE '%secret%' OR attrs LIKE '%SECRET%' OR attrs LIKE '%@%' OR attrs LIKE '%org-%'")" 0
 post "$(cat <<'JSON'
 {"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"claude-code"}}]},"scopeLogs":[{"logRecords":[{"timeUnixNano":"1761300001000000000","attributes":[{"key":"event.name","value":{"stringValue":"claude_code.api_request"}},{"key":"session.id","value":{"stringValue":"sess-cost"}},{"key":"prompt.id","value":{"stringValue":"pc"}},{"key":"request_id","value":{"stringValue":"req_cost_1"}},{"key":"model","value":{"stringValue":"claude-sonnet-5-5"}},{"key":"input_tokens","value":{"intValue":"5"}},{"key":"output_tokens","value":{"intValue":"7"}},{"key":"cost_usd_micros","value":{"intValue":"1234"}}]}]}]}]}
 JSON
 )" > /dev/null
-check "the cost the agent states is stored with the turn (micros)" "$(npx wrangler d1 execute modtoken --local --json --command "SELECT cost_micros AS n FROM token_events WHERE session_id = 'sess-cost'" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])')" 1234
+check "the cost the agent states is stored with the turn (micros)" "$(npx wrangler d1 execute DB --local --json --command "SELECT cost_micros AS n FROM token_events WHERE session_id = 'sess-cost'" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)[0]["results"][0]["n"])')" 1234
 post "$(python3 - <<'PY'
 import json, time
 now = time.time_ns()
@@ -170,7 +170,16 @@ check "the name of the dropped mod field is reported as new, its value is stored
 # the main chart's "every record" step: the latest turns of a period come back oldest first
 RNG="from=$(date -u -d '2 days ago' +%FT%TZ)&to=$(date -u -d '1 day' +%FT%TZ)"
 check "the latest turns of a period come back oldest first (?last=1)" "$(curl -s "$B/api/admin/turns?$RNG&last=1" | python3 -c 'import sys,json; t=[x["ts"] for x in json.load(sys.stdin)]; print(len(t) > 0, t == sorted(t))')" "True True"
+# a new token for the same device: the old one stops working, the device and its data stay
+OLD=$TOKEN
+TOKEN=$(curl -s -XPOST $B/api/admin/devices/$DEV/token | sed -E 's/.*"token":"([a-f0-9]+)".*/\1/')
+check "a new token is a different 64-character token" "${#TOKEN} $([ "$TOKEN" != "$OLD" ] && echo new)" "64 new"
+check "the new token is accepted" "$(post "$P1")" 200
+check "the old token is refused" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/logs -H "x-device-token: $OLD" -H 'content-type: application/json' --data-binary "$P1")" 401
+check "the device keeps its name and data" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; print([d["name"] for d in json.load(sys.stdin) if d["id"]=="'$DEV'"])')" "['otlp-box']"
+check "no new token for an unknown device" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/api/admin/devices/00000000-0000-0000-0000-000000000000/token)" 404
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
+check "no new token for a revoked device" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/api/admin/devices/$DEV/token)" 404
 rm -rf "$T"
 exit $fail
