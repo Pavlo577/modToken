@@ -1,7 +1,7 @@
 // The OTLP side of the Worker: how a payload becomes ModelCalls (src/otlp.ts, pure). The receiver itself is checked end to end in otlp.sh.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_RECORDS, parseOtlpLogs, safeAttrs, sampleOf } from '../src/otlp.ts'
+import { MAX_RECORDS, codexCallMs, codexOwnSession, parseOtlpLogs, safeAttrs, sampleOf } from '../src/otlp.ts'
 
 const s = (key, v) => ({ key, value: { stringValue: v } })
 const i = (key, v) => ({ key, value: { intValue: String(v) } }) // OTLP/JSON: an int64 is a string
@@ -225,4 +225,19 @@ test('otlp: Codex Desktop sends timeUnixNano 0: its calls are told apart by even
   assert.notEqual(calls[0].call_id, calls[1].call_id)
   assert.notEqual(calls[0].turn_key, calls[1].turn_key)
   assert.deepEqual(calls.map(c => [c.ts, c.input_tokens]), [['2026-10-29T20:26:57.923Z', 900], ['2026-10-29T20:26:59.899Z', 1900]])
+})
+
+test('otlp: a Codex session started by Codex itself (no approvals, read-only) is background; the user\'s is not', () => {
+  assert.equal(codexOwnSession({ approval_policy: 'never', sandbox_policy: 'read-only', model: 'gpt-5.6-luna' }), true)
+  assert.equal(codexOwnSession({ approval_policy: 'on-request', sandbox_policy: 'workspace-write' }), false)
+  assert.equal(codexOwnSession({ approval_policy: 'on-request', sandbox_policy: 'read-only' }), false)
+  assert.equal(codexOwnSession(null), false)
+})
+
+test('otlp: a Codex call lasts from its request to its completed response, never across an earlier call', () => {
+  assert.equal(codexCallMs('2026-10-29T20:25:52.905Z', '2026-10-29T20:25:50.208Z', null), 2697)
+  assert.equal(codexCallMs('2026-10-29T20:25:58.204Z', '2026-10-29T20:25:54.226Z', '2026-10-29T20:25:52.905Z'), 3978)
+  assert.equal(codexCallMs('2026-10-29T20:25:58.204Z', '2026-10-29T20:25:50.208Z', '2026-10-29T20:25:52.905Z'), 0) // its own request is missing
+  assert.equal(codexCallMs('2026-10-29T20:25:58.204Z', null, null), 0)
+  assert.equal(codexCallMs('2026-10-29T21:25:58.204Z', '2026-10-29T20:25:50.208Z', null), 0) // an hour is not one call
 })

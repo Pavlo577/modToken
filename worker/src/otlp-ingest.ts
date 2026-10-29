@@ -2,7 +2,7 @@
 // or `Authorization: Bearer <token>` (what most OTLP exporters are set up with). Calls become turn rows by ADDING to the row of the turn
 // (unlike /api/ingest, where a resent turn keeps the maximum); a call that was counted before changes nothing.
 import type { Env } from './env.ts'
-import { MAX_RECORDS, parseOtlpLogs } from './otlp.ts'
+import { MAX_RECORDS, codexCallMs, codexOwnSession, parseOtlpLogs } from './otlp.ts'
 import type { EventRow, ModelCall } from './otlp.ts'
 import { sha256, text } from './util.ts'
 
@@ -84,6 +84,36 @@ async function storeEvents(env: Env, dev: { id: string; user_email: string }, ev
   }
 }
 
+/**
+ * Codex: what one record cannot tell, read from the session's other events in the events database (this request's events are stored
+ * first, so they count too): whether the session is one Codex started by itself (its rows become background) and how long each call took.
+ * Two indexed reads per Codex call at most; without the events database the calls keep kind and a zero duration.
+ */
+async function codexContext(env: Env, deviceId: string, calls: ModelCall[]): Promise<void> {
+  if (!env.EVENTS) return
+  const own = new Map<string, boolean>()
+  for (const c of calls) {
+    if (c.provider !== 'codex') continue
+    try {
+      if (!own.has(c.session_id)) {
+        const row = await env.EVENTS.prepare(`SELECT attrs FROM events WHERE session_id = ? AND device_id = ? AND name = 'codex.conversation_starts' LIMIT 1`)
+          .bind(c.session_id, deviceId).first<{ attrs: string }>()
+        own.set(c.session_id, codexOwnSession(row ? (JSON.parse(row.attrs) as Record<string, unknown>) : null))
+      }
+      if (own.get(c.session_id)) c.kind = 'bg'
+      if (c.duration_ms > 0 || c.input_tokens + c.output_tokens + c.cache_read_tokens + c.cache_creation_tokens === 0) continue // a prompt row has no call to time
+      const r = await env.EVENTS.prepare(
+        `SELECT MAX(CASE WHEN name = 'codex.websocket_request' THEN ts END) AS request,
+                MAX(CASE WHEN name = 'codex.sse_event' AND ts < ?3 AND json_extract(attrs, '$."event.kind"') = 'response.completed' THEN ts END) AS previous
+         FROM events WHERE session_id = ?1 AND device_id = ?2 AND ts <= ?3 AND name IN ('codex.websocket_request', 'codex.sse_event')`,
+      ).bind(c.session_id, deviceId, c.ts).first<{ request: string | null; previous: string | null }>()
+      c.duration_ms = codexCallMs(c.ts, r?.request ?? null, r?.previous ?? null)
+    } catch (e) {
+      console.error('codex context: ' + (e instanceof Error ? e.message : 'failed')) // never the data
+    }
+  }
+}
+
 /** POST /v1/logs */
 export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   const dev = await authDevice(req, env)
@@ -97,6 +127,8 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   if (!parsed) return text(`bad request (not OTLP logs, or more than ${MAX_RECORDS} records)`, 400)
 
   const now = new Date().toISOString()
+  await storeEvents(env, dev, parsed.events) // first: the Codex context below reads this request's events too
+  await codexContext(env, dev.id, parsed.calls)
   for (let i = 0; i < parsed.calls.length; i += CHUNK) {
     await env.DB.batch(parsed.calls.slice(i, i + CHUNK).flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
   }
@@ -112,7 +144,6 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
        ON CONFLICT (device_id, service, event) DO UPDATE SET n = n + excluded.n, keys = excluded.keys, lens = excluded.lens, sample = excluded.sample, last_seen = excluded.last_seen`,
     ).bind(dev.id, x.service, x.event, x.keys, x.lens, env.DEBUG_OTLP === '1' || env.DEBUG_OTLP === 'raw' ? x.sample : '', x.n, now).run()
   }
-  await storeEvents(env, dev, parsed.events)
   const cutoff = new Date(Date.now() - KEEP_CALLS_DAYS * 86_400_000).toISOString()
   const since = parsed.calls.reduce<string | null>((m, c) => (m === null || c.ts < m ? c.ts : m), null) // earliest call of this request
   await env.DB.batch([

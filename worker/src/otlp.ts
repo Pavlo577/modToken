@@ -135,6 +135,23 @@ function codexCall(a: Attrs, rec: LogRecord): ModelCall | null {
   return { ...base, call_id: id, turn_key: id, kind: 'step', input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write }
 }
 
+/**
+ * Codex Desktop starts sessions of its own next to the user's (the chat title on a small model, a read-only look at the project):
+ * the session's `codex.conversation_starts` has no approvals and a read-only sandbox. Their rows are background (`bg`), not turns.
+ */
+export const codexOwnSession = (starts: Record<string, unknown> | null): boolean => starts?.approval_policy === 'never' && starts?.sandbox_policy === 'read-only'
+
+/**
+ * How long a Codex call took: its completed response has no duration, so it is measured from the call's request (the session's last
+ * `codex.websocket_request` before it) to the response. 0 when that request is unknown or belongs to an earlier call (a completed
+ * response came after it), or the gap is not a plausible call.
+ */
+export function codexCallMs(ts: string, request: string | null, previous: string | null): number {
+  if (!request || (previous !== null && previous >= request)) return 0
+  const ms = Date.parse(ts) - Date.parse(request)
+  return ms > 0 && ms < 30 * 60_000 ? ms : 0
+}
+
 /** Which agent an exporter is, by its `service.name`; one adapter per agent (Gemini and Mistral follow once their telemetry is read). */
 const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) | undefined> = {
   'claude-code': claudeCall,
