@@ -11,12 +11,15 @@ export const shade = (color: string, level: number): string => (level <= 0 ? HEA
 /** A vertical line at `at` (in columns from the left edge: 2.5 = the middle of the third), with an explanation on hover. */
 export interface Marker { at: number; title: string }
 
-/** Draws the line and its caption; `x` is where the line goes, `left` is the left edge of the plot. */
+/** Extra top margin a chart leaves for the marker: its caption sits above the plot and the line sticks out past it. */
+export const MARK_ROOM = 14
+
+/** Draws the line and its caption; `x` is where the line goes, `left` is the left edge of the plot, `top` its top edge. */
 export function drawMarker(root: Element, x: number, top: number, bottom: number, left: number, m: Marker): void {
   const near = x - left < 150 // no room on the left for the caption
   root.append(
-    svg('line', { x1: x, x2: x, y1: top, y2: bottom, class: 'mark' }, svg('title', {}, m.title)),
-    svg('text', { x: near ? x + 5 : x - 5, y: top + 10, class: 'mark-t', 'text-anchor': near ? 'start' : 'end' }, near ? 'повні дані (OTLP) →' : '← можуть бути неповні', svg('title', {}, m.title)),
+    svg('line', { x1: x, x2: x, y1: top - MARK_ROOM, y2: bottom, class: 'mark' }, svg('title', {}, m.title)),
+    svg('text', { x: near ? x + 5 : x - 5, y: top - 5, class: 'mark-t', 'text-anchor': near ? 'start' : 'end' }, near ? 'повні дані (OTLP) →' : '← можуть бути неповні', svg('title', {}, m.title)),
   )
 }
 

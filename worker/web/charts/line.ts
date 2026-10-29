@@ -1,7 +1,7 @@
 // Line chart.
 import { responsive, svg } from '../lib/dom.ts'
 import { fmtAxis } from '../lib/format.ts'
-import { clipNote, drawMarker, empty, place, tipOf } from './base.ts'
+import { clipNote, drawMarker, empty, MARK_ROOM, place, tipOf } from './base.ts'
 import type { Host, Marker, Series, TipRow } from './base.ts'
 import { evenLabels, logAxis, niceMax, sharedMax, smooth, ticks } from './scale.ts'
 
@@ -37,7 +37,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
   responsive(container, W => {
     const animate = first
     first = false
-    const m = { l: 44, r: 14, t: 14, b: 26 }
+    const m = { l: 44, r: 14, t: 14 + (opts.marker ? MARK_ROOM : 0), b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const lo = opts.yMin ?? 0
     const secTop = sec ? Math.max(...sec.values) : 0
