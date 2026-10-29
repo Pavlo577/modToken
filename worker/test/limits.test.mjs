@@ -1,7 +1,7 @@
 // POST /v1/limits reads only the window's name, a percent and a time; anything else in the body is dropped.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseLimits } from '../src/limits.ts'
+import { limitsProvider, parseLimits } from '../src/limits.ts'
 
 test('limits: well-formed readings are kept, the rest is dropped, nothing else survives', () => {
   const out = parseLimits({
@@ -24,4 +24,11 @@ test('limits: a body without a list is refused, an empty list is fine', () => {
   assert.equal(parseLimits({ rows: [] }), null)
   assert.deepEqual(parseLimits({ limits: [] }), [])
   assert.equal(parseLimits({ limits: Array.from({ length: 20 }, () => ({ kind: 'five_hour', percentUsed: 1 })) }).length, 8)
+})
+
+test('limits: the agent is codex only when the body says so; the mod sends none and is claude', () => {
+  assert.equal(limitsProvider({ provider: 'codex', limits: [] }), 'codex')
+  assert.equal(limitsProvider({ limits: [] }), 'claude')
+  assert.equal(limitsProvider({ provider: 'gemini', limits: [] }), 'claude')
+  assert.equal(limitsProvider(null), 'claude')
 })

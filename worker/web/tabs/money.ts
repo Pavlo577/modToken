@@ -37,7 +37,9 @@ export function renderLimits(): void {
   const latest = S.latestLimits(rows)
   const kinds = ([['five_hour', 'Поточна сесія', '5 годин'], ['seven_day', 'Тиждень', '7 днів']] as const).filter(([k]) => latest[k])
   if (!kinds.length) {
-    $('limits').replaceChildren(el('div', { class: 'empty' }, 'Ще немає даних про ліміти. Їх надсилає мод token-tracker з пристроїв із підпискою (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Claude.'))
+    $('limits').replaceChildren(el('div', { class: 'empty' }, lp === 'codex'
+      ? 'Ще немає даних про ліміти Codex. Їх надсилає збирач, якого ставить команда встановлення Codex (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Codex.'
+      : 'Ще немає даних про ліміти. Їх надсилає мод token-tracker з пристроїв із підпискою (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Claude.'))
   } else {
     $('limits').replaceChildren(...kinds.map(([k, title, span]) => {
       const l = latest[k], pct = Math.min(100, l.percent)

@@ -5,7 +5,7 @@ import type { Env } from './env.ts'
 
 /** The names each endpoint reads: the top level, then each nested object (the path is the key in `droppedNames`). */
 export const MOD_FIELDS = {
-  limits: { '': ['limits'], 'limits': ['kind', 'percentUsed', 'resetsAt'] },
+  limits: { '': ['provider', 'limits'], 'limits': ['kind', 'percentUsed', 'resetsAt'] },
   activity: {
     '': ['session', 'turns'],
     'session': ['id', 'started_at', 'ended_at', 'end_reason', 'project', 'project_note'],
