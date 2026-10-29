@@ -199,6 +199,7 @@ test('codex history: as the hook runs it (no --run), it returns at once and the 
     const r = await runHistory(home, data, [])
     assert.equal(r.code, 0); assert.equal(r.out, '')
     assert.ok(Date.now() - started < 3000)
+    assert.ok(existsSync(join(data, 'history-started'))) // the trace that the hook ran
     for (let i = 0; i < 50 && !existsSync(join(data, 'history-imported')); i++) await new Promise(ok => setTimeout(ok, 100))
     assert.equal(s.got.length, 1)
     assert.equal(JSON.parse(s.got[0].body).turns[0].input, 500)

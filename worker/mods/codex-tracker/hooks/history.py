@@ -118,6 +118,9 @@ def detach():
     """Runs the import in a process of its own (outliving the hook) and returns at once; nothing to do once the marker is there."""
     if os.path.exists(MARKER):
         return
+    os.makedirs(DATA, exist_ok=True)
+    with open(os.path.join(DATA, 'history-started'), 'w', encoding='utf-8') as f:  # a trace that the hook ran (the time only)
+        f.write(datetime.now(timezone.utc).isoformat() + '\n')
     flags = 0x00000008 | 0x00000200 if os.name == 'nt' else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     subprocess.Popen([sys.executable, os.path.abspath(__file__), '--run'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, close_fds=True, start_new_session=os.name != 'nt', creationflags=flags)

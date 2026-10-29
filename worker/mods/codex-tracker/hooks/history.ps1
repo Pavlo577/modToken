@@ -12,6 +12,8 @@ $marker = Join-Path $data 'history-imported'
 try {
   if (Test-Path $marker) { exit 0 }
   if (-not $Run) {
+    New-Item -ItemType Directory -Force $data | Out-Null
+    (Get-Date).ToUniversalTime().ToString('o') | Set-Content -Encoding utf8 (Join-Path $data 'history-started') # a trace that the hook ran (the time only)
     Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Run')
     exit 0
   }
