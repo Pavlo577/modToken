@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 HOME = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
 DATA = os.environ.get('PLUGIN_DATA') or os.path.join(HOME, 'token-tracker')
 MARKER = os.path.join(DATA, 'history-imported')
+# an import run by hand (no PLUGIN_DATA) marks ~/.codex/token-tracker: either marker means the history is in
+MARKERS = (MARKER, os.path.join(HOME, 'token-tracker', 'history-imported'))
 KINDS = ('"session_meta"', '"turn_context"', '"task_started"', '"turn_started"', '"token_count"')
 MODEL = re.compile(r'^[\w.:/+-]{1,64}$')
 CHUNK = 500
@@ -96,7 +98,7 @@ def send(site, token, turns):
 
 
 def main():
-    if os.path.exists(MARKER):
+    if any(os.path.exists(m) for m in MARKERS):
         return
     site, token = site_and_token()
     if not site:
@@ -116,7 +118,7 @@ def main():
 
 def detach():
     """Runs the import in a process of its own (outliving the hook) and returns at once; nothing to do once the marker is there."""
-    if os.path.exists(MARKER):
+    if any(os.path.exists(m) for m in MARKERS):
         return
     os.makedirs(DATA, exist_ok=True)
     with open(os.path.join(DATA, 'history-started'), 'w', encoding='utf-8') as f:  # a trace that the hook ran (the time only)

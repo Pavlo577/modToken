@@ -10,7 +10,7 @@ $home_ = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex
 $data = if ($env:PLUGIN_DATA) { $env:PLUGIN_DATA } else { Join-Path $home_ 'token-tracker' }
 $marker = Join-Path $data 'history-imported'
 try {
-  if (Test-Path $marker) { exit 0 }
+  if ((Test-Path $marker) -or (Test-Path (Join-Path $home_ 'token-tracker\history-imported'))) { exit 0 } # a run by hand marks ~\.codex\token-tracker
   if (-not $Run) {
     New-Item -ItemType Directory -Force $data | Out-Null
     (Get-Date).ToUniversalTime().ToString('o') | Set-Content -Encoding utf8 (Join-Path $data 'history-started') # a trace that the hook ran (the time only)

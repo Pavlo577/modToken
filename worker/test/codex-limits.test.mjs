@@ -205,3 +205,14 @@ test('codex history: as the hook runs it (no --run), it returns at once and the 
     assert.equal(JSON.parse(s.got[0].body).turns[0].input, 500)
   } finally { s.close() }
 })
+
+test('codex history: an import run by hand (marker in ~/.codex/token-tracker) also stops the hook', async () => {
+  const s = await site()
+  try {
+    const home = codexHome(s.origin, [ev('2026-10-20T11:00:02.000Z', { type: 'token_count', info: usage(500, 0, 10, 510) })])
+    mkdirSync(join(home, 'token-tracker'), { recursive: true })
+    writeFileSync(join(home, 'token-tracker', 'history-imported'), '2026-10-29T23:24:26Z 558\n')
+    await runHistory(home, mkdtempSync(join(tmpdir(), 'tt-codex-data-')))
+    assert.equal(s.got.length, 0)
+  } finally { s.close() }
+})
