@@ -21,3 +21,23 @@ export async function newDeviceToken(env: Env, email: string, id: string): Promi
     .bind(await sha256(token), id, email).first<{ name: string }>()
   return row ? { token, name: row.name } : null
 }
+
+/**
+ * Deletes a device of `email` and everything it sent: its turns, limits, sessions, the counted-call and seen-field records, and its events
+ * in the events database. Unlike revoking, its numbers leave the statistics. False when there is no such device.
+ */
+export async function deleteDevice(env: Env, email: string, id: string): Promise<boolean> {
+  const dev = await env.DB.prepare('SELECT id FROM devices WHERE id = ? AND user_email = ?').bind(id, email).first<{ id: string }>()
+  if (!dev) return false
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM token_events WHERE device_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM otlp_calls WHERE device_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM otlp_seen WHERE device_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM plan_limits WHERE user_email = ? AND device_id = ?').bind(email, id),
+    env.DB.prepare('DELETE FROM mod_turns WHERE device_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM mod_sessions WHERE device_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM devices WHERE id = ? AND user_email = ?').bind(id, email),
+  ])
+  if (env.EVENTS) await env.EVENTS.prepare('DELETE FROM events WHERE user_email = ? AND device_id = ?').bind(email, id).run().catch(() => undefined)
+  return true
+}

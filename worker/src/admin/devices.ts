@@ -1,6 +1,7 @@
-// Admin routes about devices: list, add (the token is shown once), a new token for a device, what the mod may send about projects, and revoke.
+// Admin routes about devices: list, add (the token is shown once), a new token for a device, what the mod may send about projects, revoke,
+// and delete (`?purge=1`: the device and all it sent).
 import { PROJECT_MODES } from '../activity.ts'
-import { createDevice, newDeviceToken } from '../devices.ts'
+import { createDevice, deleteDevice, newDeviceToken } from '../devices.ts'
 import { json, str, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -32,6 +33,9 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
   }
 
   const dev = path.match(/^\/devices\/([0-9a-f-]{36})$/)
+  if (dev && req.method === 'DELETE' && new URL(req.url).searchParams.get('purge') === '1') {
+    return (await deleteDevice(env, email, dev[1])) ? new Response(null, { status: 204 }) : text('not found', 404)
+  }
   if (dev && req.method === 'DELETE') {
     await env.DB.prepare('UPDATE devices SET revoked = 1 WHERE id = ? AND user_email = ?').bind(dev[1], email).run()
     return new Response(null, { status: 204 })

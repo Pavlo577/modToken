@@ -30,7 +30,7 @@ function deviceRow(d: DeviceRow): HTMLElement {
     el('div', {}, el('b', {}, d.name), d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
       ...[...d.providers].sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Агент надсилав дані з цього пристрою' }, providerLabel(p))),
       el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
-    d.revoked ? '' : el('div', { class: 'dev-actions' },
+    el('div', { class: 'dev-actions' }, ...(d.revoked ? [] : [
       projectSelect(d),
       el('button', { title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
         if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення (для кожного агента, що там працює).`)) return
@@ -39,12 +39,22 @@ function deviceRow(d: DeviceRow): HTMLElement {
           showSetup(token, d.name)
         } catch (err) { alert('Не вдалося видати токен: ' + (err as Error).message) }
       } }, 'Новий токен'),
-      el('button', { class: 'danger', onclick: async () => {
-        if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані.`)) return
+      el('button', { class: 'danger', title: 'Токен перестане діяти; дані пристрою лишаються в статистиці', onclick: async () => {
+        if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані; те, що вже надіслав, лишиться в статистиці.`)) return
         await api('/devices/' + d.id, { method: 'DELETE' })
         void loadDevices()
-      } }, 'Відкликати')))
+      } }, 'Відкликати')]),
+      deleteButton(d)))
 }
+
+/** Deletes the device with everything it sent: its numbers leave the statistics. */
+const deleteButton = (d: DeviceRow): HTMLElement => el('button', { class: 'danger', title: 'Видалити пристрій разом з усіма його даними', onclick: async () => {
+  if (!confirm(`Видалити «${d.name}» разом з усіма його даними (токени, ліміти, сесії)? Статистика за минулі дні зменшиться. Скасувати це не можна.`)) return
+  try {
+    await api('/devices/' + d.id + '?purge=1', { method: 'DELETE' })
+    void loadDevices()
+  } catch (err) { alert('Не вдалося видалити: ' + (err as Error).message) }
+} }, 'Видалити')
 
 export async function loadDevices(): Promise<DeviceRow[]> {
   const list = await api<DeviceRow[]>('/devices')

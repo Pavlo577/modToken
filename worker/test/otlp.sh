@@ -181,5 +181,10 @@ check "no new token for an unknown device" "$(curl -s -o /dev/null -w '%{http_co
 curl -s -o /dev/null -XDELETE $B/api/admin/devices/$DEV
 check "a revoked device: 401" "$(post "$P1")" 401
 check "no new token for a revoked device" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/api/admin/devices/$DEV/token)" 404
+# deleting a device takes everything it sent out of the statistics
+check "a revoked device still counts in the statistics" "$(curl -s "$B/api/admin/buckets?$RNG" | python3 -c 'import sys,json; print(sum(1 for r in json.load(sys.stdin) if r["device"]=="otlp-box") > 0)')" True
+check "deleting a device: 204" "$(curl -s -o /dev/null -w '%{http_code}' -XDELETE "$B/api/admin/devices/$DEV?purge=1")" 204
+check "a deleted device and its numbers are gone" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; print([d["name"] for d in json.load(sys.stdin) if d["id"]=="'$DEV'"])') $(curl -s "$B/api/admin/buckets?$RNG" | python3 -c 'import sys,json; print(sum(1 for r in json.load(sys.stdin) if r["device"]=="otlp-box"))') $(EV "SELECT COUNT(*) AS n FROM events WHERE device_id = '$DEV'")" "[] 0 0"
+check "deleting it again: 404" "$(curl -s -o /dev/null -w '%{http_code}' -XDELETE "$B/api/admin/devices/$DEV?purge=1")" 404
 rm -rf "$T"
 exit $fail
