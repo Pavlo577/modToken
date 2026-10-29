@@ -221,33 +221,21 @@
   <section id="tab-devices" class="tab hide">
     <div class="card">
       <h2>Додати пристрій</h2>
-      <p class="sub" style="margin-bottom:14px">Пристрій це одне місце, де працює Claude Code: комп'ютер, сервер або хмарне середовище. Створи токен, встав налаштування експорту OpenTelemetry, перезапусти Claude Code.</p>
+      <p class="sub" style="margin-bottom:14px">Пристрій це одне місце, де працює агент: комп'ютер, сервер або хмарне середовище. Обери агента й місце, створи токен і виконай показані кроки.</p>
+      <div class="setup-pick">
+        <div class="pick"><span class="sub">Агент</span><div class="seg" id="setup-agent" role="group" aria-label="Агент"><button type="button" data-v="claude" aria-pressed="true">Claude Code</button><button type="button" data-v="codex" aria-pressed="false">Codex</button></div></div>
+        <div class="pick"><span class="sub">Де працює</span><div class="seg" id="setup-place" role="group" aria-label="Де працює"><button type="button" data-v="windows" aria-pressed="false">Windows</button><button type="button" data-v="linux" aria-pressed="true">Ubuntu / macOS</button><button type="button" data-v="cloud" aria-pressed="false">Хмара</button></div></div>
+      </div>
       <form id="new-device"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required>
         <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
           <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репозиторію</option><option value="hash">Проєкт: анонімний хеш</option>
         </select><button class="primary" type="submit">Створити токен</button></form>
       <p class="note">Проєкт потрібен для зрізу «куди йдуть токени» на вкладці «Інсайти». Назва це <code>власник/репозиторій</code> з git remote; хеш дає ті самі групи без назви. Змінити можна будь-коли в списку пристроїв.</p>
       <div id="setup-box" class="hide">
-        <p class="sub" style="margin:16px 0 6px"><b>Комп'ютер, найпростіше:</b> одна команда налаштує OpenTelemetry і поставить мод (ліміти, сесії, <code>/tracker-import</code>). macOS / Linux, у терміналі:</p>
-        <pre class="snip" id="setup-pc-sh"></pre><button type="button" id="copy-pc-sh">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px">Windows, у PowerShell:</p>
-        <pre class="snip" id="setup-pc-ps"></pre><button type="button" id="copy-pc-ps">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px">Потім перезапусти Claude Code. Або вручну, кроки нижче.</p>
-        <p class="sub" style="margin:16px 0 6px"><b>1.</b> Додай це в <code>~/.claude/settings.json</code> (на Windows <code>%USERPROFILE%\.claude\settings.json</code>); якщо там уже є блок <code>env</code>, додай у нього ці ключі:</p>
-        <pre class="snip" id="setup-json"></pre><button type="button" id="copy-json">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px"><b>2.</b> Або як змінні середовища (shell, хмарне середовище claude.ai/code):</p>
-        <pre class="snip" id="setup-env"></pre><button type="button" id="copy-env">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px"><b>3.</b> Хмарна сесія (claude.ai/code → Оновити середовище): встав у «Скрипт налаштування»</p>
-        <pre class="snip" id="setup-cloud"></pre><button type="button" id="copy-cloud">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px">а в «Змінні середовища» додай ці рядки (скрипт налаштування їх не бачить, тому токен лише тут). У «Доступі до мережі» дозволь цей домен і <code>raw.githubusercontent.com</code>.</p>
-        <pre class="snip" id="setup-cloud-env"></pre><button type="button" id="copy-cloud-env">Копіювати</button>
-        <p class="sub" style="margin:22px 0 6px"><b>Codex CLI</b> (той самий токен): одна команда допише в <code>~/.codex/config.toml</code> експорт OpenTelemetry. macOS / Linux:</p>
-        <pre class="snip" id="setup-codex-sh"></pre><button type="button" id="copy-codex-sh">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px">Windows, у PowerShell:</p>
-        <pre class="snip" id="setup-codex-ps"></pre><button type="button" id="copy-codex-ps">Копіювати</button>
-        <p class="sub" style="margin:16px 0 6px">Або вручну, в кінець <code>~/.codex/config.toml</code> (на Windows <code>%USERPROFILE%\.codex\config.toml</code>); якщо там уже є секція <code>[otel]</code>, додай ці ключі в неї. Потім перезапусти Codex.</p>
-        <pre class="snip" id="setup-codex-toml"></pre><button type="button" id="copy-codex-toml">Копіювати</button>
-        <p class="note">Токен показується один раз і діє лише для надсилання даних. Втратиш: створи новий пристрій і відклич старий. Нові сесії Claude Code почнуть надсилати дані після перезапуску. У хмарному середовищі домен <code id="setup-host"></code> має бути в дозволених (Network access).</p>
+        <div id="setup-steps"></div>
+        <button type="button" id="setup-manual-btn" style="margin-top:14px">Встановити вручну</button>
+        <div id="setup-manual" class="hide"></div>
+        <p class="note">Токен показується один раз і діє лише для надсилання даних. Втратиш: створи новий пристрій і відклич старий.</p>
       </div>
     </div>
     <div class="card">

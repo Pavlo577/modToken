@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
-import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, pcInstallPs, pcInstallSh, settingsJson, shellEnv } from '../lib/setup.ts'
+import { setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
@@ -43,41 +43,59 @@ export async function loadDevices(): Promise<DeviceRow[]> {
   return list
 }
 
+/** Step text with `code` in backticks: plain text nodes and <code>, never HTML. */
+const withCode = (text: string): (string | HTMLElement)[] => text.split('`').map((part, i) => (i % 2 ? el('code', {}, part) : part))
+
+async function copyText(text: string, btn: HTMLElement): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    const t = btn.textContent
+    btn.textContent = 'Скопійовано'
+    setTimeout(() => (btn.textContent = t), 1500)
+  } catch { alert('Не вдалося скопіювати, виділи текст вручну.') }
+}
+
+const stepNodes = (steps: Step[], numbered: boolean): HTMLElement[] => steps.flatMap((st, i) => [
+  el('p', { class: 'sub', style: 'margin:16px 0 6px' }, numbered && steps.length > 1 ? el('b', {}, `${i + 1}. `) : '', ...withCode(st.text)),
+  ...(st.code !== undefined ? [el('pre', { class: 'snip' }, st.code), el('button', { type: 'button', onclick: (e: Event) => void copyText(st.code ?? '', e.currentTarget as HTMLElement) }, 'Копіювати')] : []),
+])
+
+/** A segmented choice: the pressed button's data-v, and a callback when it changes. */
+function choice<T extends string>(id: string, onChange: (v: T) => void): () => T {
+  const box = $(id)
+  const buttons = [...box.querySelectorAll<HTMLButtonElement>('button')]
+  for (const b of buttons) b.addEventListener('click', () => {
+    for (const x of buttons) x.setAttribute('aria-pressed', String(x === b))
+    onChange(b.dataset.v as T)
+  })
+  return () => (buttons.find(b => b.getAttribute('aria-pressed') === 'true')?.dataset.v ?? buttons[0].dataset.v) as T
+}
+
 export function initDevices(): void {
   initHistory()
-  const copy = (id: string, btn: HTMLElement) => async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText($(id).textContent ?? '')
-      const t = btn.textContent
-      btn.textContent = 'Скопійовано'
-      setTimeout(() => (btn.textContent = t), 1500)
-    } catch { alert('Не вдалося скопіювати, виділи текст вручну.') }
+  let token = '' // the new device's token: shown once, kept only while the page is open so the choice can still change
+  const render = (): void => {
+    if (!token) return
+    const plan = setupPlan(agent(), place(), location.origin, token)
+    $('setup-steps').replaceChildren(...stepNodes(plan.steps, true))
+    $('setup-manual').replaceChildren(...stepNodes(plan.manual, false))
   }
-  $('copy-json').onclick = copy('setup-json', $('copy-json'))
-  $('copy-env').onclick = copy('setup-env', $('copy-env'))
-  $('copy-pc-sh').onclick = copy('setup-pc-sh', $('copy-pc-sh'))
-  $('copy-pc-ps').onclick = copy('setup-pc-ps', $('copy-pc-ps'))
-  $('copy-cloud').onclick = copy('setup-cloud', $('copy-cloud'))
-  $('copy-cloud-env').onclick = copy('setup-cloud-env', $('copy-cloud-env'))
-  $('copy-codex-sh').onclick = copy('setup-codex-sh', $('copy-codex-sh'))
-  $('copy-codex-ps').onclick = copy('setup-codex-ps', $('copy-codex-ps'))
-  $('copy-codex-toml').onclick = copy('setup-codex-toml', $('copy-codex-toml'))
+  const agent = choice<Agent>('setup-agent', render)
+  const place = choice<Place>('setup-place', render)
+  $('setup-manual-btn').addEventListener('click', () => {
+    const box = $('setup-manual')
+    box.classList.toggle('hide')
+    $('setup-manual-btn').textContent = box.classList.contains('hide') ? 'Встановити вручну' : 'Сховати ручне встановлення'
+  })
 
   $('new-device').addEventListener('submit', async e => {
     e.preventDefault()
     const name = $<HTMLInputElement>('dev-name')
     try {
-      const { token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) })
-      $('setup-json').textContent = settingsJson(location.origin, token)
-      $('setup-env').textContent = shellEnv(location.origin, token)
-      $('setup-pc-sh').textContent = pcInstallSh(location.origin, token)
-      $('setup-pc-ps').textContent = pcInstallPs(location.origin, token)
-      $('setup-cloud').textContent = cloudScript()
-      $('setup-cloud-env').textContent = cloudEnv(location.origin, token)
-      $('setup-codex-sh').textContent = codexInstallSh(location.origin, token)
-      $('setup-codex-ps').textContent = codexInstallPs(location.origin, token)
-      $('setup-codex-toml').textContent = codexToml(location.origin, token)
-      $('setup-host').textContent = location.hostname
+      ;({ token } = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) }))
+      render()
+      $('setup-manual').classList.add('hide')
+      $('setup-manual-btn').textContent = 'Встановити вручну'
       $('setup-box').classList.remove('hide')
       name.value = ''
       void loadDevices()

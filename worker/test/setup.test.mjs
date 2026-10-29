@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -74,4 +74,27 @@ test('setup: install-codex.sh appends its block once, replaces it on a second ru
   assert.equal(readFileSync(config, 'utf8'), '[otel]\nenvironment = "prod"\n')
   assert.ok(!own.stdout.includes('tok4'))
   assert.equal(run('https://x.test').status, 1) // no token: nothing written
+})
+
+test('setup: each agent and place gets one best way first and the manual settings last; the token is where it must be', () => {
+  const O = 'https://x.test', T = 'tok-123'
+  const codeOf = steps => steps.map(st => st.code ?? '').join('\n')
+  for (const agent of ['claude', 'codex']) for (const place of ['windows', 'linux', 'cloud']) {
+    const plan = setupPlan(agent, place, O, T)
+    assert.ok(plan.steps.length > 0 && plan.manual.length > 0, `${agent}/${place}`)
+    assert.ok(codeOf(plan.steps).includes(T) && codeOf(plan.manual).includes(T), `${agent}/${place}: the token`)
+    for (const st of [...plan.steps, ...plan.manual]) assert.equal((st.text.match(/`/g) ?? []).length % 2, 0, `${agent}/${place}: backticks pair up`)
+  }
+  assert.equal(setupPlan('claude', 'windows', O, T).steps[0].code, pcInstallPs(O, T))
+  assert.equal(setupPlan('claude', 'linux', O, T).steps[0].code, pcInstallSh(O, T))
+  assert.equal(setupPlan('codex', 'windows', O, T).steps[0].code, codexInstallPs(O, T))
+  assert.equal(setupPlan('codex', 'linux', O, T).steps[0].code, codexInstallSh(O, T))
+  assert.ok(codeOf(setupPlan('codex', 'linux', O, T).manual).includes('protocol = "json"'))
+  // the claude.ai/code setup script cannot read the environment: the token goes into the variables only, never into the script line
+  const cloud = setupPlan('claude', 'cloud', O, T)
+  assert.equal(cloud.steps[0].code, cloudScript())
+  assert.ok(!cloud.steps[0].code.includes(T) && cloud.steps[1].code.includes(T))
+  assert.ok(cloud.steps[2].text.includes('`x.test`'))
+  assert.ok(setupPlan('claude', 'cloud', 'http://127.0.0.1:8787', T).steps[2].text.includes('`127.0.0.1`')) // the host name, no port
+  assert.ok(!JSON.stringify(setupPlan('claude', 'windows', O, T).manual).includes('export ')) // no shell lines for Windows
 })
