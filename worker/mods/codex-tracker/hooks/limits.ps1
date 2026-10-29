@@ -1,9 +1,12 @@
 # Token Tracker plugin for Codex on Windows: the subscription's rate-limit windows, sent to the site (POST /v1/limits, provider codex).
 # Same as limits.py: the plugin's Stop hook runs it after every turn; of the hook's input it reads `transcript_path` only (the input also
 # holds the last answer, never looked at), of the session file only the numbers of the last `token_count` event's `rate_limits`; without
-# a transcript path, the newest file of %USERPROFILE%\.codex\sessions\YYYY\MM\DD. Nothing is printed; a failure is silent.
+# a transcript path, the newest file of %USERPROFILE%\.codex\sessions\YYYY\MM\DD. Nothing is printed; a failure only leaves its message
+# (never the token or the data) in last-error.txt in the plugin's data folder (PLUGIN_DATA, else %TEMP%\token-tracker-codex).
 $ErrorActionPreference = 'Stop'
 try {
+  # Windows PowerShell 5.1 on an older .NET may offer only TLS 1.0 / 1.1, which the site refuses
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $home_ = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
   $config = Get-Content -Raw (Join-Path $home_ 'config.toml')
   $site = [regex]::Match($config, 'endpoint = "(https?://[^"]+?)/v1/logs"')
@@ -49,5 +52,11 @@ try {
     }
     break
   }
-} catch { }
+} catch {
+  try {
+    $log = if ($env:PLUGIN_DATA) { $env:PLUGIN_DATA } else { Join-Path $env:TEMP 'token-tracker-codex' }
+    New-Item -ItemType Directory -Force $log | Out-Null
+    "$((Get-Date).ToUniversalTime().ToString('o')) $($_.Exception.Message)" | Set-Content -Encoding utf8 (Join-Path $log 'last-error.txt')
+  } catch { }
+}
 exit 0

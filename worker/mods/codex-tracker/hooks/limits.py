@@ -5,7 +5,8 @@
 # The plugin's Stop hook runs this after every turn. Of the hook's input it reads `transcript_path` only (the input also holds the last
 # answer, which is never looked at); of the session file only those numbers. Without a transcript path, the newest session file is read.
 # The site and the device token come from the [otel] block install-codex.sh wrote; nothing is printed (a Stop hook's output would be
-# read by Codex), a failure is silent.
+# read by Codex); a failure only leaves its message (never the token or the data) in last-error.txt in the plugin's data folder
+# ($PLUGIN_DATA, else ~/.codex/token-tracker).
 import json, os, re, sys, urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -100,6 +101,12 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            log = os.environ.get('PLUGIN_DATA') or os.path.join(HOME, 'token-tracker')
+            os.makedirs(log, exist_ok=True)
+            with open(os.path.join(log, 'last-error.txt'), 'w', encoding='utf-8') as f:
+                f.write(f'{datetime.now(timezone.utc).isoformat()} {type(e).__name__}: {e}\n')
+        except Exception:
+            pass
     sys.exit(0)

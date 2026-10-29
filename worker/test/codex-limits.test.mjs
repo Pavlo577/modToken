@@ -99,3 +99,17 @@ test('codex plugin: the manifest points at the hooks file, the Stop hook runs th
     assert.ok(existsSync(PLUGIN + file), file)
   }
 })
+
+test('codex limits: a failed send leaves only its message in the data folder, never the token, and prints nothing', async () => {
+  const home = codexHome('http://127.0.0.1:1', [tokenCount({ primary: { used_percent: 1, window_minutes: 300, resets_at: 1793322000 } })]) // nothing listens there
+  const data = mkdtempSync(join(tmpdir(), 'tt-codex-data-'))
+  const r = await new Promise(done => {
+    const p = spawn('python3', [SCRIPT], { env: { ...process.env, CODEX_HOME: home, PLUGIN_DATA: data } })
+    p.stdin.end(''); let out = ''
+    p.stdout.on('data', d => (out += d)); p.stderr.on('data', d => (out += d))
+    p.on('close', code => done({ code, out }))
+  })
+  assert.equal(r.code, 0); assert.equal(r.out, '')
+  const log = readFileSync(join(data, 'last-error.txt'), 'utf8')
+  assert.ok(log.length > 20 && !log.includes(TOKEN))
+})
