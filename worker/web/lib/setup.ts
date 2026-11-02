@@ -93,3 +93,18 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
     ],
   }
 }
+
+/**
+ * The agent and place to preselect when a device's commands are shown again (a new token): what was chosen for it last time, else what
+ * the device's data and name say (the only agent it sent from; "win", "cloud", "linux" / "ubuntu" / "mac" in the name), else the given defaults.
+ */
+export function guessSetup(name: string, providers: string[], saved: { agent?: string; place?: string } | undefined, fallback: { agent: Agent; place: Place }): { agent: Agent; place: Place } {
+  const agents: Agent[] = ['claude', 'codex'], places: Place[] = ['windows', 'linux', 'cloud']
+  const n = name.toLowerCase()
+  const agent = agents.find(a => a === saved?.agent)
+    ?? (providers.length === 1 && agents.includes(providers[0] as Agent) ? (providers[0] as Agent) : undefined)
+    ?? (n.includes('codex') ? 'codex' : n.includes('claude') ? 'claude' : fallback.agent)
+  const place = places.find(p => p === saved?.place)
+    ?? (/win/.test(n) ? 'windows' : /cloud|хмар|remote|ccr|web/.test(n) ? 'cloud' : /linux|ubuntu|debian|fedora|mac|wsl/.test(n) ? 'linux' : fallback.place)
+  return { agent, place }
+}

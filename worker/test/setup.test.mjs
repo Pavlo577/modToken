@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -110,4 +110,13 @@ test('setup: each agent and place gets one best way first and the manual setting
   assert.ok(cloud.steps[2].text.includes('`x.test`'))
   assert.ok(setupPlan('claude', 'cloud', 'http://127.0.0.1:8787', T).steps[2].text.includes('`127.0.0.1`')) // the host name, no port
   assert.ok(!JSON.stringify(setupPlan('claude', 'windows', O, T).manual).includes('export ')) // no shell lines for Windows
+})
+
+test('setup: a device shown again gets its last choice, else what its data and name say', () => {
+  const def = { agent: 'claude', place: 'linux' }
+  assert.deepEqual(guessSetup('win-pk-h-codex', ['codex'], undefined, def), { agent: 'codex', place: 'windows' })
+  assert.deepEqual(guessSetup('cloud', [], undefined, def), { agent: 'claude', place: 'cloud' })
+  assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'codex', place: 'cloud' }, def), { agent: 'codex', place: 'cloud' })
+  assert.deepEqual(guessSetup('codex-ubuntu', [], undefined, { agent: 'claude', place: 'windows' }), { agent: 'codex', place: 'linux' })
+  assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'nope' }, def), def) // unknown saved values and two agents: the defaults
 })

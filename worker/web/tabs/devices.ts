@@ -3,11 +3,18 @@ import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
-import { setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
+import { guessSetup, setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 
 /** Shows the setup steps for a token (a new device's, or a device's new one); set by initDevices. */
-let showSetup: (token: string, device: string) => void = () => {}
+let showSetup: (token: string, device: string, providers?: string[]) => void = () => {}
+
+/** The agent and place last chosen for each device (by name), in this browser: preselected when its commands are shown again. */
+const SETUP_KEY = 'tt-setup'
+const savedSetups = (): Record<string, { agent?: string; place?: string }> => { try { return JSON.parse(localStorage.getItem(SETUP_KEY) || '{}') } catch { return {} } }
+const saveSetup = (device: string, agent: string, place: string): void => {
+  try { localStorage.setItem(SETUP_KEY, JSON.stringify({ ...savedSetups(), [device]: { agent, place } })) } catch { /* private mode */ }
+}
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
 
@@ -95,7 +102,7 @@ function deviceRow(d: DeviceRow, log: PluginEntry[] = []): HTMLElement {
         if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення (для кожного агента, що там працює).`)) return
         try {
           const { token } = await api<{ token: string }>('/devices/' + d.id + '/token', { method: 'POST' })
-          showSetup(token, d.name)
+          showSetup(token, d.name, d.providers)
         } catch (err) { alert('Не вдалося видати токен: ' + (err as Error).message) }
       } }, 'Новий токен'),
       el('button', { class: 'danger', title: 'Токен перестане діяти; дані пристрою лишаються в статистиці', onclick: async () => {
@@ -139,23 +146,23 @@ const stepNodes = (steps: Step[], numbered: boolean): HTMLElement[] => steps.fla
   ...(st.code !== undefined ? [el('pre', { class: 'snip' }, st.code), el('button', { type: 'button', onclick: (e: Event) => void copyText(st.code ?? '', e.currentTarget as HTMLElement) }, 'Копіювати')] : []),
 ])
 
-/** A segmented choice: the pressed button's data-v, and a callback when it changes. */
-function choice<T extends string>(id: string, onChange: (v: T) => void): () => T {
+/** A segmented choice: the pressed button's data-v, a way to press one, and a callback when the viewer changes it. */
+function choice<T extends string>(id: string, onChange: (v: T) => void): { get: () => T; set: (v: T) => void } {
   const box = $(id)
   const buttons = [...box.querySelectorAll<HTMLButtonElement>('button')]
-  for (const b of buttons) b.addEventListener('click', () => {
-    for (const x of buttons) x.setAttribute('aria-pressed', String(x === b))
-    onChange(b.dataset.v as T)
-  })
-  return () => (buttons.find(b => b.getAttribute('aria-pressed') === 'true')?.dataset.v ?? buttons[0].dataset.v) as T
+  const set = (v: T): void => { for (const x of buttons) x.setAttribute('aria-pressed', String(x.dataset.v === v)) }
+  for (const b of buttons) b.addEventListener('click', () => { set(b.dataset.v as T); onChange(b.dataset.v as T) })
+  return { get: () => (buttons.find(b => b.getAttribute('aria-pressed') === 'true')?.dataset.v ?? buttons[0].dataset.v) as T, set }
 }
 
 export function initDevices(): void {
   initHistory()
   let token = '' // the token being set up: shown once, kept only while the page is open so the choice can still change
+  let device = ''
   const render = (): void => {
     if (!token) return
-    const plan = setupPlan(agent(), place(), location.origin, token)
+    saveSetup(device, agent.get(), place.get()) // remembered for the next time this device's commands are shown
+    const plan = setupPlan(agent.get(), place.get(), location.origin, token)
     $('setup-steps').replaceChildren(...stepNodes(plan.steps, true))
     $('setup-manual').replaceChildren(...stepNodes(plan.manual, false))
   }
@@ -167,10 +174,12 @@ export function initDevices(): void {
     $('setup-manual-btn').textContent = box.classList.contains('hide') ? 'Встановити вручну' : 'Сховати ручне встановлення'
   })
 
-  showSetup = (t, device) => {
-    token = t
+  showSetup = (t, name, providers = []) => {
+    token = t; device = name
+    const pick = guessSetup(name, providers, savedSetups()[name], { agent: agent.get(), place: place.get() })
+    agent.set(pick.agent); place.set(pick.place)
     render()
-    $('setup-for').textContent = `Налаштування для «${device}»: обери агента й місце вгорі, команда вже з токеном цього пристрою.`
+    $('setup-for').textContent = `Налаштування для «${name}»: обери агента й місце вгорі, команда вже з токеном цього пристрою.`
     $('setup-manual').classList.add('hide')
     $('setup-manual-btn').textContent = 'Встановити вручну'
     $('setup-box').classList.remove('hide')
