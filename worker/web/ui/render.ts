@@ -6,7 +6,7 @@ import { $ } from '../lib/dom.ts'
 import { renderAnalytics } from '../tabs/analytics.ts'
 import { renderInsights } from '../tabs/insights.ts'
 import { renderCost, renderLimits } from '../tabs/money.ts'
-import { renderDay, renderKpis, renderMain } from '../tabs/overview.ts'
+import { renderKpis, renderMain } from '../tabs/overview.ts'
 import { renderSessions } from '../tabs/sessions.ts'
 import { press } from './layout.ts'
 
@@ -16,7 +16,7 @@ export function render(): void {
   $('tzchip').textContent = `${tz.tz} · UTC${offsetText()}`
   $('dev-mode').classList.toggle('hide', !(state.tab === 'analytics' && !state.device && store.deviceNames.length > 1))
   press($('dev-mode'), 't', state.topDevice ? 'top' : '')
-  if (state.tab === 'overview') { renderKpis(agg); renderMain(agg); void renderDay() }
+  if (state.tab === 'overview') { renderKpis(agg); renderMain(agg) }
   else if (state.tab === 'analytics') renderAnalytics(agg)
   else if (state.tab === 'insights') void renderInsights()
   else if (state.tab === 'money') { renderLimits(); renderCost(agg) }

@@ -49,8 +49,8 @@ function tooltip(container: Host): Tip {
         ...rows.map(([label, value, color]) => el('div', { class: 'tr' }, color ? el('i', { style: `background:${color}` }) : '', el('span', {}, label), el('b', {}, value))),
       )
       tip.style.display = 'block'
-      const w = tip.offsetWidth, W = container.clientWidth
-      tip.style.left = Math.max(0, Math.min(W - w, x - w / 2)) + 'px'
+      const w = tip.offsetWidth, W = container.clientWidth, sl = container.scrollLeft // a chart wider than its box scrolls: keep the tip in view
+      tip.style.left = Math.max(sl, Math.min(sl + W - w, x - w / 2)) + 'px'
       tip.style.top = Math.max(0, y - tip.offsetHeight - 12) + 'px'
     },
     hide() { tip.style.display = 'none' },
@@ -64,6 +64,33 @@ export const tipOf = (c: Host): Tip => (c._tip && c._tip.el.isConnected ? c._tip
 export function empty(container: HTMLElement, text = 'Немає даних за цей період', height?: number): void {
   release(container)
   container.replaceChildren(height ? el('div', { class: 'empty-box', style: `height:${height}px` }, el('span', {}, text)) : el('div', { class: 'empty' }, text))
+}
+
+/** The drawing's width: the box's, or wider when `n` points need `gap` pixels each (then the box scrolls sideways). */
+export function spreadWidth(container: HTMLElement, W: number, n: number, gap: number | undefined, margins: number): number {
+  const need = gap ? Math.ceil(n * gap + margins) : 0
+  container.classList.toggle('hscroll', need > W)
+  return Math.max(W, need)
+}
+
+/** A wide chart drawn anew shows its newest end; a live update keeps where the viewer scrolled to. */
+export function scrollToEnd(container: HTMLElement, fresh: boolean): void {
+  if (fresh && container.classList.contains('hscroll')) container.scrollLeft = container.scrollWidth
+}
+
+/** The value axis of a chart wider than its box: labels on a backing strip that stays at the left edge while the chart scrolls. */
+export function axisGroup(container: HTMLElement, left: number, height: number): SVGElement {
+  const g = svg('g', { class: 'y-axis' })
+  if (container.classList.contains('hscroll')) g.append(svg('rect', { x: 0, y: 0, width: left - 2, height, fill: '#0a0908' }))
+  return g
+}
+
+/** Keeps the axis group at the visible left edge (one handler per container, replaced by every drawing). */
+export function pinAxis(container: HTMLElement, g: SVGElement): void {
+  const wide = container.classList.contains('hscroll')
+  const set = (): void => g.setAttribute('transform', `translate(${wide ? container.scrollLeft : 0},0)`)
+  container.onscroll = wide ? set : null
+  set()
 }
 
 /** Puts a freshly drawn chart into its container, replacing the previous drawing but keeping the tooltip. */

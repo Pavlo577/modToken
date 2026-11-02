@@ -1,7 +1,7 @@
 // Bar chart.
 import { responsive, svg } from '../lib/dom.ts'
 import { fmtAxis } from '../lib/format.ts'
-import { clipNote, drawMarker, empty, MARK_ROOM, motion, place, tipOf } from './base.ts'
+import { clipNote, drawMarker, empty, MARK_ROOM, motion, place, scrollToEnd, spreadWidth, tipOf, axisGroup, pinAxis } from './base.ts'
 import type { Host, Marker, Series, TipRow } from './base.ts'
 import { evenLabels, logAxis, niceMax, sharedMax, smooth, ticks } from './scale.ts'
 
@@ -22,6 +22,8 @@ export interface BarOptions {
   marker?: Marker
   /** Smallest distance between two printed axis labels in pixels (wider labels need more). */
   labelGap?: number
+  /** Smallest width of one bar's slot in pixels: the chart gets wider than its box and scrolls sideways. */
+  minGap?: number
 }
 
 /** Stacked bars over categories, rounded on top, with a tooltip. */
@@ -31,9 +33,10 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
   const totals = labels.map((_, i) => series.reduce((a, s) => a + s.values[i], 0))
   if (!labels.length || !totals.some(v => v > 0)) return empty(container, undefined, height)
   let first = true
-  responsive(container, W => {
-    const animate = first && !motion.quiet
+  responsive(container, box => {
+    const animate = first && !motion.quiet, fresh = first && !motion.quiet
     first = false
+    const W = spreadWidth(container, box, labels.length, opts.minGap, 52)
     const m = { l: 44, r: 8, t: 14 + (opts.marker ? MARK_ROOM : 0), b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const secTop = sec ? Math.max(...sec.values) : 0
@@ -45,9 +48,10 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
     const y = (v: number): number => (lg ? lg.y(v) : m.t + ih - (Math.min(v, max) / max) * ih)
     const ys = y
     const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
+    const yAxis = axisGroup(container, m.l, height)
     for (const t of lg ? lg.ticks : ticks(max)) {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
-      root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
+      yAxis.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
     for (const i of evenLabels(labels.length, iw, opts.labelGap ?? 56)) root.append(svg('text', { x: m.l + slotW * (i + 0.5), y: height - 6, class: 'ax', 'text-anchor': 'middle' }, labels[i]))
     const groups = labels.map((_, i): [SVGElement, number, number] => {
@@ -83,7 +87,11 @@ export function barChart(container: HTMLElement, opts: BarOptions): void {
     if (sec && !lg && labels.length > 1) root.append(svg('path', { d: smooth(sec.values.map((v, i): [number, number] => [m.l + slotW * (i + 0.5), ys(v)])), fill: 'none', stroke: sec.color, 'stroke-width': 1.7, 'stroke-opacity': 0.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', pathLength: 1, class: 'draw', style: 'pointer-events:none' }))
     if (sec && !lg && secTop > max) clipNote(root, m.l + 6, m.t + 12, sec)
     if (opts.marker) drawMarker(root, m.l + slotW * Math.min(opts.marker.at, labels.length), m.t, m.t + ih, m.l, opts.marker)
+    root.append(yAxis) // over the lines, so a scrolled chart passes under it
+    const atEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 4 // following the newest records
     place(container, root)
+    scrollToEnd(container, fresh || atEnd)
+    pinAxis(container, yAxis)
     const tip = tipOf(host)
     groups.forEach(([g, cx, top], i) => {
       const show = (): void => {

@@ -31,10 +31,14 @@ code { font: 12.5px ui-monospace, monospace; background: rgba(255,255,255,.08); 
 .pills button { border: 0; background: transparent; padding: 8px 16px; color: var(--text-2); white-space: nowrap; }
 .pills button[aria-pressed="true"] { background: var(--text); color: #1a1512; font-weight: 600; }
 .who { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
-.who .logout { padding: 5px 12px; font-size: 12.5px; }
 .who .live { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: .5; }
 .who .live.on { background: var(--ok); opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent); }
-.av { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #ff7a1a, #8f4c14); display: grid; place-items: center; font-weight: 700; color: #1a1008; font-size: 13px; }
+.av { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: linear-gradient(135deg, #ff7a1a, #8f4c14); display: grid; place-items: center; font-weight: 700; color: #1a1008; font-size: 13px; cursor: pointer; }
+.av[aria-expanded="true"], .av.on { box-shadow: 0 0 0 3px rgba(255,122,26,.35); }
+.me .dd-menu { min-width: 200px; }
+.me-email { padding: 8px 12px 10px; font-size: 12.5px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 4px; overflow-wrap: anywhere; }
+.me .dd-menu button[aria-pressed="true"] { color: var(--text); }
+.me .dd-menu button[aria-pressed="true"]::before { background: var(--out); }
 
 .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
 .seg { display: inline-flex; max-width: 100%; overflow-x: auto; padding: 3px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; }
@@ -254,3 +258,7 @@ form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-wid
 svg .mark { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 4; }
 svg .mark-t { fill: var(--muted); font-size: 10.5px; font-family: var(--font); }
 .pager #pg-reset { margin-left: 6px; }
+
+/* "Мін. крок": a chart wider than its card scrolls sideways */
+.hscroll > svg { max-width: none; }
+.hscroll { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }

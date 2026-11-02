@@ -1,7 +1,7 @@
 // Line chart.
 import { responsive, svg } from '../lib/dom.ts'
 import { fmtAxis } from '../lib/format.ts'
-import { clipNote, drawMarker, empty, MARK_ROOM, motion, place, tipOf } from './base.ts'
+import { clipNote, drawMarker, empty, MARK_ROOM, motion, place, scrollToEnd, spreadWidth, tipOf, axisGroup, pinAxis } from './base.ts'
 import type { Host, Marker, Series, TipRow } from './base.ts'
 import { evenLabels, logAxis, niceMax, sharedMax, smooth, ticks } from './scale.ts'
 
@@ -25,6 +25,8 @@ export interface LineOptions {
   labelGap?: number
   /** More tooltip rows after the series. */
   extraTip?: (i: number) => TipRow[]
+  /** Smallest distance between two points in pixels: the chart gets wider than its box and scrolls sideways. */
+  minGap?: number
 }
 
 /** Lines over evenly spaced categories (days or hours), with a crosshair and a tooltip. */
@@ -34,9 +36,10 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
   const all = series.flatMap(s => s.values)
   if (!labels.length || !all.some(v => v > 0)) return empty(container, undefined, height)
   let first = true // draw the lines in only the first time, not on every resize
-  responsive(container, W => {
-    const animate = first && !motion.quiet
+  responsive(container, box => {
+    const animate = first && !motion.quiet, fresh = first && !motion.quiet
     first = false
+    const W = spreadWidth(container, box, Math.max(1, labels.length - 1), opts.minGap, 58)
     const m = { l: 44, r: 14, t: 14 + (opts.marker ? MARK_ROOM : 0), b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b
     const lo = opts.yMin ?? 0
@@ -50,13 +53,14 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
     const plot: { s: Series; y: (v: number) => number }[] = [...series.map(s => ({ s, y })), ...(sec ? [{ s: sec, y: yc }] : [])]
     const uid = `g${container.id}`
     const root = svg('svg', { viewBox: `0 0 ${W} ${height}`, width: W, height, role: 'img', class: animate ? 'anim' : '' })
+    const yAxis = axisGroup(container, m.l, height)
     const defs = svg('defs')
     series.forEach((s, k) => defs.append(svg('linearGradient', { id: `${uid}${k}`, x1: 0, x2: 0, y1: 0, y2: 1 },
       svg('stop', { offset: '0%', 'stop-color': s.color, 'stop-opacity': 0.28 }), svg('stop', { offset: '100%', 'stop-color': s.color, 'stop-opacity': 0 }))))
     root.append(defs)
     for (const t of lg ? lg.ticks : ticks(max - lo).map(v => v + lo)) {
       root.append(svg('line', { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), class: 'grid' }))
-      root.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
+      yAxis.append(svg('text', { x: m.l - 8, y: y(t) + 4, class: 'ax', 'text-anchor': 'end' }, yFmt(t)))
     }
     for (const i of evenLabels(labels.length, iw, opts.labelGap)) root.append(svg('text', { x: x(i), y: height - 6, class: 'ax', 'text-anchor': i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle' }, labels[i]))
     plot.forEach(({ s, y: yf }, k) => {
@@ -73,7 +77,11 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
     root.append(cross, ...dots)
     const hit = svg('rect', { x: m.l, y: m.t, width: iw, height: ih, fill: 'transparent' })
     root.append(hit)
+    root.append(yAxis) // over the lines, so a scrolled chart passes under it
+    const atEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 4 // following the newest records
     place(container, root)
+    scrollToEnd(container, fresh || atEnd)
+    pinAxis(container, yAxis)
     const tip = tipOf(host)
     const move = (e: Event): void => {
       const pe = e as PointerEvent

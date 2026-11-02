@@ -18,9 +18,15 @@
       <button data-tab="insights" aria-pressed="false">Інсайти</button>
       <button data-tab="money" aria-pressed="false">Вартість<span class="wide"> і ліміти</span></button>
       <button data-tab="sessions" aria-pressed="false">Сесії</button>
-      <button data-tab="devices" aria-pressed="false">Пристрої</button>
     </nav>
-    <div class="who"><span class="live" id="live" title="Живі оновлення не з’єднані"></span><span class="em" id="who">…</span><span class="av" id="av">··</span><button type="button" class="logout" id="logout" title="Завершити сеанс Cloudflare Access: наступний вхід видасть новий токен">Вийти</button></div>
+    <div class="who"><span class="live" id="live" title="Живі оновлення не з’єднані"></span><span class="em" id="who">…</span><div class="dd me" id="me">
+        <button type="button" class="av" id="av" aria-haspopup="menu" aria-expanded="false" aria-label="Обліковий запис">··</button>
+        <div class="dd-menu hide" role="menu" id="me-menu">
+          <div class="me-email" id="me-email"></div>
+          <button type="button" role="menuitem" data-tab="devices" aria-pressed="false">Пристрої</button>
+          <button type="button" role="menuitem" id="logout" title="Завершити сеанс Cloudflare Access: наступний вхід видасть новий токен">Вийти</button>
+        </div>
+      </div></div>
   </header>
 
   <div class="controls" id="controls">
@@ -51,6 +57,7 @@
         <div><h2 id="main-title">Токени</h2><p class="sub" id="main-sub"></p></div>
         <div class="tools">
           <div class="seg hide" id="step" role="group" aria-label="Крок часу"></div>
+          <div class="seg hide" id="spread-box"><button type="button" id="spread" aria-pressed="false" title="Мінімальний крок: записи на однаковій відстані, без каші; графік гортається вбік">Мін. крок</button></div>
           <div class="seg" id="view" role="group" aria-label="Вигляд">
             <button data-v="line" aria-pressed="true">Лінії</button>
             <button data-v="bars" aria-pressed="false">Стовпці</button>
@@ -81,21 +88,6 @@
         <div class="legend" id="main-legend"></div>
         <div class="seg sm hide" id="scale-mode" role="group" aria-label="Шкала графіка"><button data-s="log" aria-pressed="true" title="Усі лінії видно, крок осі ×10">Логарифмічна</button><button data-s="linear" aria-pressed="false" title="Рівна шкала: кеш, що не вміщується, обрізається зверху">Лінійна</button></div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-head">
-        <div><h2>Один день</h2><p class="sub" id="day-sub"></p></div>
-        <div class="dtools">
-          <button class="sq" id="day-prev" aria-label="Попередній день">‹</button>
-          <input type="date" id="day" aria-label="День">
-          <button class="sq" id="day-next" aria-label="Наступний день">›</button>
-          <button id="day-today">Сьогодні</button>
-        </div>
-      </div>
-      <div class="summary" id="day-summary"></div>
-      <div class="legend" style="margin-bottom:10px"><span><i style="background:var(--out)"></i>Вихідні</span><span><i style="background:var(--in)"></i>Вхідні (нові)</span></div>
-      <div id="day-chart"></div>
-      <div class="scroll" id="day-turns" style="margin-top:14px"></div>
     </div>
   </section>
 

@@ -22,6 +22,8 @@ export function setTab(tab: Tab): void {
   persist()
   if (location.hash.slice(1) !== tab) history.replaceState(null, '', '#' + tab)
   press($('nav'), 'tab', tab)
+  press($('me-menu'), 'tab', tab)
+  $('av').classList.toggle('on', tab === 'devices')
   document.querySelectorAll('.tab').forEach(s => s.classList.toggle('hide', s.id !== 'tab-' + tab))
   $('controls').classList.toggle('hide', tab === 'devices')
   // the date pager lives in the activity card on Analytics and in the controls bar elsewhere
@@ -71,6 +73,10 @@ export function syncControls(): void {
     const len = currentRange().len, now = effectiveStep(sr, state.steps[sr], len)
     stepBox.replaceChildren(...stepChoices(sr, len).map(m => el('button', { 'data-m': String(m), 'aria-pressed': String(now === m) }, stepLabel(m))))
   }
+  // "Кожен запис" only: the records a fixed distance apart, scrolled sideways
+  const every = !!sr && state.view !== 'cal' && effectiveStep(sr, state.steps[sr], currentRange().len) === 0
+  $('spread-box').classList.toggle('hide', !every)
+  $('spread').setAttribute('aria-pressed', String(every && state.spread))
   $('custom').classList.toggle('hide', state.range !== 'custom')
   const paged = state.range === 'day' || state.range === 'week' || state.range === 'month' || state.range === 'year'
   $('pager').classList.toggle('hide', !paged)
@@ -124,6 +130,7 @@ export function initControls(): void {
   $('view').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.view = b.dataset.v as View; persist(); syncControls(); render() })
   $('scale-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.scale = b.dataset.s === 'linear' ? 'linear' : 'log'; persist(); syncControls(); render() })
   $('compare').onclick = () => { if (!compareAvailable()) return; state.compare = !state.compare; persist(); syncControls(); render() }
+  $('spread').onclick = () => { state.spread = !state.spread; persist(); syncControls(); render() }
   $('io-off').onclick = () => { state.ioHidden = !state.ioHidden; persist(); syncControls(); render() }
   // hidden: the first press only shows them again (in the mode they had); then the presses cycle the modes
   $('io-mode').onclick = () => { if (state.ioHidden) state.ioHidden = false; else state.io = IO_NEXT[state.io]; persist(); syncControls(); render() }
