@@ -4,6 +4,8 @@
 import type { Env } from './env.ts'
 import { MAX_RECORDS, codexCallMs, codexOwnSession, parseOtlpLogs } from './otlp.ts'
 import type { EventRow, ModelCall } from './otlp.ts'
+import { liveCall, pushLive } from './live.ts'
+import type { LiveCall } from './live.ts'
 import { sha256, text } from './util.ts'
 
 const MAX_BODY_BYTES = 4_000_000
@@ -18,7 +20,7 @@ export async function authDevice(req: Request, env: Env) {
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.get('authorization') ?? '')?.[1]
   const token = req.headers.get('x-device-token') ?? bearer ?? ''
   if (!token) return null
-  return env.DB.prepare('SELECT id, user_email FROM devices WHERE token_hash = ? AND revoked = 0').bind(await sha256(token)).first<{ id: string; user_email: string }>()
+  return env.DB.prepare('SELECT id, user_email, name FROM devices WHERE token_hash = ? AND revoked = 0').bind(await sha256(token)).first<{ id: string; user_email: string; name: string }>()
 }
 
 /** The request body as text, at most MAX_BODY_BYTES after unzipping (exporters may send `Content-Encoding: gzip`); null if it is larger. */
@@ -44,8 +46,14 @@ async function readBody(req: Request): Promise<string | null> {
 
 const OK = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
 
+/**
+ * The statements that count one call. With live updates on, the first one asks whether the call's turn row is there already (one read
+ * through the (device_id, turn_id) unique index): a call that creates it starts a turn on the open dashboards.
+ */
 function callStatements(env: Env, email: string, deviceId: string, c: ModelCall, now: string) {
+  const turnId = `otlp:${c.provider}:${c.session_id}:${c.turn_key}`.slice(0, 200)
   return [
+    ...(env.LIVE ? [env.DB.prepare('SELECT 1 AS hit FROM token_events WHERE device_id = ? AND turn_id = ?').bind(deviceId, turnId)] : []),
     env.DB.prepare('INSERT OR IGNORE INTO otlp_calls (device_id, call_id, seen_at) VALUES (?, ?, ?)').bind(deviceId, c.call_id, now),
     // Only when the line above really added the call (changes() = 1): the row of the turn grows by this call's numbers.
     env.DB.prepare(
@@ -63,7 +71,7 @@ function callStatements(env: Env, email: string, deviceId: string, c: ModelCall,
          model = CASE WHEN excluded.output_tokens > 0 THEN excluded.model ELSE model END,
          is_subagent = MAX(is_subagent, excluded.is_subagent)`,
     ).bind(
-      email, deviceId, c.session_id, `otlp:${c.provider}:${c.session_id}:${c.turn_key}`.slice(0, 200), c.ts, c.model,
+      email, deviceId, c.session_id, turnId, c.ts, c.model,
       c.input_tokens, c.output_tokens, c.cache_read_tokens, c.cache_creation_tokens, c.duration_ms, c.is_subagent ? 1 : 0, c.provider, c.cost_micros, c.kind,
     ),
   ]
@@ -135,9 +143,17 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   const now = new Date().toISOString()
   await storeEvents(env, dev, parsed.events) // first: the Codex context below reads this request's events too
   await codexContext(env, dev.user_email, dev.id, parsed.calls)
+  const live: LiveCall[] = []
   for (let i = 0; i < parsed.calls.length; i += CHUNK) {
-    await env.DB.batch(parsed.calls.slice(i, i + CHUNK).flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
+    const part = parsed.calls.slice(i, i + CHUNK)
+    const results = await env.DB.batch(part.flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
+    // live: only calls counted now (a resent one changed nothing); a turn is new when its row was not there before
+    if (env.LIVE) part.forEach((c, k) => {
+      const [exists, counted] = [results[k * 3], results[k * 3 + 1]]
+      if (counted.meta.changes) live.push(liveCall(c, dev.name, c.kind === 'main' && !exists.results.length))
+    })
   }
+  await pushLive(env, dev.user_email, live)
   // the key names accumulate (a later request with fewer fields must not forget a field seen before): merged with what is stored, one small read per request
   const stored = parsed.seen.length
     ? await env.DB.prepare('SELECT service, event, keys FROM otlp_seen WHERE device_id = ?').bind(dev.id).all<{ service: string; event: string; keys: string }>().then(r => r.results)

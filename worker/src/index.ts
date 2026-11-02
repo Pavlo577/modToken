@@ -9,6 +9,7 @@ import { limitsIngest } from './limits.ts'
 import { text } from './util.ts'
 
 export type { Env }
+export { Live } from './live-object.ts' // the Durable Object behind the dashboard's live updates
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {

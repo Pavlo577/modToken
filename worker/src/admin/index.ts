@@ -1,5 +1,6 @@
 // Admin API (/api/admin/*): only for a signed-in user, who sees only their own data.
 import { accessCheck } from '../auth.ts'
+import { liveOf } from '../live.ts'
 import type { Env } from '../env.ts'
 import { json, text } from '../util.ts'
 import type { Ctx, Routes } from './context.ts'
@@ -19,6 +20,11 @@ export async function admin(req: Request, env: Env, url: URL): Promise<Response>
   if (!('email' in who)) return text(`unauthorized: ${who.reason}`, 401) // the reason is one word the page explains
   const email = who.email
   const ctx: Ctx = { req, env, url, email, path: url.pathname.replace(/^\/api\/admin/, '') }
+  // the dashboard's live updates: the WebSocket goes on to the user's own Durable Object (src/live.ts)
+  if (ctx.path === '/live') {
+    const stub = liveOf(env, email)
+    return stub ? stub.fetch(new Request('https://live/connect', req)) : text('live updates are off', 404)
+  }
   for (const group of GROUPS) {
     const res = await group(ctx)
     if (res) return res

@@ -22,6 +22,8 @@ export interface Bucket extends Counts, OwnCost {
   sub: number
   /** which agent: claude, codex, gemini ... */
   provider: string
+  /** output of background requests (part of output) */
+  bg_output?: number
 }
 
 /** One turn: GET /api/admin/turns */

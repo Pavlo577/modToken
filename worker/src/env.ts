@@ -3,6 +3,8 @@ export interface Env {
   /** The events database (every event with its harmless attributes, for the statistics); optional: without it only the counting works. */
   EVENTS?: D1Database
   ASSETS: Fetcher
+  /** Live updates of the dashboard (src/live.ts): one Durable Object per user; optional, without it the page loads as before. */
+  LIVE?: DurableObjectNamespace
   TEAM_DOMAIN: string
   POLICY_AUD: string
   /** Preview settings only, never production: '1' keeps one masked sample of every event kind (otlp_seen.sample); 'raw' keeps it unmasked (temporary, for looking at what an agent sends). */

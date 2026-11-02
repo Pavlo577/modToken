@@ -6,6 +6,7 @@ import { store } from './core/store.ts'
 import { api, signOut } from './lib/api.ts'
 import { $ } from './lib/dom.ts'
 import type { Prices } from './lib/types.ts'
+import { startLive } from './core/live.ts'
 import { initDevices } from './tabs/devices.ts'
 import { initOverview } from './tabs/overview.ts'
 import { initControls, setTab, syncControls } from './ui/controls.ts'
@@ -23,4 +24,4 @@ syncControls()
 
 setTab(state.tab)
 
-fetch('prices.json').then(r => r.json() as Promise<Prices>).then(p => { store.prices = p }).catch(() => {}).finally(() => void load())
+fetch('prices.json').then(r => r.json() as Promise<Prices>).then(p => { store.prices = p }).catch(() => {}).finally(() => void load().then(startLive))

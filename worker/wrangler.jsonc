@@ -4,6 +4,9 @@
   "compatibility_date": "2025-01-01",
   "build": { "command": "bun run build", "watch_dir": "web" },
   "assets": { "directory": "./public", "binding": "ASSETS" },
+  // the dashboard's live updates (src/live.ts): one Durable Object per user, SQLite-backed (the free plan's kind)
+  "durable_objects": { "bindings": [{ "name": "LIVE", "class_name": "Live" }] },
+  "migrations": [{ "tag": "live-v1", "new_sqlite_classes": ["Live"] }],
   "d1_databases": [
     // production: a database of its own (schema.sql). The older databases (modtoken, modtoken-solo, modtoken-events) are kept as an archive to merge from.
     { "binding": "DB", "database_name": "modtoken-prod", "database_id": "c7f9163b-b1d8-4cea-865d-d256c73dd97f" },
