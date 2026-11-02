@@ -14,10 +14,10 @@ const AUTH_TEXT: Record<string, string> = {
 }
 
 /**
- * Signing out: Cloudflare Access's own logout page for this site ends the session and revokes its token, so the next visit signs in
- * afresh with a new token. A full page visit, not a background request, so Access gets its cookies and shows its page.
+ * Signing out: the Worker's /auth/logout clears the site's Access cookie and sends the browser on to the Access team's logout page, which
+ * ends the login; the next visit signs in afresh, with a new token. A full page visit, so the cookies go along.
  */
-export const signOut = (): void => { location.href = '/cdn-cgi/access/logout' }
+export const signOut = (): void => { location.href = '/auth/logout' }
 
 /** A bar at the top: why the login was refused, and a way to sign in again (signing out first, so the next login brings a new token). */
 function authBar(reason: string): void {

@@ -1,5 +1,6 @@
 // Token Tracker Worker: the OTLP receiver (/v1/*, device token in a header), the Access-protected admin API and the static dashboard.
 import { admin } from './admin/index.ts'
+import { signOutResponse } from './auth.ts'
 import type { Env } from './env.ts'
 import { otlpIgnored, otlpLogs } from './otlp-ingest.ts'
 import { activityIngest, modConfig } from './activity.ts'
@@ -20,6 +21,7 @@ export default {
     if (url.pathname === '/v1/import' && req.method === 'POST') return deviceImport(req, env) // the mod's /tracker-import: history from local logs
     if (url.pathname === '/v1/config' && req.method === 'GET') return modConfig(req, env) // what the device lets the mod send
     if (url.pathname.startsWith('/api/admin/')) return admin(req, env, url)
+    if (url.pathname === '/auth/logout' && req.method === 'GET') return signOutResponse(env) // the dashboard's "Вийти"
     if (url.pathname.startsWith('/api/')) return text('not found', 404)
     return env.ASSETS.fetch(req)
   },

@@ -26,6 +26,17 @@ export function authReason(e: unknown): AuthReason {
   return 'invalid'
 }
 
+/**
+ * GET /auth/logout (outside the Access-protected paths): signing out for real. The Access logout page on the site's own domain does not
+ * find the organisation here, so the site's Access cookie is cleared on this response and the browser goes on to the team domain's
+ * logout, which ends the login itself; the next visit to /admin signs in afresh, with a new token.
+ */
+export function signOutResponse(env: Env): Response {
+  const headers = new Headers({ location: `${env.TEAM_DOMAIN}/cdn-cgi/access/logout`, 'cache-control': 'no-store' })
+  headers.append('set-cookie', 'CF_Authorization=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax')
+  return new Response(null, { status: 302, headers })
+}
+
 /** The signed-in user's email, verified against Cloudflare Access, or why there is none. */
 export async function accessCheck(req: Request, env: Env): Promise<{ email: string } | { reason: AuthReason }> {
   if (env.DEV_EMAIL) return { email: env.DEV_EMAIL }

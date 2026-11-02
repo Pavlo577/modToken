@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose'
-import { accessCheck, audiencesOf, authReason, CLOCK_TOLERANCE } from '../src/auth.ts'
+import { accessCheck, audiencesOf, authReason, CLOCK_TOLERANCE, signOutResponse } from '../src/auth.ts'
 
 test('auth: POLICY_AUD is one tag or a comma separated list', () => {
   assert.deepEqual(audiencesOf('abc'), ['abc'])
@@ -45,4 +45,11 @@ test('auth: a token Access issued a moment "in the future" (clocks apart) passes
   assert.equal(await verify(await token(now + 5)), 'ok') // 5 seconds ahead: what broke every fresh login
   assert.equal(await verify(await token(now + 600)), 'clock')
   assert.ok(CLOCK_TOLERANCE >= 30)
+})
+
+test('auth: signing out clears the site\'s Access cookie and goes on to the team\'s logout page', () => {
+  const r = signOutResponse({ TEAM_DOMAIN: 'https://team.cloudflareaccess.com' })
+  assert.equal(r.status, 302)
+  assert.equal(r.headers.get('location'), 'https://team.cloudflareaccess.com/cdn-cgi/access/logout')
+  assert.match(r.headers.get('set-cookie'), /^CF_Authorization=; Path=\/; Max-Age=0/)
 })
