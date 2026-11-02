@@ -11,6 +11,7 @@ const CHUNK = 100 // calls per D1 batch (two statements each)
 const KEEP_EVENTS_DAYS = 90 // how long the events database keeps an event
 const EVENT_CHUNK = 50
 const KEEP_CALLS_DAYS = 14 // how long a counted call is remembered (an exporter retries within minutes)
+const CODEX_CALL_WINDOW = 3 * 60_000 // how far back a Codex call's request is looked for: calls take seconds; a longer one gets no duration
 
 /** The device behind the token in `x-device-token` or `Authorization: Bearer`, if it is not revoked. */
 export async function authDevice(req: Request, env: Env) {
@@ -87,17 +88,21 @@ async function storeEvents(env: Env, dev: { id: string; user_email: string }, ev
 /**
  * Codex: what one record cannot tell, read from the session's other events in the events database (this request's events are stored
  * first, so they count too): whether the session is one Codex started by itself (its rows become background) and how long each call took.
- * Two indexed reads per Codex call at most; without the events database the calls keep kind and a zero duration.
+ * Both reads are bounded, whatever the size of the session (rows read are the daily D1 limit): the session's start is one of its first
+ * five events, and a call's request is looked for in the user's events of the last CODEX_CALL_WINDOW before it (the (user_email, ts)
+ * index). Reading all of a session's events for every call cost thousands of rows per call. Without the events database the calls keep
+ * their kind and a zero duration.
  */
-async function codexContext(env: Env, deviceId: string, calls: ModelCall[]): Promise<void> {
+async function codexContext(env: Env, email: string, deviceId: string, calls: ModelCall[]): Promise<void> {
   if (!env.EVENTS) return
   const own = new Map<string, boolean>()
   for (const c of calls) {
     if (c.provider !== 'codex') continue
     try {
       if (!own.has(c.session_id)) {
-        const row = await env.EVENTS.prepare(`SELECT attrs FROM events WHERE session_id = ? AND device_id = ? AND name = 'codex.conversation_starts' LIMIT 1`)
-          .bind(c.session_id, deviceId).first<{ attrs: string }>()
+        const row = await env.EVENTS.prepare(
+          `SELECT attrs FROM (SELECT name, attrs FROM events WHERE session_id = ? AND device_id = ? ORDER BY id LIMIT 5) WHERE name = 'codex.conversation_starts'`,
+        ).bind(c.session_id, deviceId).first<{ attrs: string }>()
         own.set(c.session_id, codexOwnSession(row ? (JSON.parse(row.attrs) as Record<string, unknown>) : null))
       }
       if (own.get(c.session_id)) c.kind = 'bg'
@@ -105,8 +110,9 @@ async function codexContext(env: Env, deviceId: string, calls: ModelCall[]): Pro
       const r = await env.EVENTS.prepare(
         `SELECT MAX(CASE WHEN name = 'codex.websocket_request' THEN ts END) AS request,
                 MAX(CASE WHEN name = 'codex.sse_event' AND ts < ?3 AND json_extract(attrs, '$."event.kind"') = 'response.completed' THEN ts END) AS previous
-         FROM events WHERE session_id = ?1 AND device_id = ?2 AND ts <= ?3 AND name IN ('codex.websocket_request', 'codex.sse_event')`,
-      ).bind(c.session_id, deviceId, c.ts).first<{ request: string | null; previous: string | null }>()
+         FROM events INDEXED BY events_user_ts_idx
+         WHERE user_email = ?4 AND ts > ?5 AND ts <= ?3 AND session_id = ?1 AND device_id = ?2 AND name IN ('codex.websocket_request', 'codex.sse_event')`,
+      ).bind(c.session_id, deviceId, c.ts, email, new Date(Date.parse(c.ts) - CODEX_CALL_WINDOW).toISOString()).first<{ request: string | null; previous: string | null }>()
       c.duration_ms = codexCallMs(c.ts, r?.request ?? null, r?.previous ?? null)
     } catch (e) {
       console.error('codex context: ' + (e instanceof Error ? e.message : 'failed')) // never the data
@@ -128,7 +134,7 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
 
   const now = new Date().toISOString()
   await storeEvents(env, dev, parsed.events) // first: the Codex context below reads this request's events too
-  await codexContext(env, dev.id, parsed.calls)
+  await codexContext(env, dev.user_email, dev.id, parsed.calls)
   for (let i = 0; i < parsed.calls.length; i += CHUNK) {
     await env.DB.batch(parsed.calls.slice(i, i + CHUNK).flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
   }

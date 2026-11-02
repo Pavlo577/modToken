@@ -149,7 +149,7 @@ export const codexOwnSession = (starts: Record<string, unknown> | null): boolean
 export function codexCallMs(ts: string, request: string | null, previous: string | null): number {
   if (!request || (previous !== null && previous >= request)) return 0
   const ms = Date.parse(ts) - Date.parse(request)
-  return ms > 0 && ms < 30 * 60_000 ? ms : 0
+  return ms > 0 && ms <= 3 * 60_000 ? ms : 0 // the receiver looks for the request 3 minutes back at most (CODEX_CALL_WINDOW)
 }
 
 /** Which agent an exporter is, by its `service.name`; one adapter per agent (Gemini and Mistral follow once their telemetry is read). */
