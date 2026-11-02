@@ -43,7 +43,7 @@ echo "  OpenTelemetry налаштовано"
 # adds its own entries to it)
 mkdir -p "$MARKET/.agents/plugins" "$PLUGIN/.codex-plugin" "$PLUGIN/hooks"
 GOT=1
-for f in .codex-plugin/plugin.json hooks/hooks.json hooks/limits.py hooks/limits.ps1 hooks/history.py hooks/history.ps1; do
+for f in .codex-plugin/plugin.json hooks/hooks.json hooks/limits.py hooks/limits.ps1 hooks/history.py hooks/history.ps1 hooks/activity.py hooks/activity.ps1; do
   curl -fsSL --max-time 30 "$RAW/mods/codex-tracker/$f" -o "$PLUGIN/$f" || GOT=0
 done
 cat > "$MARKET/.agents/plugins/marketplace.json" <<'JSON'

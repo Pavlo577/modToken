@@ -46,22 +46,39 @@ function entryText(e: PluginEntry): string {
   }
 }
 
-/** Per plugin of the device: its version, the last limits and import, and a failure newer than the last success; then the log itself. */
-function pluginBox(entries: PluginEntry[]): HTMLElement | '' {
-  if (!entries.length) return ''
+const SERVICE_OF: Record<string, string> = { claude: 'claude-mod', codex: 'codex-plugin' }
+/** The plugin sends its limits after every turn (to the log at most once an hour): silent when the agent worked over two hours after them. */
+const SILENT_MS = 2 * 3_600_000
+
+/** Per plugin of the device: its version, the last limits and import, and a failure newer than the last success; then the log itself.
+ *  A plugin whose agent worked on the device (OTLP) but which sent no limits since is "silent": not installed, not approved, or failing. */
+function pluginBox(entries: PluginEntry[], seen: Record<string, string> = {}): HTMLElement | '' {
+  const silent = Object.entries(seen).flatMap(([provider, ts]) => {
+    const service = SERVICE_OF[provider]
+    if (!service || Date.now() - Date.parse(ts) > 7 * 86_400_000) return [] // the agent itself has not worked here for a week
+    const limits = entries.find(e => e.service === service && e.kind === 'limits')
+    return !limits || Date.parse(ts) - Date.parse(limits.ts) > SILENT_MS ? [{ service, ts, limits }] : []
+  })
+  if (!entries.length && !silent.length) return ''
+  const quiet = silent.filter(x => !entries.some(e => e.service === x.service)).map(x => el('div', { class: 'plug bad' },
+    el('b', {}, PLUGIN_NAME[x.service] ?? x.service),
+    el('span', { title: 'Агент працював на цьому пристрої, а від плагіна нічого не надходило: перевірте, чи плагін встановлено й хуки дозволено' },
+      `плагін мовчить: агент працював ${ago(x.ts)}, від плагіна нічого`)))
   const lines = [...new Set(entries.map(e => e.service))].map(service => {
     const own = entries.filter(e => e.service === service) // newest first
     const limits = own.find(e => e.kind === 'limits'), hist = own.find(e => e.kind === 'history_imported' || e.kind === 'import')
     const err = own.find(e => e.kind === 'error')
     const failing = err && (!limits || err.ts > limits.ts)
-    return el('div', { class: 'plug' + (failing ? ' bad' : '') },
+    const mute = silent.find(x => x.service === service)
+    return el('div', { class: 'plug' + (failing || mute ? ' bad' : '') },
       el('b', {}, `${PLUGIN_NAME[service] ?? service}${own[0].version ? ' ' + own[0].version : ''}`),
-      el('span', {}, [limits ? `ліміти ${ago(limits.ts)}` : 'ліміти ще не надсилав', hist ? `${entryText(hist)} (${ago(hist.ts)})` : '', failing ? `${entryText(err)} ${ago(err.ts)}` : ''].filter(Boolean).join(' · ')))
+      el('span', {}, [mute ? `плагін мовчить: агент працював ${ago(mute.ts)}, останні ліміти ${limits ? ago(limits.ts) : 'ще не надсилав'}`
+        : limits ? `останні ліміти від плагіна ${ago(limits.ts)}` : 'ліміти ще не надсилав', hist ? `${entryText(hist)} (${ago(hist.ts)})` : '', failing ? `${entryText(err)} ${ago(err.ts)}` : ''].filter(Boolean).join(' · ')))
   })
   const log = el('div', { class: 'plug-log hide' }, ...entries.slice(0, 20).map(e => el('div', {},
     el('small', {}, new Date(e.ts).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' })), ` ${PLUGIN_NAME[e.service] ?? e.service}: ${entryText(e)}`)))
   const toggle = el('button', { type: 'button', class: 'link', onclick: () => { log.classList.toggle('hide'); toggle.textContent = log.classList.contains('hide') ? 'Журнал плагіна' : 'Сховати журнал' } }, 'Журнал плагіна')
-  return el('div', { class: 'plugins' }, ...lines, toggle, log)
+  return el('div', { class: 'plugins' }, ...quiet, ...lines, ...(entries.length ? [toggle, log] : []))
 }
 
 function deviceRow(d: DeviceRow, log: PluginEntry[] = []): HTMLElement {
@@ -71,7 +88,7 @@ function deviceRow(d: DeviceRow, log: PluginEntry[] = []): HTMLElement {
     el('div', {}, el('b', {}, d.name), d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
       ...[...d.providers].sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Агент надсилав дані з цього пристрою' }, providerLabel(p))),
       el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані')),
-      pluginBox(log.filter(e => e.device_id === d.id))),
+      pluginBox(log.filter(e => e.device_id === d.id), d.revoked ? {} : d.seen)),
     el('div', { class: 'dev-actions' }, ...(d.revoked ? [] : [
       projectSelect(d),
       el('button', { title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {

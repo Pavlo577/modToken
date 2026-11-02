@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS token_events (
 );
 CREATE INDEX IF NOT EXISTS events_user_ts_idx ON token_events (user_email, ts);
 CREATE INDEX IF NOT EXISTS events_user_provider_ts_idx ON token_events (user_email, provider, ts);
+CREATE INDEX IF NOT EXISTS events_device_provider_ts_idx ON token_events (device_id, provider, ts);
 
 -- OTLP: the model calls already counted (so a call sent twice is not added twice). Old rows are dropped after 14 days.
 CREATE TABLE IF NOT EXISTS otlp_calls (
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS mod_sessions (
   end_reason TEXT,
   project TEXT,
   project_note TEXT, -- why there is no project, when there is none: off, no_repo, config_failed ...
+  provider TEXT NOT NULL DEFAULT 'claude', -- the Claude mod's session, or the Codex plugin's (codex)
   PRIMARY KEY (device_id, session_id)
 );
 CREATE INDEX IF NOT EXISTS mod_sessions_user_idx ON mod_sessions (user_email, started_at);
@@ -101,6 +103,7 @@ CREATE TABLE IF NOT EXISTS mod_turns (
   perm_asks INTEGER NOT NULL DEFAULT 0,
   perm_denied INTEGER NOT NULL DEFAULT 0,
   perm_wait_ms INTEGER NOT NULL DEFAULT 0,
+  provider TEXT NOT NULL DEFAULT 'claude',
   PRIMARY KEY (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS mod_turns_user_idx ON mod_turns (user_email, ts);

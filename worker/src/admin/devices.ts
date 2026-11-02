@@ -6,16 +6,22 @@ import { pluginLogRead } from '../pluginlog.ts'
 import { json, str, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
+const PROVIDERS = ['claude', 'codex'] as const // the agents a device can send from (token_events.provider)
 const isMode = (v: unknown): v is (typeof PROJECT_MODES)[number] => typeof v === 'string' && (PROJECT_MODES as readonly string[]).includes(v)
 
 export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
   if (path === '/devices' && req.method === 'GET') {
     const { results } = await env.DB.prepare(
       `SELECT id, name, revoked, created_at, last_seen, otlp_since, project_mode,
-              (SELECT GROUP_CONCAT(DISTINCT t.provider) FROM token_events t WHERE t.device_id = devices.id) AS providers
+              ${PROVIDERS.map(p => `(SELECT MAX(t.ts) FROM token_events t WHERE t.device_id = devices.id AND t.provider = '${p}') AS seen_${p}`).join(', ')}
        FROM devices WHERE user_email = ? ORDER BY created_at DESC`,
-    ).bind(email).all()
-    return json(results.map(({ providers, ...d }) => ({ ...d, providers: providers ? String(providers).split(',') : [] })))
+    ).bind(email).all<Record<string, unknown>>()
+    // per agent: when it last sent from the device (one index entry each: device_id, provider, ts)
+    return json(results.map(row => {
+      const d: Record<string, unknown> = {}, seen: Record<string, string> = {}
+      for (const [k, v] of Object.entries(row)) if (k.startsWith('seen_')) { if (v) seen[k.slice(5)] = String(v) } else d[k] = v
+      return { ...d, providers: Object.keys(seen), seen }
+    }))
   }
 
   if (path === '/plugin-log' && req.method === 'GET') return pluginLogRead(env, email)

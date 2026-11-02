@@ -1,5 +1,5 @@
 {
-  "description": "Token Tracker: after every turn the session's rate-limit windows, and once the token history from before OpenTelemetry (numbers only), to the site",
+  "description": "Token Tracker: after every turn the session's rate-limit windows and the turn's activity (times, context fill), the session's start and end, and once the token history from before OpenTelemetry (numbers only), to the site",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,12 @@
             "command": "python3 \"${PLUGIN_ROOT}/hooks/history.py\"",
             "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\history.ps1\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
+            "timeout": 10
           }
         ]
       }
@@ -21,6 +27,48 @@
             "command": "python3 \"${PLUGIN_ROOT}/hooks/limits.py\"",
             "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\limits.ps1\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
+            "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
+            "timeout": 10
           }
         ]
       }

@@ -6,6 +6,7 @@ import { COLORS } from '../charts/base.ts'
 import { PALETTE } from '../core/palette.ts'
 import type { Period } from '../core/range.ts'
 import { get, q } from '../core/store.ts'
+import { state } from '../core/state.ts'
 import { $, el } from '../lib/dom.ts'
 import { dayLabel, dayLong, fmt, fmtPct, fmtUsd } from '../lib/format.ts'
 
@@ -29,7 +30,7 @@ const OUTCOME: Record<string, string> = { answer: 'відповідь', aborted:
 
 export async function renderModStats(r: Period): Promise<void> {
   let d: ModStats
-  try { d = await get<ModStats>('/mod-stats?' + q(r.from, r.to)) } catch { $('mod-off').classList.remove('hide'); $('mod-body').classList.add('hide'); return }
+  try { d = await get<ModStats>('/mod-stats?' + q(r.from, r.to) + (state.provider ? '&provider=' + encodeURIComponent(state.provider) : '')) } catch { $('mod-off').classList.remove('hide'); $('mod-body').classList.add('hide'); return }
   $('mod-off').classList.toggle('hide', d.available)
   $('mod-body').classList.toggle('hide', !d.available)
   if (!d.available) return

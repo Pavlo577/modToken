@@ -98,11 +98,13 @@ test('codex plugin: the manifest points at the hooks file, the Stop hook runs th
   assert.equal(manifest.name, 'token-tracker')
   const hooks = JSON.parse(readFileSync(PLUGIN + manifest.hooks.replace(/^\.\//, ''), 'utf8'))
   assert.deepEqual(Object.keys(hooks).sort(), ['description', 'hooks']) // Codex reads a hooks file with deny_unknown_fields
-  assert.deepEqual(Object.keys(hooks.hooks).sort(), ['SessionStart', 'Stop'])
+  assert.deepEqual(Object.keys(hooks.hooks).sort(), ['Interrupt', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'])
   assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, undefined) // Codex skips async hooks: the script detaches itself instead
-  for (const [event, script] of [['Stop', 'limits'], ['SessionStart', 'history']]) {
-    const [h] = hooks.hooks[event][0].hooks
-    assert.equal(h.type, 'command')
+  const runs = [['Stop', 0, 'limits'], ['SessionStart', 0, 'history'], ['Stop', 1, 'activity'], ['SessionStart', 1, 'activity'],
+    ['UserPromptSubmit', 0, 'activity'], ['Interrupt', 0, 'activity'], ['SessionEnd', 0, 'activity']]
+  for (const [event, i, script] of runs) {
+    const h = hooks.hooks[event][0].hooks[i]
+    assert.equal(h.type, 'command'); assert.equal(h.async, undefined)
     for (const cmd of [h.command, h.commandWindows]) {
       const file = /\$\{PLUGIN_ROOT\}[/\\](hooks[/\\]\w+\.(py|ps1))/.exec(cmd)[1].replace(/\\/g, '/')
       assert.ok(file.startsWith('hooks/' + script + '.') && existsSync(PLUGIN + file), file)
@@ -239,5 +241,108 @@ test('codex plugin log: a failure reports only its error type and stage, never t
     assert.equal(errors[0].stage, 'limits')
     assert.match(errors[0].error, /^[A-Za-z]+$/)
     assert.equal(JSON.stringify(s.logs).includes('SECRET'), false)
+  } finally { s.close() }
+})
+
+// ---- activity (hooks/activity.py): sessions and turns to POST /v1/activity, provider codex ----
+
+const ACTIVITY = PLUGIN + 'hooks/activity.py'
+const act = (home, input, data) => new Promise(done => {
+  const p = spawn('python3', [ACTIVITY], { env: { ...process.env, CODEX_HOME: home, PLUGIN_DATA: data } })
+  p.stdin.end(JSON.stringify(input))
+  let out = ''
+  p.stdout.on('data', d => (out += d)); p.stderr.on('data', d => (out += d))
+  p.on('close', code => done({ code, out }))
+})
+
+/** A site that also answers GET /v1/config with the device's project mode. */
+async function activitySite(mode) {
+  const got = []
+  const server = createServer((req, res) => {
+    let body = ''
+    req.on('data', d => (body += d)).on('end', () => {
+      if (req.url === '/v1/config') return res.end(JSON.stringify({ project: mode }))
+      got.push({ url: req.url, token: req.headers['x-device-token'], body: JSON.parse(body) })
+      res.end('{}')
+    })
+  })
+  await new Promise(r => server.listen(0, '127.0.0.1', r))
+  return { got, origin: `http://127.0.0.1:${server.address().port}`, close: () => server.close() }
+}
+
+/** A repository with an origin remote (a planted secret in the remote's credentials and in the path). */
+function repo(remote) {
+  const root = mkdtempSync(join(tmpdir(), 'tt-SECRET-repo-'))
+  mkdirSync(join(root, '.git')); mkdirSync(join(root, 'src', 'deep'), { recursive: true })
+  writeFileSync(join(root, '.git', 'config'), `[core]\n\tbare = false\n[remote "upstream"]\n\turl = https://github.com/other/thing.git\n` + (remote ? `[remote "origin"]\n\turl = ${remote}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n` : ''))
+  return { root, cwd: join(root, 'src', 'deep') }
+}
+
+test('codex activity: a session start with its repository, a turn from the prompt to Stop with its context fill, the end; never the prompt, the answer or the cwd', async () => {
+  const s = await activitySite('name')
+  try {
+    const { cwd } = repo('https://user:SECRET-TOKEN@github.com/acme/widgets.git')
+    const home = codexHome(s.origin, [
+      { timestamp: '2026-10-29T20:24:22.000Z', type: 'session_meta', payload: { id: 'sess-1', cwd: '/home/SECRET-PATH' } },
+      { timestamp: '2026-10-29T20:26:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'SECRET PROMPT' }] } },
+      { timestamp: '2026-10-29T20:27:18.161Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 64000, output_tokens: 10 }, model_context_window: 256000 } } },
+    ])
+    const file = join(home, 'sessions', '2026', '10', '29', 'rollout-2026-10-29T20-24-22-01a18955.jsonl')
+    const data = mkdtempSync(join(tmpdir(), 'tt-codex-data-'))
+    const base = { session_id: 'sess-1', cwd, transcript_path: file, model: 'gpt-5.6-sol', permission_mode: 'default' }
+    for (const input of [
+      { ...base, hook_event_name: 'SessionStart', source: 'startup' },
+      { ...base, hook_event_name: 'UserPromptSubmit', turn_id: 'turn-1', prompt: 'SECRET PROMPT' },
+      { ...base, hook_event_name: 'Stop', turn_id: 'turn-1', stop_hook_active: false, last_assistant_message: 'SECRET ANSWER' },
+      { ...base, hook_event_name: 'UserPromptSubmit', turn_id: 'turn-2', prompt: 'SECRET PROMPT 2' },
+      { ...base, hook_event_name: 'Interrupt', turn_id: 'turn-2' },
+      { session_id: 'sess-1', cwd, transcript_path: file, hook_event_name: 'SessionEnd', reason: 'other' },
+    ]) {
+      const r = await act(home, input, data)
+      assert.equal(r.code, 0); assert.equal(r.out, '')
+    }
+    assert.equal(s.got.length, 4) // the start, two turns, the end (a prompt alone sends nothing)
+    for (const g of s.got) { assert.equal(g.url, '/v1/activity'); assert.equal(g.token, TOKEN); assert.equal(g.body.provider, 'codex') }
+    const [start, t1, t2, end] = s.got.map(g => g.body)
+    assert.equal(start.session.id, 'sess-1'); assert.equal(start.session.project, 'acme/widgets'); assert.equal(start.session.project_note, null)
+    assert.equal(t1.turns[0].id, 'turn-1'); assert.equal(t1.turns[0].outcome, 'answer'); assert.equal(t1.turns[0].session, 'sess-1')
+    assert.equal(t1.turns[0].context_tokens, 64000); assert.equal(t1.turns[0].context_window, 256000); assert.equal(t1.turns[0].context_pct, 25)
+    assert.ok(t1.turns[0].wall_ms >= 0); assert.equal(t1.turns[0].think_ms, null); assert.equal(t1.session, undefined)
+    assert.equal(t2.turns[0].id, 'turn-2'); assert.equal(t2.turns[0].outcome, 'aborted'); assert.ok(t2.turns[0].think_ms >= 0)
+    assert.ok(end.session.ended_at); assert.equal(end.session.end_reason, 'other'); assert.equal(end.session.started_at, start.session.started_at)
+    const all = JSON.stringify(s.got)
+    for (const bad of ['SECRET', 'tt-', 'deep', 'gpt-5.6', 'upstream']) assert.equal(all.includes(bad), false, bad)
+    assert.equal(existsSync(join(data, 'activity', 'sess-1.json')), false) // the end forgets the session's times
+  } finally { s.close() }
+})
+
+test('codex activity: hash mode sends only h: and 12 hex characters, off sends the word off; a session without its start is sent with its first turn', async () => {
+  for (const [mode, expect] of [['hash', /^h:[0-9a-f]{12}$/], ['off', null]]) {
+    const s = await activitySite(mode)
+    try {
+      const { cwd } = repo('git@github.com:acme/SECRET-widgets.git')
+      const home = codexHome(s.origin, [])
+      const data = mkdtempSync(join(tmpdir(), 'tt-codex-data-'))
+      await act(home, { hook_event_name: 'SessionStart', session_id: 'sess-2', cwd, source: 'startup' }, data)
+      const p = s.got[0].body.session
+      if (expect) { assert.match(p.project, expect); assert.equal(p.project_note, null) } else { assert.equal(p.project, null); assert.equal(p.project_note, 'off') }
+      assert.equal(JSON.stringify(s.got).includes('SECRET'), false)
+    } finally { s.close() }
+  }
+  const s = await activitySite('name')
+  try {
+    const home = codexHome(s.origin, [])
+    const data = mkdtempSync(join(tmpdir(), 'tt-codex-data-'))
+    await act(home, { hook_event_name: 'UserPromptSubmit', session_id: 'sess-3', turn_id: 't', prompt: 'SECRET', cwd: tmpdir() }, data)
+    await act(home, { hook_event_name: 'Stop', session_id: 'sess-3', turn_id: 't', transcript_path: '/nowhere.jsonl', last_assistant_message: 'SECRET' }, data)
+    assert.equal(s.got.length, 1)
+    assert.equal(s.got[0].body.session.id, 'sess-3'); assert.equal(s.got[0].body.turns[0].context_pct, null)
+    await act(home, { hook_event_name: 'Stop', session_id: 'sess-3', turn_id: 't' }, data) // a Stop without a prompt before it: nothing
+    assert.equal(s.got.length, 1)
+    // a folder with no repository: no_repo; a bad session id: nothing at all
+    await act(home, { hook_event_name: 'SessionStart', session_id: 'sess-4', cwd: mkdtempSync(join(tmpdir(), 'tt-norepo-')) }, data)
+    assert.equal(s.got[1].body.session.project_note, 'no_repo')
+    await act(home, { hook_event_name: 'SessionStart', session_id: '../../etc/passwd', cwd: tmpdir() }, data)
+    assert.equal(s.got.length, 2)
   } finally { s.close() }
 })

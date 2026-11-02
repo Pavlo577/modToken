@@ -1,5 +1,7 @@
-// Admin route behind the "Робота з агентом" cards: what the token-tracker mod measured (mod_sessions, mod_turns), joined with the OTLP turns
-// (token_events, same session id) for the projects.
+// Admin route behind the "Робота з агентом" cards: what the token-tracker mod (Claude) or the Codex plugin measured (mod_sessions, mod_turns),
+// joined with the OTLP turns (token_events, same session id) for the projects. ?provider=claude|codex keeps one agent. Codex's permission
+// prompts come from its own OTLP events (codex.tool_decision in the events database): a decision whose source is User was put to a
+// person (Config and AutomatedReviewer decide by themselves).
 import { json } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -14,27 +16,41 @@ const stat = (xs: number[]) => {
 interface TurnRow { ts: string; session_id: string; wall_ms: number; think_ms: number | null; outcome: string; context_pct: number | null; perm_asks: number; perm_denied: number; perm_wait_ms: number }
 interface SessionRow { session_id: string; started_at: string; ended_at: string | null; end_reason: string | null; last_turn: string | null; turns: number }
 
+/** Codex's permission prompts in a period, from its codex.tool_decision events (one indexed range: user_email, name, ts). */
+async function codexPermissions(env: Parameters<Routes>[0]['env'], email: string, a: string, b: string): Promise<{ asks: number; denied: number }> {
+  if (!env.EVENTS) return { asks: 0, denied: 0 }
+  const rows = await env.EVENTS.prepare(
+    `SELECT lower(json_extract(attrs, '$.decision')) AS decision, lower(json_extract(attrs, '$.source')) AS source, COUNT(*) AS n
+     FROM events WHERE user_email = ? AND name = 'codex.tool_decision' AND ts >= ? AND ts < ? GROUP BY 1, 2`,
+  ).bind(email, a, b).all<{ decision: string | null; source: string | null; n: number }>().then(r => r.results).catch(() => [])
+  const asked = rows.filter(r => r.source === 'user') // Config and AutomatedReviewer decide without a person
+  return { asks: asked.reduce((s, r) => s + r.n, 0), denied: asked.filter(r => r.decision === 'denied' || r.decision === 'abort').reduce((s, r) => s + r.n, 0) }
+}
+
 export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => {
   if (path !== '/mod-stats' || req.method !== 'GET') return null
   const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000
   const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 30 * 86_400_000, to - 400 * 86_400_000)
   const a = new Date(from).toISOString(), b = new Date(to).toISOString()
-  const all = <T>(sql: string) => env.DB.prepare(sql).bind(email, a, b).all<T>().then(r => r.results)
+  const provider = ['claude', 'codex'].includes(url.searchParams.get('provider') ?? '') ? url.searchParams.get('provider')! : null
+  const all = <T>(sql: string) => env.DB.prepare(sql).bind(email, a, b, ...(provider ? [provider] : [])).all<T>().then(r => r.results)
+  const only = (col: string) => (provider ? ` AND ${col} = ?4` : '') // one agent's rows, when the page shows one
 
-  const [turns, sessions, projects, notes] = await Promise.all([
+  const [turns, sessions, projects, notes, codexPerm] = await Promise.all([
     all<TurnRow>(`SELECT ts, session_id, wall_ms, think_ms, outcome, context_pct, perm_asks, perm_denied, perm_wait_ms FROM mod_turns
-      WHERE user_email = ?1 AND ts >= ?2 AND ts < ?3 ORDER BY ts LIMIT 50000`),
+      WHERE user_email = ?1 AND ts >= ?2 AND ts < ?3${only('provider')} ORDER BY ts LIMIT 50000`),
     all<SessionRow>(`SELECT s.session_id, s.started_at, s.ended_at, s.end_reason,
         (SELECT MAX(t.ts) FROM mod_turns t WHERE t.device_id = s.device_id AND t.session_id = s.session_id) AS last_turn,
         (SELECT COUNT(*) FROM mod_turns t WHERE t.device_id = s.device_id AND t.session_id = s.session_id) AS turns
-      FROM mod_sessions s WHERE s.user_email = ?1 AND s.started_at >= ?2 AND s.started_at < ?3 ORDER BY s.started_at LIMIT 5000`),
+      FROM mod_sessions s WHERE s.user_email = ?1 AND s.started_at >= ?2 AND s.started_at < ?3${only('s.provider')} ORDER BY s.started_at LIMIT 5000`),
     all<{ project: string | null; sessions: number; turns: number; output: number; input: number; cache_read: number; cost_micros: number }>(
       `SELECT s.project, COUNT(DISTINCT s.session_id) AS sessions, SUM(CASE WHEN e.kind = 'main' THEN 1 ELSE 0 END) AS turns, SUM(e.output_tokens) AS output,
         SUM(e.input_tokens + e.cache_creation_tokens) AS input, SUM(e.cache_read_tokens) AS cache_read, SUM(e.cost_micros) AS cost_micros
       FROM token_events e JOIN mod_sessions s ON s.device_id = e.device_id AND s.session_id = e.session_id
-      WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3 GROUP BY s.project ORDER BY output DESC LIMIT 100`),
+      WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3${only('e.provider')} GROUP BY s.project ORDER BY output DESC LIMIT 100`),
     // why sessions came without a project (the mod's word: off, no_repo, config_failed ...)
-    all<{ note: string | null; n: number }>(`SELECT project_note AS note, COUNT(*) AS n FROM mod_sessions WHERE user_email = ?1 AND started_at >= ?2 AND started_at < ?3 AND project IS NULL GROUP BY note ORDER BY n DESC`),
+    all<{ note: string | null; n: number }>(`SELECT project_note AS note, COUNT(*) AS n FROM mod_sessions WHERE user_email = ?1 AND started_at >= ?2 AND started_at < ?3${only('provider')} AND project IS NULL GROUP BY note ORDER BY n DESC`),
+    provider === 'claude' ? Promise.resolve({ asks: 0, denied: 0 }) : codexPermissions(env, email, a, b),
   ])
 
   // context: the fullest each session got, how full a turn usually is
@@ -60,8 +76,9 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
   const sessionStats = { count: sessions.length, length: stat(lengths), turns: stat(sessions.map(s => s.turns)), reasons }
 
   // permissions: how often the agent waited for an answer, how often it was told no, how long it waited (prompt to the tool's end)
-  const asks = turns.reduce((s, t) => s + t.perm_asks, 0)
-  const permissions = { asks, denied: turns.reduce((s, t) => s + t.perm_denied, 0), waitMs: turns.reduce((s, t) => s + t.perm_wait_ms, 0), turnsWithAsks: turns.filter(t => t.perm_asks > 0).length }
+  // (Codex's come from its OTLP decisions: counts only, no waiting time and no turn they belong to)
+  const asks = turns.reduce((s, t) => s + t.perm_asks, 0) + codexPerm.asks
+  const permissions = { asks, denied: turns.reduce((s, t) => s + t.perm_denied, 0) + codexPerm.denied, waitMs: turns.reduce((s, t) => s + t.perm_wait_ms, 0), turnsWithAsks: turns.filter(t => t.perm_asks > 0).length }
 
   // by day: turns, the median turn length, the median context fill, the permission prompts
   const days = new Map<string, TurnRow[]>()
@@ -71,5 +88,5 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
     context_p50: stat(ts.flatMap(t => (t.context_pct == null ? [] : [t.context_pct]))).p50, asks: ts.reduce((s, t) => s + t.perm_asks, 0),
   }))
 
-  return json({ available: turns.length > 0 || sessions.length > 0, context, time, sessions: sessionStats, permissions, daily, projects, projectNotes: notes })
+  return json({ available: turns.length > 0 || sessions.length > 0 || codexPerm.asks > 0, context, time, sessions: sessionStats, permissions, daily, projects, projectNotes: notes })
 }

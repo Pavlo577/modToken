@@ -173,6 +173,21 @@ CXL='{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{
 post "$CXL" >/dev/null
 CX2='{"provider":"codex","turns":[{"id":"cx:s-cx:2","session":"s-cx","ts":"'$NOW'","model":"gpt-5.6-sol","input":1,"output":1,"cache_read":0,"cache_creation":0,"first":true}]}'
 check "codex history from the time Codex reports over OTLP is skipped" "$(curl -s -XPOST $B/v1/import -H "x-device-token: $TOKEN" --data-binary "$CX2" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["added"], d["skipped_live"])')" "0 1"
+# Codex activity (the Codex plugin's hooks): the same /v1/activity, marked codex; the cards show one agent at a time
+act "{\"provider\":\"codex\",\"session\":{\"id\":\"s-cx-act\",\"started_at\":\"$NOW\"},\"turns\":[{\"id\":\"cx-t1\",\"session\":\"s-cx-act\",\"ts\":\"$NOW\",\"wall_ms\":7000,\"outcome\":\"aborted\",\"context_pct\":12}]}" >/dev/null
+MSP() { curl -s "$B/api/admin/mod-stats?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)&provider=$1"; }
+check "activity: codex turns apart from claude's" "$(MSP codex | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["time"]["wall"]["n"], d["sessions"]["count"])') $(MSP claude | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["time"]["wall"]["n"])')" "1 1 2"
+TD=$(python3 - <<'PY'
+import json, time
+kv = lambda k, v: {"key": k, "value": {"stringValue": v}}
+rec = lambda d, src, i: {"timeUnixNano": "0", "attributes": [kv("event.name", "codex.tool_decision"), kv("event.timestamp", time.strftime('%Y-%m-%dT%H:%M:%S.', time.gmtime()) + '%03dZ' % (100 + i)),
+  kv("conversation.id", "s-cx-act"), kv("tool_name", "shell"), kv("call_id", "c%d" % i), kv("decision", d), kv("source", src), kv("arguments", "SECRET COMMAND")]}
+print(json.dumps({"resourceLogs": [{"resource": {"attributes": [kv("service.name", "codex-app-server")]}, "scopeLogs": [{"logRecords": [rec("approved", "User", 1), rec("denied", "User", 2), rec("approved", "Config", 3), rec("denied", "AutomatedReviewer", 4)]}]}]}))
+PY
+)
+post "$TD" >/dev/null
+check "codex permissions: asked of a person (source User) and refused, from codex.tool_decision" "$(MSP codex | python3 -c 'import sys,json; p=json.load(sys.stdin)["permissions"]; print(p["asks"], p["denied"])')" "2 1"
+check "devices: when each agent last sent" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; d=[x for x in json.load(sys.stdin) if x["name"]=="otlp-box"][0]; print(sorted(d["providers"]), sorted(d["seen"]))')" "['claude', 'codex'] ['claude', 'codex']"
 # the mod's endpoints drop what they do not read, and remember only the NAME of a dropped field
 check "the mod's limits endpoint accepts an extra field" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/limits -H "x-device-token: $TOKEN" -d '{"limits":[{"kind":"five_hour","percentUsed":12,"resetsAt":"2030-01-01T00:00:00Z","new_mod_field":"SECRET MOD VALUE me@example.com"}]}')" 200
 check "the name of the dropped mod field is reported as new, its value is stored nowhere" "$(curl -s "$B/api/admin/insights?fresh=1" | python3 -c 'import sys,json; r=sys.stdin.read(); d=json.loads(r); print("limits.new_mod_field" in [x["key"] for x in d["unknownFields"]], "SECRET MOD" in r)')" "True False"

@@ -8,7 +8,7 @@ export const MOD_FIELDS = {
   limits: { '': ['provider', 'limits'], 'limits': ['kind', 'percentUsed', 'resetsAt'] },
   plugin_log: { '': ['provider', 'version', 'events'], 'events': ['kind', 'n', 'total', 'error', 'stage'] },
   activity: {
-    '': ['session', 'turns'],
+    '': ['provider', 'session', 'turns'],
     'session': ['id', 'started_at', 'ended_at', 'end_reason', 'project', 'project_note'],
     'turns': ['id', 'session', 'ts', 'wall_ms', 'think_ms', 'outcome', 'context_pct', 'context_tokens', 'context_window', 'perm_asks', 'perm_denied', 'perm_wait_ms'],
   },

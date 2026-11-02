@@ -93,6 +93,8 @@ export interface DeviceRow {
   project_mode: 'off' | 'name' | 'hash'
   /** agents that sent turns from this device */
   providers: string[]
+  /** per agent, when it last sent a call from this device */
+  seen?: Record<string, string>
 }
 
 /** Sums plus the estimated cost, per day / hour / model / device. */

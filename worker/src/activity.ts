@@ -1,4 +1,5 @@
-// POST /v1/activity: what the token-tracker mod measures beyond the limits, numbers only. GET /v1/config: what the device lets the mod send.
+// POST /v1/activity: what the token-tracker mod (Claude) or the Codex plugin (provider codex) measures beyond the limits, numbers only.
+// GET /v1/config: what the device lets them send.
 // A session: { id, started_at, ended_at?, end_reason?, project?, project_note? (why there is none: a word) }; turns: [{ id, session, ts, wall_ms, think_ms?, outcome, context_pct?, context_tokens?,
 // context_window?, perm_asks, perm_denied, perm_wait_ms }]. The project (a repository's owner/name, or `h:` and 12 hex characters) is kept only as
 // far as the device's project_mode allows: off keeps none, hash keeps a hash only, name keeps either. Anything else in the body is ignored.
@@ -38,6 +39,10 @@ export function projectFor(v: unknown, mode: ProjectMode): string | null {
   if (HASH.test(v)) return v
   return mode === 'name' && NAME.test(v) ? v : null
 }
+
+/** Whose activity it is: `codex` (the Codex plugin says so), or `claude` (the mod, which does not say). */
+export const activityProvider = (body: unknown): 'claude' | 'codex' =>
+  body && typeof body === 'object' && (body as { provider?: unknown }).provider === 'codex' ? 'codex' : 'claude'
 
 export function parseActivity(body: unknown, mode: ProjectMode): { session: ModSession | null; turns: ModTurn[] } | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null
@@ -91,21 +96,22 @@ export async function activityIngest(req: Request, env: Env): Promise<Response> 
   const parsed = parseActivity(raw, mode)
   if (!parsed) return text('bad request', 400)
   await recordDropped(env, dev.id, 'activity', raw)
+  const provider = activityProvider(raw)
   const stmts: D1PreparedStatement[] = []
   const s = parsed.session
   if (s) {
     stmts.push(env.DB.prepare(
-      `INSERT INTO mod_sessions (device_id, user_email, session_id, started_at, ended_at, end_reason, project, project_note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      `INSERT INTO mod_sessions (device_id, user_email, session_id, started_at, ended_at, end_reason, project, project_note, provider) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
        ON CONFLICT (device_id, session_id) DO UPDATE SET started_at = MIN(started_at, excluded.started_at),
          ended_at = COALESCE(excluded.ended_at, ended_at), end_reason = COALESCE(excluded.end_reason, end_reason),
          project = COALESCE(excluded.project, project), project_note = COALESCE(excluded.project_note, project_note)`,
-    ).bind(dev.id, dev.user_email, s.id, s.started_at, s.ended_at, s.end_reason, s.project, s.project_note))
+    ).bind(dev.id, dev.user_email, s.id, s.started_at, s.ended_at, s.end_reason, s.project, s.project_note, provider))
   }
   for (const t of parsed.turns) {
     stmts.push(env.DB.prepare(
-      `INSERT OR IGNORE INTO mod_turns (device_id, user_email, session_id, turn_id, ts, wall_ms, think_ms, outcome, context_pct, context_tokens, context_window, perm_asks, perm_denied, perm_wait_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(dev.id, dev.user_email, t.session, t.id, t.ts, t.wall_ms, t.think_ms, t.outcome, t.context_pct, t.context_tokens, t.context_window, t.perm_asks, t.perm_denied, t.perm_wait_ms))
+      `INSERT OR IGNORE INTO mod_turns (device_id, user_email, session_id, turn_id, ts, wall_ms, think_ms, outcome, context_pct, context_tokens, context_window, perm_asks, perm_denied, perm_wait_ms, provider)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(dev.id, dev.user_email, t.session, t.id, t.ts, t.wall_ms, t.think_ms, t.outcome, t.context_pct, t.context_tokens, t.context_window, t.perm_asks, t.perm_denied, t.perm_wait_ms, provider))
   }
   if (stmts.length) await env.DB.batch(stmts)
   return json({ turns: parsed.turns.length, session: !!s })
