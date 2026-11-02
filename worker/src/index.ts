@@ -22,6 +22,8 @@ export default {
     if (url.pathname === '/v1/config' && req.method === 'GET') return modConfig(req, env) // what the device lets the mod send
     if (url.pathname.startsWith('/api/admin/')) return admin(req, env, url)
     if (url.pathname === '/auth/logout' && req.method === 'GET') return signOutResponse(env) // the dashboard's "Вийти"
+    // the site's root has no page of its own: the dashboard, behind Access (signed in it opens, otherwise Access asks to sign in first)
+    if (url.pathname === '/' && (req.method === 'GET' || req.method === 'HEAD')) return new Response(null, { status: 302, headers: { location: '/admin/' } })
     if (url.pathname.startsWith('/api/')) return text('not found', 404)
     return env.ASSETS.fetch(req)
   },

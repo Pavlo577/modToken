@@ -13,5 +13,6 @@ check "OTLP logs need a device token" "$(c -XPOST $B/v1/logs -H 'content-type: a
 LO=$(curl -s -o /dev/null -D - $B/auth/logout | tr -d '\r')
 check "sign-out: a redirect to the Access team's logout" "$(printf '%s\n' "$LO" | awk 'NR==1 {print $2} tolower($1)=="location:" {print $2}' | tr '\n' ' ')" "302 https://billowing-feather-dc63.cloudflareaccess.com/cdn-cgi/access/logout "
 check "sign-out: the site's Access cookie is cleared" "$(printf '%s\n' "$LO" | grep -ci '^set-cookie: CF_Authorization=;.*Max-Age=0')" 1
+check "the site's root leads to the dashboard (behind Access)" "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' $B/)" "302 $B/admin/"
 check "old collector endpoints are gone" "$(c -XPOST $B/api/ingest -d '[]')" 404
 exit $fail
