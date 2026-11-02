@@ -1,5 +1,5 @@
 // Admin API (/api/admin/*): only for a signed-in user, who sees only their own data.
-import { accessEmail } from '../auth.ts'
+import { accessCheck } from '../auth.ts'
 import type { Env } from '../env.ts'
 import { json, text } from '../util.ts'
 import type { Ctx, Routes } from './context.ts'
@@ -15,8 +15,9 @@ const me: Routes = async ({ req, email, path }) => (path === '/me' && req.method
 const GROUPS: Routes[] = [me, deviceRoutes, historyRoutes, dataRoutes, statsRoutes, insightRoutes, modStatsRoutes]
 
 export async function admin(req: Request, env: Env, url: URL): Promise<Response> {
-  const email = await accessEmail(req, env)
-  if (!email) return text('unauthorized', 401)
+  const who = await accessCheck(req, env)
+  if (!('email' in who)) return text(`unauthorized: ${who.reason}`, 401) // the reason is one word the page explains
+  const email = who.email
   const ctx: Ctx = { req, env, url, email, path: url.pathname.replace(/^\/api\/admin/, '') }
   for (const group of GROUPS) {
     const res = await group(ctx)
