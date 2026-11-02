@@ -8,13 +8,19 @@ let jwks: ReturnType<typeof createRemoteJWKSet> | undefined
 export const audiencesOf = (value: string | undefined): string[] => (value ?? '').split(',').map(s => s.trim()).filter(Boolean)
 
 /** Why a login was refused, as one word the dashboard explains (never the token or the email). */
-export type AuthReason = 'no-token' | 'expired' | 'audience' | 'issuer' | 'keys' | 'signature' | 'invalid'
+export type AuthReason = 'no-token' | 'expired' | 'clock' | 'audience' | 'issuer' | 'keys' | 'signature' | 'no-email' | 'invalid'
+
+/**
+ * Seconds of clock difference allowed between Cloudflare Access and the Worker. Without it a token Access has just issued could be
+ * "not valid yet" (its nbf a moment ahead of the Worker's clock), and signing in again would only bring another such token.
+ */
+export const CLOCK_TOLERANCE = 60
 
 /** The reason behind a jose verification error. */
 export function authReason(e: unknown): AuthReason {
   const { code, claim } = (e ?? {}) as { code?: string; claim?: string }
   if (code === 'ERR_JWT_EXPIRED') return 'expired'
-  if (code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') return claim === 'aud' ? 'audience' : claim === 'iss' ? 'issuer' : 'invalid'
+  if (code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') return claim === 'aud' ? 'audience' : claim === 'iss' ? 'issuer' : claim === 'nbf' || claim === 'iat' ? 'clock' : 'invalid'
   if (code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') return 'signature'
   if (code?.startsWith('ERR_JWKS') || e instanceof TypeError) return 'keys' // no key with this id, or the team's keys could not be fetched
   return 'invalid'
@@ -27,8 +33,8 @@ export async function accessCheck(req: Request, env: Env): Promise<{ email: stri
   if (!token) return { reason: 'no-token' }
   try {
     jwks ??= createRemoteJWKSet(new URL(`${env.TEAM_DOMAIN}/cdn-cgi/access/certs`))
-    const { payload } = await jwtVerify(token, jwks, { issuer: env.TEAM_DOMAIN, audience: audiencesOf(env.POLICY_AUD) })
-    return typeof payload.email === 'string' ? { email: payload.email.toLowerCase() } : { reason: 'invalid' }
+    const { payload } = await jwtVerify(token, jwks, { issuer: env.TEAM_DOMAIN, audience: audiencesOf(env.POLICY_AUD), clockTolerance: CLOCK_TOLERANCE })
+    return typeof payload.email === 'string' ? { email: payload.email.toLowerCase() } : { reason: 'no-email' } // a service token, not a person
   } catch (e) {
     const reason = authReason(e)
     if (reason === 'keys') jwks = undefined // fetch the team's keys afresh next time (they rotate)

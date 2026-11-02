@@ -4,6 +4,8 @@
 const AUTH_TEXT: Record<string, string> = {
   'no-token': 'Cloudflare Access не передав вхід: сеанс скинуто або сторінку відкрито не через захищену адресу.',
   expired: 'Сеанс входу закінчився.',
+  clock: 'Годинник Cloudflare Access і сайту розійшлися: вхід ще «не дійсний». Спробуй за хвилину.',
+  'no-email': 'Вхід без пошти (сервісний токен Cloudflare Access), а дашборд показує дані людини.',
   audience: 'Вхід виданий іншим застосунком Cloudflare Access, ніж очікує сайт (POLICY_AUD).',
   issuer: 'Вхід виданий іншою командою Cloudflare Access (TEAM_DOMAIN).',
   keys: 'Не вдалося перевірити вхід: ключі Cloudflare Access тимчасово недоступні.',

@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose'
-import { accessCheck, audiencesOf, authReason } from '../src/auth.ts'
+import { accessCheck, audiencesOf, authReason, CLOCK_TOLERANCE } from '../src/auth.ts'
 
 test('auth: POLICY_AUD is one tag or a comma separated list', () => {
   assert.deepEqual(audiencesOf('abc'), ['abc'])
@@ -34,4 +34,15 @@ test('auth: a refused login says why, in one word (real jose errors)', async () 
 test('auth: no Access header is no-token; the reason never carries the token', async () => {
   const r = await accessCheck(new Request('https://x.test/api/admin/me'), { TEAM_DOMAIN: 'https://team', POLICY_AUD: 'app' })
   assert.deepEqual(r, { reason: 'no-token' })
+})
+
+test('auth: a token Access issued a moment "in the future" (clocks apart) passes within the tolerance; far ahead it is a clock problem', async () => {
+  const { publicKey, privateKey } = await generateKeyPair('RS256')
+  const keys = createLocalJWKSet({ keys: [{ ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' }] })
+  const now = Math.floor(Date.now() / 1000)
+  const token = nbf => new SignJWT({ email: 'me@example.com' }).setProtectedHeader({ alg: 'RS256', kid: 'k1' }).setIssuer('https://team').setAudience('app').setNotBefore(nbf).setIssuedAt(nbf).setExpirationTime(nbf + 3600).sign(privateKey)
+  const verify = async t => { try { await jwtVerify(t, keys, { issuer: 'https://team', audience: ['app'], clockTolerance: CLOCK_TOLERANCE }); return 'ok' } catch (e) { return authReason(e) } }
+  assert.equal(await verify(await token(now + 5)), 'ok') // 5 seconds ahead: what broke every fresh login
+  assert.equal(await verify(await token(now + 600)), 'clock')
+  assert.ok(CLOCK_TOLERANCE >= 30)
 })
