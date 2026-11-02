@@ -13,7 +13,13 @@ const AUTH_TEXT: Record<string, string> = {
   invalid: 'Вхід не пройшов перевірку.',
 }
 
-/** A bar at the top: why the login was refused, and a way to sign in again (Access's own logout clears the session, the reload signs in). */
+/**
+ * Signing out: Cloudflare Access's own logout page for this site ends the session and revokes its token, so the next visit signs in
+ * afresh with a new token. A full page visit, not a background request, so Access gets its cookies and shows its page.
+ */
+export const signOut = (): void => { location.href = '/cdn-cgi/access/logout' }
+
+/** A bar at the top: why the login was refused, and a way to sign in again (signing out first, so the next login brings a new token). */
 function authBar(reason: string): void {
   if (document.getElementById('auth-bar')) return
   const bar = document.createElement('div')
@@ -23,7 +29,7 @@ function authBar(reason: string): void {
   msg.textContent = `Не авторизовано. ${AUTH_TEXT[reason] ?? AUTH_TEXT.invalid}`
   const again = document.createElement('button')
   again.textContent = 'Увійти знову'
-  again.onclick = () => { again.disabled = true; void fetch('/cdn-cgi/access/logout', { credentials: 'include' }).catch(() => undefined).finally(() => location.reload()) }
+  again.onclick = signOut
   bar.append(msg, again)
   document.body.prepend(bar)
 }

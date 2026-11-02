@@ -31,6 +31,7 @@ code { font: 12.5px ui-monospace, monospace; background: rgba(255,255,255,.08); 
 .pills button { border: 0; background: transparent; padding: 8px 16px; color: var(--text-2); white-space: nowrap; }
 .pills button[aria-pressed="true"] { background: var(--text); color: #1a1512; font-weight: 600; }
 .who { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
+.who .logout { padding: 5px 12px; font-size: 12.5px; }
 .av { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #ff7a1a, #8f4c14); display: grid; place-items: center; font-weight: 700; color: #1a1008; font-size: 13px; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
