@@ -98,7 +98,7 @@ svg .donut-v { fill: var(--text); font-size: 20px; font-weight: 650; font-family
 .hrow .track .hatch { flex: 1; border-radius: 6px; margin-left: 3px; }
 .hrow .val { font-variant-numeric: tabular-nums; text-align: right; }
 .mlist { display: grid; gap: 9px; font-size: 13.5px; align-content: center; }
-.mlist > div { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 10px; align-items: center; }
+.mlist > div { display: grid; grid-template-columns: 12px 1fr auto auto auto; gap: 10px; align-items: center; }
 .mlist i { width: 10px; height: 10px; border-radius: 50%; } .mlist .pc { color: var(--muted); width: 44px; text-align: right; }
 .donut-wrap { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: center; }
 
@@ -108,7 +108,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12.5px; }
 th:first-child, td:first-child, td.l, th.l { text-align: left; }
 tbody tr:last-child td { border-bottom: 0; }
 .scroll { overflow-x: auto; }
-.recs { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 14px; }
+.recs { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 14px; }
 .rec .v { font-size: 22px; } .rec .s { margin-top: 2px; }
 .dtools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dtools button.sq { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
@@ -262,3 +262,17 @@ svg .mark-t { fill: var(--muted); font-size: 10.5px; font-family: var(--font); }
 /* "Мін. крок": a chart wider than its card scrolls sideways */
 .hscroll > svg { max-width: none; }
 .hscroll { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+/* folded blocks: "Додатково" on Insights and the new fields */
+details.more { margin-bottom: 14px; }
+details.more > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-2); font-size: 14px; padding: 12px 4px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: '▸'; color: var(--muted); transition: transform .15s; }
+details.more[open] > summary::before { transform: rotate(90deg); }
+details.more.card > summary { padding: 0; }
+details.more > summary .sub { margin: 0; }
+details.more > summary .tag { color: var(--warn); border-color: var(--warn); margin-left: 0; }
+#ins-unknown-list .tag { color: var(--text-2); border-color: var(--line); display: inline-block; margin: 0 6px 6px 0; }
+
+/* the daily budget warning on the overview */
+.alert { border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent); background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--text); border-radius: 14px; padding: 10px 14px; margin-bottom: 14px; font-size: 13.5px; }
+.mlist .pc.usd { width: auto; min-width: 52px; }

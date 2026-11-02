@@ -23,10 +23,9 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
   const J = (k: string) => `json_extract(attrs, '$."${k}"')` // quoted: some names have dots
   const calls = `name = 'api_request'`
 
-  const [bySource, bySurface, byModel, byDay, latencyRows, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, compaction, subagents, errors, skills, totals] = await Promise.all([
+  const [bySource, bySurface, byDay, latencyRows, tools, decisions, safety, hooks, mcp, refusals, prompts, commands, modes, compaction, subagents, errors, skills, totals] = await Promise.all([
     q(`SELECT ${J('query_source')} AS source, COUNT(*) AS calls, SUM(${J('output_tokens')}) AS output, SUM(${J('input_tokens')} + ${J('cache_creation_tokens')}) AS fresh_input, SUM(${J('cache_read_tokens')}) AS cache_read, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY source ORDER BY cost_micros DESC`),
     q(`SELECT surface, COUNT(*) AS calls, COUNT(DISTINCT session_id) AS sessions, SUM(${J('output_tokens')}) AS output, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY surface ORDER BY cost_micros DESC`),
-    q(`SELECT ${J('model')} AS model, ${J('speed')} AS speed, COUNT(*) AS calls, SUM(${J('output_tokens')}) AS output, SUM(${J('cache_read_tokens')}) AS cache_read, SUM(${J('input_tokens')} + ${J('cache_creation_tokens')}) AS fresh_input, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY model, speed ORDER BY cost_micros DESC`),
     q(`SELECT substr(ts, 1, 10) AS day, ${J('query_source')} AS source, COUNT(*) AS calls, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY day, source ORDER BY day`),
     q(`SELECT ts, surface, ${J('model')} AS model, ${J('ttft_ms')} AS ttft, ${J('duration_ms')} AS dur, ${J('output_tokens')} AS output, ${J('query_source')} AS source FROM events WHERE ${W} AND ${calls} AND (${J('query_source')} IS NULL OR ${J('query_source')} NOT IN ('generate_session_title', 'away_summary')) ORDER BY ts DESC LIMIT 20000`),
     q(`SELECT ${J('tool_name')} AS tool, COUNT(*) AS runs, SUM(CASE WHEN ${J('success')} = 'true' OR ${J('success')} = 1 THEN 1 ELSE 0 END) AS ok, AVG(${J('duration_ms')}) AS avg_ms, MAX(${J('duration_ms')}) AS max_ms, AVG(${J('tool_input_size_bytes')}) AS avg_in_bytes, AVG(${J('tool_result_size_bytes')}) AS avg_out_bytes FROM events WHERE ${W} AND name = 'tool_result' GROUP BY tool ORDER BY runs DESC LIMIT 40`),
@@ -35,7 +34,6 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     q(`SELECT ${J('hook_event')} AS hook_event, ${J('hook_name')} AS hook_name, COUNT(*) AS runs, AVG(${J('total_duration_ms')}) AS avg_ms, MAX(${J('total_duration_ms')}) AS max_ms, SUM(CASE WHEN ${J('num_success')} < ${J('num_hooks')} THEN 1 ELSE 0 END) AS failed FROM events WHERE ${W} AND name = 'hook_execution_complete' GROUP BY hook_event, hook_name ORDER BY runs DESC LIMIT 30`),
     q(`SELECT ${J('status')} AS status, ${J('error_code')} AS error, ${J('transport_type')} AS transport, ${J('is_plugin')} AS is_plugin, COUNT(*) AS n, AVG(${J('duration_ms')}) AS avg_ms FROM events WHERE ${W} AND name = 'mcp_server_connection' GROUP BY status, error, transport, is_plugin ORDER BY n DESC LIMIT 30`),
     q(`SELECT ${J('model')} AS model, ${J('server_fallback_hop')} AS hop, COUNT(*) AS n FROM events WHERE ${W} AND name = 'api_refusal' GROUP BY model, hop ORDER BY n DESC LIMIT 20`),
-    q(`SELECT session_id, MIN(surface) AS surface, COUNT(*) AS calls, MIN(ts) AS first_ts, MAX(ts) AS last_ts, SUM(${J('output_tokens')}) AS output, SUM(${J('cost_usd_micros')}) AS cost_micros FROM events WHERE ${W} AND ${calls} GROUP BY session_id ORDER BY cost_micros DESC LIMIT 15`),
     q(`SELECT substr(ts, 1, 10) AS day, COUNT(*) AS prompts, AVG(${J('prompt_length')}) AS avg_len FROM events WHERE ${W} AND name = 'user_prompt' GROUP BY day ORDER BY day`),
     q(`SELECT ${J('command_name')} AS command, COUNT(*) AS n FROM events WHERE ${W} AND name = 'user_prompt' AND ${J('command_name')} IS NOT NULL GROUP BY command ORDER BY n DESC LIMIT 20`),
     q(`SELECT ${J('from_mode')} AS from_mode, ${J('to_mode')} AS to_mode, COUNT(*) AS n FROM events WHERE ${W} AND name = 'permission_mode_changed' GROUP BY from_mode, to_mode ORDER BY n DESC LIMIT 20`),
@@ -95,7 +93,7 @@ export const insightRoutes: Routes = async ({ req, env, url, email, path }) => {
     return { model, calls: d.length, ttft_p50: pct(t, 50), ttft_p95: pct(t, 95), dur_p50: pct(d, 50), dur_p95: pct(d, 95), tps_p50: Math.round(pct(s, 50) * 10) / 10 }
   }).sort((x, y) => y.calls - x.calls)
 
-  const res = json({ available: true, totals: totals[0], bySource, bySurface, byModel, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, sessions, prompts, commands, modes, compaction, subagents, errors, skills, latencyDaily, latencyHist, latencyStats, slowest, unknownFields })
+  const res = json({ available: true, totals: totals[0], bySource, bySurface, byDay, latency, tools, decisions, safety, hooks, mcp, refusals, prompts, commands, modes, compaction, subagents, errors, skills, latencyDaily, latencyHist, latencyStats, slowest, unknownFields })
   res.headers.set('cache-control', 'max-age=120')
   await cache?.put(key, res.clone()).catch(() => undefined)
   return res

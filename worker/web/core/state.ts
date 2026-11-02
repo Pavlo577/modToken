@@ -3,7 +3,7 @@
 import { cleanSteps } from '../lib/steps.ts'
 import type { StepRange } from '../lib/steps.ts'
 
-export type Tab = 'overview' | 'analytics' | 'insights' | 'money' | 'sessions' | 'devices'
+export type Tab = 'overview' | 'analytics' | 'insights' | 'money' | 'devices'
 
 export type View = 'line' | 'bars' | 'cal'
 
@@ -38,6 +38,8 @@ interface State {
   /** Main chart with the cache on: 'log' = logarithmic, 'linear' = one linear scale, cache clipped at the top. */
   scale: 'log' | 'linear'
   day: string
+  /** Daily budget in dollars (API-price estimate): the overview warns when today goes over it; 0 = off. */
+  budget: number
   /** "Кожен запис": points at least a fixed distance apart, the chart scrolls sideways instead of squeezing them together. */
   spread: boolean
   /** The main chart's time step in minutes per period (0 = every record). */
@@ -49,14 +51,15 @@ try { saved = JSON.parse(localStorage.getItem('tt-state') || '{}') as Partial<St
 
 const OLD_RANGES: Record<string, string> = { today: 'day', '7': 'week', '30': 'month', '90': 'month', '365': 'year' }
 
-const TABS: Tab[] = ['overview', 'analytics', 'insights', 'money', 'sessions', 'devices']
+const TABS: Tab[] = ['overview', 'analytics', 'insights', 'money', 'devices']
 
-export const asTab = (v: unknown): Tab | null => (TABS as unknown[]).includes(v) ? (v as Tab) : null
+/** A tab by name; the old Sessions tab is now part of Analytics. */
+export const asTab = (v: unknown): Tab | null => (v === 'sessions' ? 'analytics' : (TABS as unknown[]).includes(v) ? (v as Tab) : null)
 
 // the tab survives a reload: the address (#analytics) wins, then the last one used
 const startTab: Tab = asTab(location.hash.slice(1)) ?? asTab((saved as { tab?: unknown }).tab) ?? 'overview'
 
-export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, scale: 'log', day: '', spread: false, actMode: '', topDevice: false, steps: cleanSteps(null), ...saved, anchor: '', tab: startTab }
+export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, scale: 'log', day: '', spread: false, budget: 0, actMode: '', topDevice: false, steps: cleanSteps(null), ...saved, anchor: '', tab: startTab }
 
 state.range = OLD_RANGES[state.range] ?? state.range
 state.steps = cleanSteps(state.steps)
@@ -68,5 +71,5 @@ if (!(state.io in IO_NEXT)) state.io = 'both'
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 
 export const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, spread: state.spread, steps: state.steps, tab: state.tab })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, spread: state.spread, budget: state.budget, steps: state.steps, tab: state.tab })) } catch { /* ignore */ }
 }

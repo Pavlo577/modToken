@@ -17,13 +17,13 @@
       <button data-tab="analytics" aria-pressed="false">Аналітика</button>
       <button data-tab="insights" aria-pressed="false">Інсайти</button>
       <button data-tab="money" aria-pressed="false">Вартість<span class="wide"> і ліміти</span></button>
-      <button data-tab="sessions" aria-pressed="false">Сесії</button>
     </nav>
     <div class="who"><span class="live" id="live" title="Живі оновлення не з’єднані"></span><span class="em" id="who">…</span><div class="dd me" id="me">
         <button type="button" class="av" id="av" aria-haspopup="menu" aria-expanded="false" aria-label="Обліковий запис">··</button>
         <div class="dd-menu hide" role="menu" id="me-menu">
           <div class="me-email" id="me-email"></div>
           <button type="button" role="menuitem" data-tab="devices" aria-pressed="false">Пристрої</button>
+          <button type="button" role="menuitem" id="budget-set" title="Попередження на Огляді, коли оцінка вартості за сьогодні перевищить цю суму">Денний поріг</button>
           <button type="button" role="menuitem" id="logout" title="Завершити сеанс Cloudflare Access: наступний вхід видасть новий токен">Вийти</button>
         </div>
       </div></div>
@@ -51,6 +51,7 @@
   </div>
 
   <section id="tab-overview" class="tab">
+    <div class="alert hide" id="budget-alert" role="status"></div>
     <div class="grid kpis" id="kpis"></div>
     <div class="card">
       <div class="card-head">
@@ -103,8 +104,15 @@
       <div class="card-head"><div><h2>Ефективність кешу</h2><p class="sub" id="cache-sub">Частка вхідних даних, що береться з кешу, а не обробляється заново</p></div></div>
       <div id="cache-chart"></div>
     </div>
+    <div class="card">
+      <div class="card-head"><div><h2>Ціна ходу</h2><p class="sub" id="per-turn-sub">Скільки в середньому коштує один твій запит і скільки токенів пише модель: ріст означає, що ходи дорожчають (наприклад, через великий контекст)</p></div></div>
+      <div class="grid cols2">
+        <div><p class="sub" style="margin:0 0 6px">Оцінка вартості на хід</p><div id="per-turn-cost"></div></div>
+        <div><p class="sub" style="margin:0 0 6px">Вихідні токени на хід</p><div id="per-turn-out"></div></div>
+      </div>
+    </div>
     <div class="grid cols2">
-      <div class="card"><div class="card-head"><div><h2>За моделями</h2><p class="sub">Вихідні токени</p></div></div><div class="donut-wrap"><div id="model-donut"></div><div class="mlist" id="model-list"></div></div></div>
+      <div class="card"><div class="card-head"><div><h2>За моделями</h2><p class="sub">Вихідні токени й оцінка вартості за API-цінами</p></div></div><div class="donut-wrap"><div id="model-donut"></div><div class="mlist" id="model-list"></div></div></div>
       <div class="card"><div class="card-head"><div><h2>За пристроями</h2><p class="sub">Вихідні токени</p></div></div><div class="rows" id="device-bars"></div></div>
     </div>
   
@@ -112,6 +120,11 @@
       <div class="card-head"><div><h2>За агентами</h2><p class="sub">Claude, Codex та інші: вихідні токени, нові вхідні й оцінка вартості за API-цінами (показано всіх, незалежно від вибору агента зверху)</p></div></div>
       <div class="rows" id="prov-bars"></div>
       <p class="note" id="prov-note"></p>
+    </div>
+    <div class="grid recs" id="records"></div>
+    <div class="card">
+      <div class="card-head"><div><h2>Найбільші сесії</h2><p class="sub">За вихідними токенами в обраному періоді, з оцінкою вартості</p></div></div>
+      <div class="scroll" id="sessions"></div>
     </div>
   </section>
 
@@ -125,27 +138,21 @@
       </div>
       <div class="grid cols2">
         <div class="card"><div class="card-head"><div><h2>Сесії</h2><p class="sub">Скільки тривають і як закінчуються</p></div></div><div id="mod-sessions-sum" class="lat-summary"></div><div class="rows" id="mod-sessions-end" style="margin-top:12px"></div></div>
-        <div class="card"><div class="card-head"><div><h2>Очікування дозволів</h2><p class="sub">Як часто агент чекає на твоє рішення і скільки часу це забирає</p></div></div><div id="mod-perm-sum" class="lat-summary"></div><div id="mod-perm-chart" style="margin-top:12px"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Ріст контексту</h2><p class="sub">На якому ході сесії контекст заповнюється (медіана сесій): коли варто починати нову</p></div></div><div id="mod-growth-sum" class="lat-summary"></div><div id="mod-growth" style="margin-top:12px"></div></div>
       </div>
-      <div class="card"><div class="card-head"><div><h2>Проєкти</h2><p class="sub">Куди йдуть токени: за репозиторієм сесії (лише з пристроїв, де це дозволено)</p></div></div><div class="scroll" id="mod-projects"></div></div>
+      <div class="card"><div class="card-head"><div><h2>Проєкти</h2><p class="sub">Куди йдуть токени: за репозиторієм сесії (лише з пристроїв, де це дозволено)</p></div><div class="legend" id="mod-proj-legend"></div></div><div id="mod-proj-chart"></div><div class="scroll" id="mod-projects" style="margin-top:12px"></div></div>
     </div>
     <div id="ins-off" class="card hide"><div class="empty">База подій не підключена: дашборд показує лише токени.</div></div>
     <div id="ins-body">
-      <div class="grid cols2">
-        <div class="card"><div class="card-head"><div><h2>Куди йдуть гроші</h2><p class="sub">Оцінка вартості за джерелом запиту: твої повідомлення проти фонової роботи Claude</p></div></div><div class="rows" id="ins-source"></div><p class="note" id="ins-source-note"></p></div>
-        <div class="card"><div class="card-head"><div><h2>За моделями</h2><p class="sub">Вартість, запити й швидкість режиму</p></div></div><div class="rows" id="ins-model"></div></div>
-      </div>
+      <div class="card"><div class="card-head"><div><h2>Куди йдуть гроші</h2><p class="sub">Оцінка вартості за джерелом запиту: твої повідомлення проти фонової роботи Claude</p></div></div><div class="rows" id="ins-source"></div><p class="note" id="ins-source-note"></p></div>
       <div class="card">
         <div class="card-head"><div><h2>Витрати за днями</h2><p class="sub">Оцінка вартості за джерелом запиту</p></div><div class="legend" id="ins-day-legend"></div></div>
         <div id="ins-day-chart"></div>
       </div>
       <div class="card">
-        <div class="card-head"><div><h2>Швидкість</h2><p class="sub">Час до першого токена (TTFT), повна відповідь і швидкість генерації за моделями; p50 це типове значення, p95 повільні 5% запитів</p></div></div>
-        <div class="scroll" id="ins-latency"></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h2>Час відповіді</h2><p class="sub">Зведення за періодом, зміни за днями та розподіл запитів; без службових запитів (назви сесій, підсумки)</p></div></div>
+        <div class="card-head"><div><h2>Швидкість і час відповіді</h2><p class="sub">Час до першого токена (TTFT), повна відповідь і швидкість генерації; p50 це типове значення, p95 повільні 5% запитів; без службових запитів (назви сесій, підсумки)</p></div></div>
         <div id="ins-lat-summary" class="lat-summary"></div>
+        <p class="sub" style="margin:14px 0 6px">За моделями</p><div class="scroll" id="ins-latency"></div>
         <div class="grid cols2" style="margin-top:14px">
           <div><p class="sub" style="margin:0 0 6px">Повна відповідь за днями (медіана й p95)</p><div id="ins-lat-dur"></div></div>
           <div><p class="sub" style="margin:0 0 6px">Час до першого токена за днями (медіана й p95)</p><div id="ins-lat-ttft"></div></div>
@@ -159,26 +166,33 @@
       </div>
       <div class="grid cols2">
         <div class="card"><div class="card-head"><div><h2>Інструменти</h2><p class="sub">Запуски, успішність і час виконання</p></div></div><div class="scroll" id="ins-tools"></div></div>
-        <div class="card"><div class="card-head"><div><h2>Дозволи</h2><p class="sub">Що приймалось і що відхилялось</p></div></div><div class="scroll" id="ins-decisions"></div><div class="scroll" id="ins-safety" style="margin-top:14px"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Дозволи</h2><p class="sub">Як часто агент чекає на твоє рішення, скільки це забирає, що приймалось і що відхилялось</p></div></div><div id="mod-perm-sum" class="lat-summary"></div><div id="mod-perm-chart" style="margin-top:12px"></div><div class="scroll" id="ins-decisions" style="margin-top:14px"></div><div class="scroll" id="ins-safety" style="margin-top:14px"></div></div>
       </div>
+      <div class="card hide" id="codex-review"><div class="card-head"><div><h2>Автоперевірка Codex</h2><p class="sub">Codex перевіряє дії окремою моделлю (codex-auto-review): скільки токенів і грошей це забирає і хто вирішує, чи можна виконати дію</p></div></div><div id="codex-review-sum" class="lat-summary"></div><div class="rows" id="codex-review-rows" style="margin-top:12px"></div></div>
       <div class="grid cols2">
         <div class="card"><div class="card-head"><div><h2>Субагенти</h2><p class="sub">Допоміжні агенти, яких запускає Claude, за типами</p></div></div><div class="scroll" id="ins-subagents"></div></div>
         <div class="card"><div class="card-head"><div><h2>Стиснення контексту</h2><p class="sub">Коли розмова стискається, і скільки токенів це зберігає</p></div></div><div class="scroll" id="ins-compaction"></div></div>
       </div>
       <div class="grid cols2">
         <div class="card"><div class="card-head"><div><h2>Помилки API</h2><p class="sub">Збої запитів і вичерпані повтори</p></div></div><div class="scroll" id="ins-errors"></div></div>
-        <div class="card"><div class="card-head"><div><h2>Скіли</h2><p class="sub">Скільки разів запускались; власні скіли показуються як custom_skill</p></div></div><div class="scroll" id="ins-skills"></div></div>
-      </div>
-      <div class="grid cols2">
-        <div class="card"><div class="card-head"><div><h2>Де ти працюєш</h2><p class="sub">Поверхні: застосунок, IDE, SSH, хмара</p></div></div><div class="rows" id="ins-surface"></div></div>
         <div class="card"><div class="card-head"><div><h2>Ти і Claude</h2><p class="sub">Повідомлень за днями й команди</p></div></div><div id="ins-prompts"></div><div class="scroll" id="ins-commands" style="margin-top:12px"></div></div>
       </div>
-      <div class="card"><div class="card-head"><div><h2>Найдорожчі сесії</h2><p class="sub">За оцінкою вартості в обраному періоді</p></div></div><div class="scroll" id="ins-sessions"></div></div>
-      <div class="grid cols2">
-        <div class="card"><div class="card-head"><div><h2>Хуки</h2><p class="sub">Скільки разів спрацювали й скільки часу забрали</p></div></div><div class="scroll" id="ins-hooks"></div></div>
-        <div class="card"><div class="card-head"><div><h2>MCP-сервери й відмови моделі</h2><p class="sub">З'єднання з серверами та випадки, коли модель відмовила</p></div></div><div class="scroll" id="ins-mcp"></div><div class="scroll" id="ins-refusals" style="margin-top:14px"></div></div>
-      </div>
-      <div class="card hide" id="ins-unknown"><div class="card-head"><div><h2>Нові поля</h2><p class="sub">Приходять, але їх ще немає в реєстрі <code>worker/src/otlp-fields.ts</code>: додай їх туди й запусти <code>bun run fields</code></p></div></div><div id="ins-unknown-list"></div></div>
+      <details class="more" id="ins-more">
+        <summary>Додатково: скіли, поверхні, хуки, MCP-сервери й відмови моделі</summary>
+        <div class="grid cols2">
+          <div class="card"><div class="card-head"><div><h2>Скіли</h2><p class="sub">Скільки разів запускались; власні скіли показуються як custom_skill</p></div></div><div class="scroll" id="ins-skills"></div></div>
+          <div class="card"><div class="card-head"><div><h2>Де ти працюєш</h2><p class="sub">Поверхні: застосунок, IDE, SSH, хмара</p></div></div><div class="rows" id="ins-surface"></div></div>
+        </div>
+        <div class="grid cols2">
+          <div class="card"><div class="card-head"><div><h2>Хуки</h2><p class="sub">Скільки разів спрацювали й скільки часу забрали</p></div></div><div class="scroll" id="ins-hooks"></div></div>
+          <div class="card"><div class="card-head"><div><h2>MCP-сервери й відмови моделі</h2><p class="sub">З'єднання з серверами та випадки, коли модель відмовила</p></div></div><div class="scroll" id="ins-mcp"></div><div class="scroll" id="ins-refusals" style="margin-top:14px"></div></div>
+        </div>
+      </details>
+      <details class="more card" id="ins-unknown">
+        <summary><b>Нові поля</b> <span class="tag" id="ins-unknown-n"></span> <span class="sub">приходять від агентів, але їх ще немає в реєстрі</span></summary>
+        <p class="sub" style="margin:10px 0">Їх немає в <code>worker/src/otlp-fields.ts</code>, тому дашборд їх ще не показує. Додай їх туди й запусти <code>bun run fields</code>.</p>
+        <div id="ins-unknown-list"></div>
+      </details>
       <p class="note" id="ins-note"></p>
     </div>
   </section>
@@ -202,13 +216,6 @@
     </div>
   </section>
 
-  <section id="tab-sessions" class="tab hide">
-    <div class="grid recs" id="records"></div>
-    <div class="card">
-      <div class="card-head"><div><h2>Найбільші сесії</h2><p class="sub">За вихідними токенами в обраному періоді</p></div></div>
-      <div class="scroll" id="sessions"></div>
-    </div>
-  </section>
 
   <section id="tab-devices" class="tab hide">
     <div class="card">

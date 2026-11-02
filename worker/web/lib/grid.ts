@@ -58,8 +58,27 @@ export function bucketGrid(fromDay: string, toDay: string, step: 60 | 720 | 1440
   }
 }
 
+const empty = (t: TurnRow): boolean => t.input + t.output + t.cache_read + t.cache_creation === 0
+
+/**
+ * Rows without tokens (Codex's prompt: the turn starts there, its calls follow) are no point of their own: the turn moves to the next call
+ * of the same session, which then counts as the turn. A prompt with no call yet (still running) stays as it is.
+ */
+export function foldEmpty(turns: TurnRow[]): TurnRow[] {
+  const out: TurnRow[] = []
+  const waiting = new Map<string, TurnRow>() // session -> its prompt row, waiting for a call
+  for (const t of turns) {
+    const key = `${t.device}|${t.session_id}`
+    if (empty(t)) { if (!t.kind || t.kind === 'main') waiting.set(key, t); continue }
+    const prompt = waiting.get(key)
+    if (prompt) { waiting.delete(key); out.push({ ...t, kind: 'main', duration_ms: t.duration_ms || prompt.duration_ms }) } else out.push(t)
+  }
+  return [...out, ...waiting.values()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+}
+
 /** One column per turn (the turns that pass the viewer's device and agent choice; `rowsOf` keeps their places and zeroes the ones another filter drops). */
-export function turnGrid(tz: Tz, turns: TurnRow[], limit: number): Grid {
+export function turnGrid(tz: Tz, all: TurnRow[], limit: number): Grid {
+  const turns = foldEmpty(all)
   const first = turns.length ? tz.parts(Date.parse(turns[0].ts)).day : '', last = turns.length ? tz.parts(Date.parse(turns[turns.length - 1].ts)).day : ''
   const one = first === last
   const local = turns.map(t => { const p = tz.parts(Date.parse(t.ts)); return { day: p.day, time: `${clock(p.h, p.min)}:${pad(Math.floor(((Date.parse(t.ts) % 60_000) + 60_000) % 60_000 / 1000))}` } })

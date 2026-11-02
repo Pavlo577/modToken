@@ -17,14 +17,22 @@ interface TurnRow { ts: string; session_id: string; wall_ms: number; think_ms: n
 interface SessionRow { session_id: string; started_at: string; ended_at: string | null; end_reason: string | null; last_turn: string | null; turns: number }
 
 /** Codex's permission prompts in a period, from its codex.tool_decision events (one indexed range: user_email, name, ts). */
-async function codexPermissions(env: Parameters<Routes>[0]['env'], email: string, a: string, b: string): Promise<{ asks: number; denied: number }> {
-  if (!env.EVENTS) return { asks: 0, denied: 0 }
+interface CodexDecisions { asks: number; denied: number; review: { auto: number; autoDenied: number; user: number; config: number } }
+const NO_DECISIONS: CodexDecisions = { asks: 0, denied: 0, review: { auto: 0, autoDenied: 0, user: 0, config: 0 } }
+
+async function codexPermissions(env: Parameters<Routes>[0]['env'], email: string, a: string, b: string): Promise<CodexDecisions> {
+  if (!env.EVENTS) return NO_DECISIONS
   const rows = await env.EVENTS.prepare(
     `SELECT lower(json_extract(attrs, '$.decision')) AS decision, lower(json_extract(attrs, '$.source')) AS source, COUNT(*) AS n
      FROM events WHERE user_email = ? AND name = 'codex.tool_decision' AND ts >= ? AND ts < ? GROUP BY 1, 2`,
   ).bind(email, a, b).all<{ decision: string | null; source: string | null; n: number }>().then(r => r.results).catch(() => [])
-  const asked = rows.filter(r => r.source === 'user') // Config and AutomatedReviewer decide without a person
-  return { asks: asked.reduce((s, r) => s + r.n, 0), denied: asked.filter(r => r.decision === 'denied' || r.decision === 'abort').reduce((s, r) => s + r.n, 0) }
+  const sum = (f: (r: { decision: string | null; source: string | null }) => boolean): number => rows.filter(f).reduce((s, r) => s + r.n, 0)
+  const no = (r: { decision: string | null }): boolean => r.decision === 'denied' || r.decision === 'abort'
+  const user = (r: { source: string | null }): boolean => r.source === 'user' // Config and AutomatedReviewer decide without a person
+  return {
+    asks: sum(user), denied: sum(r => user(r) && no(r)),
+    review: { auto: sum(r => r.source === 'automatedreviewer'), autoDenied: sum(r => r.source === 'automatedreviewer' && no(r)), user: sum(user), config: sum(r => r.source === 'config') },
+  }
 }
 
 export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => {
@@ -36,7 +44,7 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
   const all = <T>(sql: string) => env.DB.prepare(sql).bind(email, a, b, ...(provider ? [provider] : [])).all<T>().then(r => r.results)
   const only = (col: string) => (provider ? ` AND ${col} = ?4` : '') // one agent's rows, when the page shows one
 
-  const [turns, sessions, projects, notes, codexPerm] = await Promise.all([
+  const [turns, sessions, projects, notes, codexPerm, projectDays] = await Promise.all([
     all<TurnRow>(`SELECT ts, session_id, wall_ms, think_ms, outcome, context_pct, perm_asks, perm_denied, perm_wait_ms FROM mod_turns
       WHERE user_email = ?1 AND ts >= ?2 AND ts < ?3${only('provider')} ORDER BY ts LIMIT 50000`),
     all<SessionRow>(`SELECT s.session_id, s.started_at, s.ended_at, s.end_reason,
@@ -50,7 +58,12 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
       WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3${only('e.provider')} GROUP BY s.project ORDER BY output DESC LIMIT 100`),
     // why sessions came without a project (the mod's word: off, no_repo, config_failed ...)
     all<{ note: string | null; n: number }>(`SELECT project_note AS note, COUNT(*) AS n FROM mod_sessions WHERE user_email = ?1 AND started_at >= ?2 AND started_at < ?3${only('provider')} AND project IS NULL GROUP BY note ORDER BY n DESC`),
-    provider === 'claude' ? Promise.resolve({ asks: 0, denied: 0 }) : codexPermissions(env, email, a, b),
+    provider === 'claude' ? Promise.resolve(NO_DECISIONS) : codexPermissions(env, email, a, b),
+    // the projects by day (UTC days): where the tokens went over time
+    all<{ day: string; project: string | null; output: number; cost_micros: number }>(
+      `SELECT substr(e.ts, 1, 10) AS day, s.project, SUM(e.output_tokens) AS output, SUM(e.cost_micros) AS cost_micros
+      FROM token_events e JOIN mod_sessions s ON s.device_id = e.device_id AND s.session_id = e.session_id
+      WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3${only('e.provider')} AND s.project IS NOT NULL GROUP BY day, s.project ORDER BY day LIMIT 5000`),
   ])
 
   // context: the fullest each session got, how full a turn usually is
@@ -80,6 +93,20 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
   const asks = turns.reduce((s, t) => s + t.perm_asks, 0) + codexPerm.asks
   const permissions = { asks, denied: turns.reduce((s, t) => s + t.perm_denied, 0) + codexPerm.denied, waitMs: turns.reduce((s, t) => s + t.perm_wait_ms, 0), turnsWithAsks: turns.filter(t => t.perm_asks > 0).length }
 
+  // context growth: how full the context is at the n-th turn of a session (median over sessions), and at which turn sessions cross 50/80/90%
+  const bySession = new Map<string, number[]>()
+  for (const t of turns) if (t.context_pct != null) bySession.set(t.session_id, [...(bySession.get(t.session_id) ?? []), t.context_pct])
+  const GROWTH_TURNS = 40
+  const curve = Array.from({ length: GROWTH_TURNS }, (_, i) => {
+    const at = [...bySession.values()].flatMap(v => (v.length > i ? [v[i]] : []))
+    return { turn: i + 1, p50: stat(at).p50, n: at.length }
+  }).filter(x => x.n >= 2)
+  const reach = [50, 80, 90].map(level => {
+    const firsts = [...bySession.values()].flatMap(v => { const i = v.findIndex(p => p >= level); return i < 0 ? [] : [i + 1] })
+    return { level, sessions: firsts.length, of: bySession.size, turn: stat(firsts).p50 }
+  })
+  const growth = { curve, reach }
+
   // by day: turns, the median turn length, the median context fill, the permission prompts
   const days = new Map<string, TurnRow[]>()
   for (const t of turns) { const d = t.ts.slice(0, 10); days.set(d, [...(days.get(d) ?? []), t]) }
@@ -88,5 +115,6 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
     context_p50: stat(ts.flatMap(t => (t.context_pct == null ? [] : [t.context_pct]))).p50, asks: ts.reduce((s, t) => s + t.perm_asks, 0),
   }))
 
-  return json({ available: turns.length > 0 || sessions.length > 0 || codexPerm.asks > 0, context, time, sessions: sessionStats, permissions, daily, projects, projectNotes: notes })
+  return json({ available: turns.length > 0 || sessions.length > 0 || codexPerm.asks > 0, context, time, sessions: sessionStats, permissions, daily, projects, projectNotes: notes,
+    growth, projectDays, codexReview: codexPerm.review })
 }

@@ -1,4 +1,4 @@
-// Sessions and records tab.
+// Records and the biggest sessions (on the Analytics tab).
 import * as S from '../lib/stats.ts'
 import { PALETTE } from '../core/palette.ts'
 import { state } from '../core/state.ts'

@@ -16,14 +16,24 @@ import { state } from '../core/state.ts'
 import { aggregate, compareAvailable, get, need, q, store } from '../core/store.ts'
 import { tz } from '../core/time.ts'
 import { $, el, skeleton } from '../lib/dom.ts'
-import { dayLong, dur, fmt, fmtAxis, fmtPct, fmtUsd } from '../lib/format.ts'
+import { dayLong, dur, durSec, fmt, fmtAxis, fmtPct, fmtUsd } from '../lib/format.ts'
 import type { Bucket, Totals } from '../lib/types.ts'
 import { mainHeight } from '../ui/layout.ts'
 
 // ---------- overview
 const arrow = (d: number | null): HTMLElement | '' => (d == null ? '' : el('span', { class: 'delta ' + (d >= 0 ? 'up' : 'down'), title: 'Порівняно з попереднім періодом (тиждень, місяць, рік або така сама кількість днів)' }, (d >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(d * 100)) + '%'))
 
+/** The daily budget: a warning above the tiles when today's estimate (all agents and devices) is over it. */
+function renderBudget(): void {
+  const box = $('budget-alert'), r = need().r
+  const today = aggregate({ device: null, provider: null, fromMs: tz.startOfDay(r.today), toMs: tz.startOfDay(S.addDays(r.today, 1)) }).total.cost
+  const over = state.budget > 0 && today > state.budget
+  box.classList.toggle('hide', !over)
+  if (over) box.textContent = `Сьогодні вже ${fmtUsd(today)} за оцінкою API-цін: це більше за денний поріг ${fmtUsd(state.budget)} (змінити: меню під аватаркою → Денний поріг).`
+}
+
 export function renderKpis(agg: S.Aggregate): void {
+  renderBudget()
   const r = need().r
   const prev = aggregate({ fromMs: r.prevFrom, toMs: r.from })
   const t = agg.total, p = prev.total
@@ -31,8 +41,8 @@ export function renderKpis(agg: S.Aggregate): void {
     ['Вихідні токени', fmt(t.output), S.delta(t.output, p.output), 'var(--out)', 'те, що написала модель'],
     ['Вхідні токени', fmt(S.freshInput(t)), S.delta(S.freshInput(t), S.freshInput(p)), 'var(--in)', 'нові, без читання з кешу'],
     ['Кеш-хіт', fmtPct(S.cacheHit(t)), null, 'var(--cache)', 'частка вхідних з кешу'],
-    ['Ходів', String(t.turns), S.delta(t.turns, p.turns), 'var(--ok)', 'відповідей моделі'],
-    ['Час відповідей', dur(t.duration_ms), S.delta(t.duration_ms, p.duration_ms), 'var(--warn)', 'сумарно'],
+    ['Ходів', String(t.turns), S.delta(t.turns, p.turns), 'var(--ok)', 'твоїх запитів до агента'],
+    ['Час на хід', t.turns ? durSec(t.duration_ms / t.turns) : '—', t.turns && p.turns ? S.delta(t.duration_ms / t.turns, p.duration_ms / p.turns) : null, 'var(--warn)', `у середньому · разом ${dur(t.duration_ms)}`],
     ['Оцінка вартості', fmtUsd(t.cost), S.delta(t.cost, p.cost), 'var(--out)', 'за цінами API'],
   ]
   $('kpis').replaceChildren(...tiles.map(([l, v, d, c, s]) => el('div', { class: 'kpi', style: `--c:${c}` },

@@ -21,11 +21,19 @@ export function renderAnalytics(agg: S.Aggregate): void {
     yFmt: v => +v.toFixed(1) + '%', tipTitle: i => dayLong(active[i][0]), marker: otlpMarker(active.map(([d]) => d), { unit: 'day' }),
   })
 
+  // the price of a turn by day: cost and output perDay turn (days with turns only)
+  const perDay = [...agg.days].filter(([, t]) => t.turns > 0).sort(([a], [b]) => (a < b ? -1 : 1))
+  const avgCost = agg.total.turns ? agg.total.cost / agg.total.turns : 0
+  $('per-turn-sub').textContent = perDay.length ? `У середньому ${fmtUsd(avgCost)} і ${fmt(agg.total.turns ? Math.round(agg.total.output / agg.total.turns) : 0)} вихідних токенів на хід за період; ріст означає, що ходи дорожчають (наприклад, через великий контекст)` : 'За цей період ходів немає'
+  const perLabels = perDay.map(([d]) => dayLabel(d)), perTip = (i: number): string => `${dayLong(perDay[i][0])} · ${perDay[i][1].turns} ходів`
+  lineChart($('per-turn-cost'), { labels: perLabels, height: 170, series: [{ label: 'На хід', color: COLORS.out, values: perDay.map(([, t]) => t.cost / t.turns), fmt: fmtUsd }], yFmt: v => '$' + (v >= 1 ? v.toFixed(1) : v.toFixed(2)), tipTitle: perTip })
+  lineChart($('per-turn-out'), { labels: perLabels, height: 170, series: [{ label: 'На хід', color: COLORS.in, values: perDay.map(([, t]) => t.output / t.turns), fmt: v => fmt(Math.round(v)) }], yFmt: v => fmt(Math.round(v)), tipTitle: perTip })
+
   const models = [...agg.models].sort((a, b) => b[1].output - a[1].output)
   const color = (i: number): string => PALETTE[i % PALETTE.length]
   const totalOut = agg.total.output
   donut($('model-donut'), models.map(([label, t], i) => ({ label, value: t.output, color: color(i) })), [fmt(totalOut), 'вихідних'])
-  $('model-list').replaceChildren(...models.map(([m, t], i) => el('div', {}, el('i', { style: `background:${color(i)}` }), el('span', {}, m), el('b', {}, fmt(t.output)), el('span', { class: 'pc' }, fmtPct(totalOut ? t.output / totalOut : 0)))))
+  $('model-list').replaceChildren(...models.map(([m, t], i) => el('div', {}, el('i', { style: `background:${color(i)}` }), el('span', {}, m), el('b', {}, fmt(t.output)), el('span', { class: 'pc' }, fmtPct(totalOut ? t.output / totalOut : 0)), el('span', { class: 'pc usd', title: 'Оцінка вартості за API-цінами' }, t.cost ? fmtUsd(t.cost) : '—'))))
   const devices = [...agg.devices].sort((a, b) => b[1].output - a[1].output)
   const max = Math.max(1, ...devices.map(([, t]) => t.output))
   $('device-bars').replaceChildren(...(devices.length ? devices.map(([n, t], i) => el('div', { class: 'hrow', style: `--c:${color(i)}` }, el('span', { class: 'name', title: n }, n),

@@ -5,7 +5,7 @@ import { lineChart } from '../charts/line.ts'
 import { COLORS } from '../charts/base.ts'
 import { PALETTE } from '../core/palette.ts'
 import type { Period } from '../core/range.ts'
-import { get, q } from '../core/store.ts'
+import { aggregate, get, q, store } from '../core/store.ts'
 import { state } from '../core/state.ts'
 import { $, el } from '../lib/dom.ts'
 import { dayLabel, dayLong, fmt, fmtPct, fmtUsd } from '../lib/format.ts'
@@ -20,6 +20,9 @@ interface ModStats {
   daily: { day: string; turns: number; wall_p50: number; context_p50: number; asks: number }[]
   projectNotes: { note: string | null; n: number }[]
   projects: { project: string | null; sessions: number; turns: number; output: number | null; input: number | null; cache_read: number | null; cost_micros: number | null }[]
+  growth: { curve: { turn: number; p50: number; n: number }[]; reach: { level: number; sessions: number; of: number; turn: number }[] }
+  projectDays: { day: string; project: string | null; output: number; cost_micros: number }[]
+  codexReview: { auto: number; autoDenied: number; user: number; config: number }
 }
 
 const dur = (v: number): string => (v >= 3_600_000 ? (v / 3_600_000).toFixed(1) + ' год' : v >= 60_000 ? Math.round(v / 60_000) + ' хв' : v >= 10_000 ? Math.round(v / 1000) + ' с' : (v / 1000).toFixed(1) + ' с')
@@ -33,7 +36,12 @@ export async function renderModStats(r: Period): Promise<void> {
   try { d = await get<ModStats>('/mod-stats?' + q(r.from, r.to) + (state.provider ? '&provider=' + encodeURIComponent(state.provider) : '')) } catch { $('mod-off').classList.remove('hide'); $('mod-body').classList.add('hide'); return }
   $('mod-off').classList.toggle('hide', d.available)
   $('mod-body').classList.toggle('hide', !d.available)
-  if (!d.available) return
+  codexReview(d.codexReview)
+  if (!d.available) { // the permissions card is shared with the events: say where its first half comes from
+    $('mod-perm-sum').replaceChildren(el('p', { class: 'note', style: 'margin:0' }, 'Очікування дозволів рахують мод token-tracker (Claude) і плагін Codex: за цей період від них нічого немає.'))
+    $('mod-perm-chart').replaceChildren()
+    return
+  }
   const days = d.daily.map(x => dayLabel(x.day)), tip = (i: number) => `${dayLong(d.daily[i].day)} · ${d.daily[i].turns} ходів`
 
   const c = d.context
@@ -69,6 +77,28 @@ export async function renderModStats(r: Period): Promise<void> {
   ])
   barChart($('mod-perm-chart'), { labels: days, series: [{ label: 'Запитів дозволу', color: COLORS.out, values: d.daily.map(x => x.asks), fmt: v => fmt(v) }], height: 160, yFmt: v => fmt(v), tipTitle: tip })
 
+  // context growth: the median fill at the n-th turn, and when sessions cross 50 / 80 / 90%
+  const g = d.growth
+  line($('mod-growth-sum'), g.reach.map(x => [`${x.level}%`, x.sessions ? `сесії доходять у середньому на ${fmt(x.turn)}-му ході · дійшли ${fmt(x.sessions)} з ${fmt(x.of)}` : `не доходила жодна з ${fmt(x.of)} сесій`]))
+  lineChart($('mod-growth'), { labels: g.curve.map(x => `${x.turn}`), height: 170, yMax: 100, series: [{ label: 'Заповнення (медіана)', color: COLORS.cache, values: g.curve.map(x => x.p50), fmt: v => v.toFixed(0) + '%' }],
+    yFmt: v => Math.round(v) + '%', tipTitle: i => `${g.curve[i].turn}-й хід · сесій: ${g.curve[i].n}` })
+
+  // projects by day: the five biggest, the rest together
+  const pd = d.projectDays
+  const total = new Map<string, number>()
+  for (const x of pd) total.set(x.project ?? '', (total.get(x.project ?? '') ?? 0) + x.output)
+  const top = [...total].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([p]) => p)
+  const pdays = [...new Set(pd.map(x => x.day))].sort()
+  const name = (p: string): string => (p.startsWith('h:') ? `анонімний ${p.slice(2, 8)}` : p)
+  const keyOf = (p: string): string => (top.includes(p) ? p : 'інші')
+  const groups = [...top, ...(total.size > top.length ? ['інші'] : [])]
+  const val = new Map<string, number>()
+  for (const x of pd) { const k = `${x.day}|${keyOf(x.project ?? '')}`; val.set(k, (val.get(k) ?? 0) + x.output) }
+  const pseries = groups.map((p, i) => ({ label: p === 'інші' ? 'інші' : name(p), color: PALETTE[i % PALETTE.length], values: pdays.map(day => val.get(`${day}|${p}`) ?? 0), fmt: (v: number) => fmt(v) }))
+  $('mod-proj-legend').replaceChildren(...pseries.map(s => el('span', {}, el('i', { style: `background:${s.color}` }), s.label)))
+  if (pdays.length) barChart($('mod-proj-chart'), { labels: pdays.map(dayLabel), series: pseries, height: 190, yFmt: v => fmt(v), tipTitle: i => `${dayLong(pdays[i])} · вихідні токени` })
+  else $('mod-proj-chart').replaceChildren()
+
   const rows = d.projects
   $('mod-projects').replaceChildren(rows.length
     ? el('table', {}, el('thead', {}, el('tr', {}, ...['Проєкт', 'Сесій', 'Ходів', 'Вихідні', 'Нові вхідні', 'З кешу', 'Вартість'].map((h, i) => el('th', { class: i ? '' : 'l' }, h)))),
@@ -77,4 +107,25 @@ export async function renderModStats(r: Period): Promise<void> {
     : el('div', { class: 'empty' }, 'Немає сесій із проєктом за цей період'))
   const NOTE: Record<string, string> = { off: 'на пристрої вимкнено', no_repo: 'невідомо (сесія не в git-репозиторії)', repo_failed: 'не вдалося прочитати репозиторій', config_failed: 'мод не отримав налаштування', no_target: 'мод не знайшов адресу сайту чи токен' }
   if (d.projectNotes.length) $('mod-projects').append(el('p', { class: 'note' }, 'Проєкт невідомий: ' + d.projectNotes.map(x => `${x.note ? NOTE[x.note] ?? x.note : 'старіша версія моду'} ${fmt(x.n)}`).join(' · ')))
+}
+
+/** Codex's automatic review: its own model's share of Codex's tokens and cost (from the loaded buckets), and who decided about the actions. */
+function codexReview(r: ModStats['codexReview']): void {
+  const show = store.providers.includes('codex') && (!state.provider || state.provider === 'codex')
+  $('codex-review').classList.toggle('hide', !show)
+  if (!show) return
+  const a = aggregate({ provider: 'codex' })
+  const rev = a.models.get('codex-auto-review')
+  const tokens = (t: { input: number; output: number; cache_read: number; cache_creation: number }): number => t.input + t.output + t.cache_read + t.cache_creation
+  const all = tokens(a.total), mine = rev ? tokens(rev) : 0
+  const decided = r.auto + r.user + r.config
+  line($('codex-review-sum'), [
+    ['Токени', `${fmt(mine)} з ${fmt(all)} токенів Codex (${fmtPct(all ? mine / all : null, 1)}) · вихідних ${fmt(rev?.output ?? 0)}`],
+    ['Вартість', `${fmtUsd(rev?.cost ?? 0)} з ${fmtUsd(a.total.cost)} (${fmtPct(a.total.cost ? (rev?.cost ?? 0) / a.total.cost : null, 1)}) за API-цінами`],
+    ['Рішення', decided ? `${fmt(decided)} дій: автоперевірка ${fmt(r.auto)} (заборонила ${fmt(r.autoDenied)}), ти ${fmt(r.user)}, налаштування ${fmt(r.config)}` : 'за цей період рішень немає'],
+  ])
+  const rows: [string, number, string][] = [['Автоперевірка', r.auto, COLORS.cache], ['Налаштування', r.config, COLORS.muted], ['Ти', r.user, COLORS.out]]
+  const max = Math.max(1, ...rows.map(x => x[1]))
+  $('codex-review-rows').replaceChildren(...rows.map(([n, v, c]) => el('div', { class: 'hrow', style: `--c:${c};grid-template-columns:minmax(110px,230px) 1fr auto` },
+    el('span', { class: 'name' }, n), el('div', { class: 'track' }, el('b', { style: `width:${(v / max) * 100}%` })), el('span', { class: 'val' }, fmt(v)))))
 }

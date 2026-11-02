@@ -131,6 +131,7 @@ check "activity: a session and turns are accepted" "$(act "{\"session\":{\"id\":
 act "{\"turns\":[$(TURN t1 10000 40)]}" >/dev/null
 MS() { curl -s "$B/api/admin/mod-stats?from=$(date -u -d '-1 day' +%F)&to=$(date -u -d '+1 day' +%F)"; }
 check "activity: a turn sent twice counts once; context and time are summed up" "$(MS | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["time"]["wall"]["n"], d["context"]["over90"], d["permissions"]["asks"], d["sessions"]["count"])')" "2 1 2 1"
+check "activity: context growth: the session crossed 50% and 90% on its 2nd turn" "$(MS | python3 -c 'import sys,json; g=json.load(sys.stdin)["growth"]; print([(x["level"], x["turn"], x["sessions"]) for x in g["reach"]], [x["p50"] for x in g["curve"]])')" "[(50, 2, 1), (80, 2, 1), (90, 2, 1)] []"
 check "activity: with the project off, no project is stored" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "[None]"
 DEVID=$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; print([d["id"] for d in json.load(sys.stdin) if d["name"]=="otlp-box"][0])')
 check "project mode: a wrong value is refused" "$(curl -s -o /dev/null -w '%{http_code}' -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"all"}')" 400
@@ -138,6 +139,7 @@ curl -s -o /dev/null -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"na
 check "config: the device now allows names" "$(curl -s $B/v1/config -H "x-device-token: $TOKEN")" '{"project":"name"}'
 act "{\"session\":{\"id\":\"sess-otlp\",\"started_at\":\"$NOW\",\"project\":\"owner/secret-repo\"}}" >/dev/null
 check "activity: with names allowed, tokens are grouped by project" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "['owner/secret-repo']"
+check "activity: projects by day" "$(MS | python3 -c 'import sys,json; print(sorted({x["project"] for x in json.load(sys.stdin)["projectDays"]}))')" "['owner/secret-repo']"
 curl -s -o /dev/null -XPATCH $B/api/admin/devices/$DEVID -d '{"project_mode":"off"}'
 check "project mode off forgets the stored project" "$(MS | python3 -c 'import sys,json; print([p["project"] for p in json.load(sys.stdin)["projects"]])')" "[None]"
 check "activity: no text of the body is kept" "$(MS | grep -c SECRET)" 0
@@ -187,6 +189,7 @@ PY
 )
 post "$TD" >/dev/null
 check "codex permissions: asked of a person (source User) and refused, from codex.tool_decision" "$(MSP codex | python3 -c 'import sys,json; p=json.load(sys.stdin)["permissions"]; print(p["asks"], p["denied"])')" "2 1"
+check "codex review: who decided (automated reviewer, config, a person)" "$(MSP codex | python3 -c 'import sys,json; r=json.load(sys.stdin)["codexReview"]; print(r["auto"], r["autoDenied"], r["config"], r["user"])')" "1 1 1 2"
 check "devices: when each agent last sent" "$(curl -s $B/api/admin/devices | python3 -c 'import sys,json; d=[x for x in json.load(sys.stdin) if x["name"]=="otlp-box"][0]; print(sorted(d["providers"]), sorted(d["seen"]))')" "['claude', 'codex'] ['claude', 'codex']"
 # the mod's endpoints drop what they do not read, and remember only the NAME of a dropped field
 check "the mod's limits endpoint accepts an extra field" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST $B/v1/limits -H "x-device-token: $TOKEN" -d '{"limits":[{"kind":"five_hour","percentUsed":12,"resetsAt":"2030-01-01T00:00:00Z","new_mod_field":"SECRET MOD VALUE me@example.com"}]}')" 200

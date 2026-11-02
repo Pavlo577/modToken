@@ -46,6 +46,16 @@ test('grid: one column per turn, with the model in the tooltip and a note when o
   assert.deepEqual(turnGrid(utc, [], 5000).keys, [])
 })
 
+test('grid: a Codex prompt row without tokens is no point: its turn goes to the next call of the session', () => {
+  const row = (ts, o, extra = {}) => ({ ts, device: 'a', model: 'gpt', session_id: 's1', input: o ? 1 : 0, output: o, cache_read: 0, cache_creation: 0, duration_ms: 0, sub: 0, provider: 'codex', ...extra })
+  const turns = [row('2026-10-28T10:00:00.000Z', 0, { kind: 'main' }), row('2026-10-28T10:00:00.500Z', 9, { kind: 'step', session_id: 's2' }),
+    row('2026-10-28T10:00:01.000Z', 5, { kind: 'step' }), row('2026-10-28T10:00:02.000Z', 6, { kind: 'step' }), row('2026-10-28T10:05:00.000Z', 0, { kind: 'main' })]
+  const g = turnGrid(utc, turns, 5000)
+  const rows = g.rowsOf({ device: null, provider: null })
+  assert.deepEqual(rows.map(t => t.output), [9, 5, 6, 0]) // the last prompt has no call yet: it stays
+  assert.deepEqual(rows.map(t => t.turns), [0, 1, 0, 1]) // two turns, as before, on the calls
+})
+
 test('steps: a single custom day offers every record and 1 h; a longer interval also 12 and 24 hours', () => {
   assert.deepEqual(stepChoices('custom', 1), [0, 60])
   assert.deepEqual(stepChoices('custom', 2), [0, 60, 720, 1440])

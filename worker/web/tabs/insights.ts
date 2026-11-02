@@ -12,7 +12,6 @@ import { dayLabel, dayLong, fmt, fmtPct, fmtUsd } from '../lib/format.ts'
 type N = number | null
 interface Source { source: string | null; calls: number; output: N; fresh_input: N; cache_read: N; cost_micros: N }
 interface Surface { surface: string; calls: number; sessions: number; output: N; cost_micros: N }
-interface ModelRow { model: string | null; speed: string | null; calls: number; output: N; cache_read: N; fresh_input: N; cost_micros: N }
 interface DayRow { day: string; source: string | null; calls: number; cost_micros: N }
 interface Latency { model: string; calls: number; ttft_p50: number; ttft_p95: number; dur_p50: number; dur_p95: number; tps_p50: number }
 interface Tool { tool: string | null; runs: number; ok: N; avg_ms: N; max_ms: N; avg_in_bytes: N; avg_out_bytes: N }
@@ -21,7 +20,6 @@ interface Safety { reason: string | null; class: string | null; decision: string
 interface Hook { hook_event: string | null; hook_name: string | null; runs: number; avg_ms: N; max_ms: N; failed: N }
 interface Mcp { status: string | null; error: string | null; transport: string | null; is_plugin: N; n: number; avg_ms: N }
 interface Refusal { model: string | null; hop: N; n: number }
-interface Session { session_id: string; surface: string; calls: number; first_ts: string; last_ts: string; output: N; cost_micros: N }
 interface Prompts { day: string; prompts: number; avg_len: N }
 interface Command { command: string | null; n: number }
 interface Mode { from_mode: string | null; to_mode: string | null; n: number }
@@ -36,9 +34,9 @@ interface Slow { ts: string; surface: string; model: string | null; source: stri
 interface Insights {
   available: boolean
   totals: { events: number; kinds: number; sessions: number; first_ts: string | null; last_ts: string | null }
-  bySource: Source[]; bySurface: Surface[]; byModel: ModelRow[]; byDay: DayRow[]; latency: Latency[]
+  bySource: Source[]; bySurface: Surface[]; byDay: DayRow[]; latency: Latency[]
   tools: Tool[]; decisions: Decision[]; safety: Safety[]; hooks: Hook[]; mcp: Mcp[]; refusals: Refusal[]
-  sessions: Session[]; prompts: Prompts[]; commands: Command[]; modes: Mode[]
+  prompts: Prompts[]; commands: Command[]; modes: Mode[]
   compaction: Compaction[]; subagents: Subagent[]; errors: ApiError[]; skills: Skill[]
   latencyDaily: LatencyDay[]; latencyHist: { ttft: Bucket[]; duration: Bucket[] }; latencyStats: { duration: Stat; ttft: Stat }; slowest: Slow[]
   unknownFields: { key: string; event: string }[]
@@ -109,7 +107,6 @@ export async function renderInsights(): Promise<void> {
   // where the money goes
   bars($('ins-source'), d.bySource.map((s, i) => ({ name: sourceLabel(s.source), value: usd(s.cost_micros), label: `${fmtUsd(usd(s.cost_micros))} · ${fmt(s.calls)}`, title: `${s.source ?? ''}: вихідні ${fmt(s.output)}, нові вхідні ${fmt(s.fresh_input)}`, color: isBackground(s.source) ? COLORS.cache : PALETTE[i % PALETTE.length] })))
   $('ins-source-note').textContent = d.bySource.some(s => isBackground(s.source)) ? 'Фіолетовим показано роботу, яку Claude робить сам, без твого повідомлення: придумує назви сесій, підсумовує, стискає контекст.' : ''
-  bars($('ins-model'), d.byModel.map((m, i) => ({ name: (m.model ?? 'невідомо') + (m.speed && m.speed !== 'normal' ? ` · ${m.speed}` : ''), value: usd(m.cost_micros), label: `${fmtUsd(usd(m.cost_micros))} · ${fmt(m.calls)}`, title: `вихідні ${fmt(m.output)}, з кешу ${fmt(m.cache_read)}`, color: PALETTE[i % PALETTE.length] })))
 
   // money by day, by source
   const days = [...new Set(d.byDay.map(x => x.day))].sort()
@@ -176,15 +173,15 @@ export async function renderInsights(): Promise<void> {
   lineChart($('ins-prompts'), { labels: pd.map(p => dayLabel(p.day)), height: 150, series: [{ label: 'Повідомлень', color: COLORS.in, values: pd.map(p => p.prompts), fmt: v => String(v) }], yFmt: v => String(Math.round(v)), tipTitle: i => dayLong(pd[i].day) })
   table($('ins-commands'), ['Команда', 'Разів'], d.commands.map(c => ['/' + (c.command ?? ''), fmt(c.n)]), 'Команд не було')
 
-  table($('ins-sessions'), ['Сесія', 'Де', 'Запитів', 'Вихідні', 'Тривалість', 'Вартість'],
-    d.sessions.map(s => [s.session_id.slice(0, 8), surfaceLabel(s.surface), fmt(s.calls), fmt(s.output), ms(Date.parse(s.last_ts) - Date.parse(s.first_ts)), fmtUsd(usd(s.cost_micros))]))
 
   table($('ins-hooks'), ['Хук', 'Подія', 'Спрацювань', 'Сер. час', 'Макс.', 'З помилкою'],
     d.hooks.map(h => [h.hook_name ?? '—', h.hook_event ?? '—', fmt(h.runs), ms(h.avg_ms), ms(h.max_ms), fmt(h.failed ?? 0)]), 'Хуків не було')
   table($('ins-mcp'), ['Статус', 'Помилка', 'Транспорт', 'Разів', 'Сер. час'],
     d.mcp.map(m => [m.status ?? '—', m.error ?? '—', m.transport ?? '—', fmt(m.n), ms(m.avg_ms)]), 'MCP-серверів не було')
   table($('ins-refusals'), ['Відмови моделі', 'Крок запасного', 'Разів'], d.refusals.map(x => [x.model ?? '—', x.hop == null ? '—' : String(x.hop), fmt(x.n)]), 'Модель не відмовляла')
+  // fields that arrive but are not in the registry: listed, folded away until opened
   $('ins-unknown').classList.toggle('hide', !d.unknownFields.length)
+  $('ins-unknown-n').textContent = String(d.unknownFields.length)
   $('ins-unknown-list').replaceChildren(...d.unknownFields.map(x => el('span', { class: 'tag', title: `подія ${x.event}` }, x.key)))
   $('ins-note').textContent = `У базі подій за цей період: ${fmt(d.totals.events)} подій ${d.totals.kinds} видів. Дані зберігаються 90 днів. Тексту повідомлень, пошти й ідентифікаторів тут немає.`
 }

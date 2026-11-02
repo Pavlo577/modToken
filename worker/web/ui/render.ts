@@ -17,8 +17,7 @@ export function render(): void {
   $('dev-mode').classList.toggle('hide', !(state.tab === 'analytics' && !state.device && store.deviceNames.length > 1))
   press($('dev-mode'), 't', state.topDevice ? 'top' : '')
   if (state.tab === 'overview') { renderKpis(agg); renderMain(agg) }
-  else if (state.tab === 'analytics') renderAnalytics(agg)
+  else if (state.tab === 'analytics') { renderAnalytics(agg); renderSessions(agg) }
   else if (state.tab === 'insights') void renderInsights()
   else if (state.tab === 'money') { renderLimits(); renderCost(agg) }
-  else if (state.tab === 'sessions') renderSessions(agg)
 }
