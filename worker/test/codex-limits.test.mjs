@@ -22,13 +22,17 @@ const run = (home, args = [], stdin = '') => new Promise(done => {
 
 /** A local stand-in for the site: the requests it got. */
 async function site() {
-  const got = []
+  const got = [], logs = [] // the plugin's own log (POST /v1/plugin-log) apart from what it sends
   const server = createServer((req, res) => {
     let body = ''
-    req.on('data', d => (body += d)).on('end', () => { got.push({ url: req.url, token: req.headers['x-device-token'], body }); res.end('{}') })
+    req.on('data', d => (body += d)).on('end', () => {
+      if (req.url === '/v1/plugin-log') logs.push(JSON.parse(body))
+      else got.push({ url: req.url, token: req.headers['x-device-token'], body })
+      res.end(req.url === '/v1/import' ? JSON.stringify({ added: JSON.parse(body).turns.length }) : '{}')
+    })
   })
   await new Promise(r => server.listen(0, '127.0.0.1', r))
-  return { got, origin: `http://127.0.0.1:${server.address().port}`, close: () => server.close() }
+  return { got, logs, origin: `http://127.0.0.1:${server.address().port}`, close: () => server.close() }
 }
 
 function codexHome(origin, lines, name = 'rollout-2026-10-29T20-24-22-01a18955.jsonl') {
@@ -61,6 +65,8 @@ test('codex limits: the last token_count with rate_limits is sent as five_hour a
       { kind: 'seven_day', percentUsed: 41, resetsAt: '2026-11-03T10:00:00+00:00' },
     ] })
     for (const bad of ['SECRET', 'plus', 'balance']) assert.equal(s.got[0].body.includes(bad), false, bad)
+    // the plugin's log: "limits sent" with how many windows, its version, nothing else
+    assert.deepEqual(s.logs, [{ provider: 'codex', version: JSON.parse(readFileSync(PLUGIN + '.codex-plugin/plugin.json', 'utf8')).version, events: [{ kind: 'limits', n: 2 }] }])
   } finally { s.close() }
 })
 
@@ -159,6 +165,7 @@ test('codex history: each new token_count is a call, the first after task_starte
       [`cx:${SID}:3`, '2026-10-20T10:01:02.000Z', 'gpt-5.6-sol', 500, 12000, 50, true, false, 2000],
     ])
     for (const bad of ['SECRET', 'home/']) assert.equal(s.got[0].body.includes(bad), false, bad)
+    assert.deepEqual(s.logs.map(l => l.events), [[{ kind: 'history_imported', n: 3, total: 3 }]])
     // the marker: the next session start sends nothing
     assert.ok(readFileSync(join(data, 'history-imported'), 'utf8').includes(' 3'))
     await runHistory(home, data)
@@ -183,6 +190,7 @@ test('codex history: a session Codex started by itself (no approvals, read-only)
     assert.equal(r.out, '')
     assert.equal(existsSync(join(failed, 'history-imported')), false) // tried again at the next session start
     assert.ok(readFileSync(join(failed, 'last-error.txt'), 'utf8').includes('history'))
+    assert.equal(s.logs.filter(l => l.events[0].kind === 'error').length, 0) // nowhere to send the error to: the site itself was unreachable
   } finally { s.close() }
 })
 
@@ -203,6 +211,7 @@ test('codex history: as the hook runs it (no --run), it returns at once and the 
     for (let i = 0; i < 50 && !existsSync(join(data, 'history-imported')); i++) await new Promise(ok => setTimeout(ok, 100))
     assert.equal(s.got.length, 1)
     assert.equal(JSON.parse(s.got[0].body).turns[0].input, 500)
+    assert.deepEqual(s.logs.map(l => l.events[0].kind).sort(), ['history_hook', 'history_imported']) // the hook ran, then the import finished
   } finally { s.close() }
 })
 
@@ -214,5 +223,21 @@ test('codex history: an import run by hand (marker in ~/.codex/token-tracker) al
     writeFileSync(join(home, 'token-tracker', 'history-imported'), '2026-10-29T23:24:26Z 558\n')
     await runHistory(home, mkdtempSync(join(tmpdir(), 'tt-codex-data-')))
     assert.equal(s.got.length, 0)
+  } finally { s.close() }
+})
+
+test('codex plugin log: a failure reports only its error type and stage, never the message', async () => {
+  const s = await site()
+  try {
+    const home = codexHome(s.origin, [tokenCount({ primary: { used_percent: 1, window_minutes: 300, resets_at: 1793322000 } })])
+    // a session file that is a directory: reading it fails with an error whose message holds its path
+    mkdirSync(join(home, 'sessions', '2026', '10', '29', 'rollout-2026-10-29T23-59-59-SECRET.jsonl'))
+    await run(home, [], JSON.stringify({ transcript_path: join(home, 'sessions', '2026', '10', '29', 'rollout-2026-10-29T23-59-59-SECRET.jsonl') }))
+    const errors = s.logs.flatMap(l => l.events).filter(e => e.kind === 'error')
+    assert.equal(errors.length, 1)
+    assert.deepEqual(Object.keys(errors[0]).sort(), ['error', 'kind', 'stage'])
+    assert.equal(errors[0].stage, 'limits')
+    assert.match(errors[0].error, /^[A-Za-z]+$/)
+    assert.equal(JSON.stringify(s.logs).includes('SECRET'), false)
   } finally { s.close() }
 })

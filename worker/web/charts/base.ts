@@ -8,6 +8,9 @@ export const HEAT = ['#2b2522', '#5b3418', '#8f4c14', '#cc640f', '#ff7a1a']
 /** Level 0-4 of a colour: faint to full, over the empty-cell grey. */
 export const shade = (color: string, level: number): string => (level <= 0 ? HEAT[0] : `color-mix(in srgb, ${color} ${[0, 35, 55, 78, 100][level]}%, ${HEAT[0]})`)
 
+/** While true, charts are drawn in their final state at once: a live update moves the numbers, it does not draw the lines in anew. */
+export const motion = { quiet: false }
+
 /** A vertical line at `at` (in columns from the left edge: 2.5 = the middle of the third), with an explanation on hover. */
 export interface Marker { at: number; title: string }
 

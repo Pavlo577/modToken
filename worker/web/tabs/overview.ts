@@ -1,7 +1,7 @@
 // Overview tab: KPI tiles, the main chart and the one-day card.
 import * as S from '../lib/stats.ts'
 import { barChart } from '../charts/bar.ts'
-import { COLORS, HEAT, empty } from '../charts/base.ts'
+import { COLORS, HEAT, empty, motion } from '../charts/base.ts'
 import type { Series } from '../charts/base.ts'
 import { calendarHeatmap } from '../charts/calendar.ts'
 import { lineChart } from '../charts/line.ts'
@@ -141,6 +141,7 @@ export async function renderDay(): Promise<void> {
   $<HTMLInputElement>('day').value = day
   $('day-sub').textContent = `${weekday(day)}, ${dayLong(day)}`
   const from = tz.startOfDay(day), to = tz.startOfDay(S.addDays(day, 1))
+  const quiet = motion.quiet // a live update: the card keeps what it loaded (no new read) and draws without the bars growing again
   let turns: TurnRow[]
   try { turns = await get<TurnRow[]>('/turns?' + q(from, to)) } catch (e) {
     empty($('day-chart'), 'Не вдалося завантажити: ' + (e as Error).message, 200)
@@ -161,6 +162,11 @@ export async function renderDay(): Promise<void> {
   const facts: [string, string][] = [['Вихідні', fmt(out)], ['Вхідні (нові)', fmt(inp)], ['Ходів', String(main.length)], ['Активний час', dur(ms)]]
   if (main.length) facts.push(['Перший хід', timeOf(Date.parse(main[0].ts))], ['Останній хід', timeOf(Date.parse(main[main.length - 1].ts))])
   $('day-summary').replaceChildren(...facts.map(([l, v]) => el('div', {}, el('b', {}, v), l)))
+  motion.quiet = quiet
+  try { drawDay(day, hrs, turns) } finally { motion.quiet = false }
+}
+
+function drawDay(day: string, hrs: { output: number; input: number; turns: number }[], turns: TurnRow[]): void {
   barChart($('day-chart'), {
     labels: hrs.map((_, h) => `${h}:00`), height: 200,
     series: [{ label: 'Вихідні', color: COLORS.out, values: hrs.map(h => h.output), fmt }, { label: 'Вхідні (нові)', color: COLORS.in, values: hrs.map(h => h.input), fmt }],

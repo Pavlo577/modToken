@@ -9,19 +9,32 @@ $ErrorActionPreference = 'Stop'
 $home_ = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $data = if ($env:PLUGIN_DATA) { $env:PLUGIN_DATA } else { Join-Path $home_ 'token-tracker' }
 $marker = Join-Path $data 'history-imported'
+# the plugin's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message or a path
+$script:siteUrl = $null; $script:tok = $null
+function Send-Report($events, $timeout = 5) {
+  if (-not $script:siteUrl) { return }
+  try {
+    $v = try { "$((Get-Content -Raw (Join-Path $PSScriptRoot '..\.codex-plugin\plugin.json') | ConvertFrom-Json).version)" } catch { '' }
+    $body = @{ provider = 'codex'; version = $v; events = @($events) } | ConvertTo-Json -Depth 4 -Compress
+    Invoke-RestMethod -Method Post -Uri ($script:siteUrl + '/v1/plugin-log') -ContentType 'application/json' -Headers @{ 'x-device-token' = $script:tok } -Body $body -TimeoutSec $timeout | Out-Null
+  } catch { }
+}
 try {
   if ((Test-Path $marker) -or (Test-Path (Join-Path $home_ 'token-tracker\history-imported'))) { exit 0 } # a run by hand marks ~\.codex\token-tracker
-  if (-not $Run) {
-    New-Item -ItemType Directory -Force $data | Out-Null
-    (Get-Date).ToUniversalTime().ToString('o') | Set-Content -Encoding utf8 (Join-Path $data 'history-started') # a trace that the hook ran (the time only)
-    Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Run')
-    exit 0
-  }
-  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $config = Get-Content -Raw (Join-Path $home_ 'config.toml')
   $site = [regex]::Match($config, 'endpoint = "(https?://[^"]+?)/v1/logs"')
   $token = [regex]::Match($config, '"x-device-token" = "([0-9a-f]{16,128})"')
   if (-not $site.Success -or -not $token.Success) { exit 0 }
+  $script:siteUrl = $site.Groups[1].Value; $script:tok = $token.Groups[1].Value
+  if (-not $Run) {
+    New-Item -ItemType Directory -Force $data | Out-Null
+    (Get-Date).ToUniversalTime().ToString('o') | Set-Content -Encoding utf8 (Join-Path $data 'history-started') # a trace that the hook ran (the time only)
+    Start-Process powershell -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Run')
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Send-Report @(@{ kind = 'history_hook' }) 3 # the dashboard sees that Codex ran the hook
+    exit 0
+  }
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
   $rows = New-Object System.Collections.Generic.List[object]
   $files = foreach ($sub in 'sessions', 'archived_sessions') {
@@ -67,17 +80,22 @@ try {
       }
     } } finally { $reader.Dispose() }
   }
+  $added = 0
   for ($i = 0; $i -lt $rows.Count; $i += 500) {
     $part = $rows.GetRange($i, [math]::Min(500, $rows.Count - $i))
     $body = @{ provider = 'codex'; turns = @($part) } | ConvertTo-Json -Depth 4 -Compress
-    Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/import') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value } -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 60 | Out-Null
+    $r = Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/import') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value } -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 60
+    if ($r.added) { $added += [int]$r.added }
   }
   New-Item -ItemType Directory -Force $data | Out-Null
   "$((Get-Date).ToUniversalTime().ToString('o')) $($rows.Count)" | Set-Content -Encoding utf8 $marker
+  Send-Report @(@{ kind = 'history_imported'; n = $added; total = $rows.Count })
 } catch {
+  $type = $_.Exception.GetType().Name
   try {
     New-Item -ItemType Directory -Force $data | Out-Null
     "$((Get-Date).ToUniversalTime().ToString('o')) history: $($_.Exception.Message)" | Set-Content -Encoding utf8 (Join-Path $data 'last-error.txt')
   } catch { }
+  Send-Report @(@{ kind = 'error'; error = $type; stage = 'history' })
 }
 exit 0

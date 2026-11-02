@@ -1,6 +1,7 @@
 // Live updates: a WebSocket to /api/admin/live (the Worker's per-user Durable Object) brings the numbers of every model call the site
 // counts, and they are added to the loaded hourly buckets, so the charts move without reading the database again. The day card and the
 // session list follow on the next load. The socket comes back by itself after a drop.
+import { motion } from '../charts/base.ts'
 import { $ } from '../lib/dom.ts'
 import type { Bucket } from '../lib/types.ts'
 import { actions } from './actions.ts'
@@ -42,7 +43,16 @@ export function applyCalls(calls: LiveCall[]): void {
     if (c.bg) b.bg_output = (b.bg_output ?? 0) + c.output
     added = true
   }
-  if (added && !renderTimer) renderTimer = setTimeout(() => { renderTimer = undefined; actions.render() }, 1000) // at most once a second
+  if (added && !renderTimer) renderTimer = setTimeout(quietRender, 1000) // at most once a second
+}
+
+/** Re-renders with the new numbers in place: no chart is drawn in anew, and the page keeps its scroll position. */
+function quietRender(): void {
+  renderTimer = undefined
+  const y = window.scrollY
+  motion.quiet = true
+  try { actions.render() } finally { motion.quiet = false }
+  if (window.scrollY !== y) window.scrollTo(0, y)
 }
 
 function connect(): void {

@@ -13,6 +13,26 @@ from datetime import datetime, timedelta, timezone
 HOME = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
 TAIL = 512 * 1024  # the newest token_count is near the end of the file
 KINDS = {300: 'five_hour', 10080: 'seven_day'}
+DATA = os.environ.get('PLUGIN_DATA') or os.path.join(HOME, 'token-tracker')
+HEARTBEAT = 3600  # the dashboard's log hears "limits sent" at most once an hour
+
+
+def plugin_version():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.codex-plugin', 'plugin.json'), encoding='utf-8') as f:
+            return str(json.load(f).get('version', ''))
+    except (OSError, ValueError):
+        return ''
+
+
+def report(site, token, events, timeout=5):
+    """The plugin's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message or a path."""
+    try:
+        body = json.dumps({'provider': 'codex', 'version': plugin_version(), 'events': events}).encode()
+        req = urllib.request.Request(site + '/v1/plugin-log', data=body, headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
+        urllib.request.urlopen(req, timeout=timeout).read()
+    except Exception:
+        pass
 
 
 def site_and_token():
@@ -95,6 +115,11 @@ def main():
                 req = urllib.request.Request(site + '/v1/limits', data=json.dumps({'provider': 'codex', 'limits': limits}).encode(),
                                              headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
                 urllib.request.urlopen(req, timeout=5).read()
+                beat = os.path.join(DATA, 'limits-reported')
+                if not os.path.exists(beat) or datetime.now().timestamp() - os.path.getmtime(beat) > HEARTBEAT:
+                    os.makedirs(DATA, exist_ok=True)
+                    open(beat, 'w').close()
+                    report(site, token, [{'kind': 'limits', 'n': len(limits)}])
             return
 
 
@@ -103,10 +128,12 @@ if __name__ == '__main__':
         main()
     except Exception as e:
         try:
-            log = os.environ.get('PLUGIN_DATA') or os.path.join(HOME, 'token-tracker')
-            os.makedirs(log, exist_ok=True)
-            with open(os.path.join(log, 'last-error.txt'), 'w', encoding='utf-8') as f:
+            os.makedirs(DATA, exist_ok=True)
+            with open(os.path.join(DATA, 'last-error.txt'), 'w', encoding='utf-8') as f:
                 f.write(f'{datetime.now(timezone.utc).isoformat()} {type(e).__name__}: {e}\n')
+            site, token = site_and_token()
+            if site:
+                report(site, token, [{'kind': 'error', 'error': type(e).__name__, 'stage': 'limits'}])
         except Exception:
             pass
     sys.exit(0)

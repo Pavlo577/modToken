@@ -41,6 +41,13 @@ async function post($: EngineInterface, t: Target, path: string, body: unknown):
 
 const iso = async ($: EngineInterface): Promise<string> => new Date(await $.clock.now()).toISOString()
 
+/** The mod's version, as in ../.claude-plugin/plugin.json: the dashboard's plugin log shows which one a device runs. */
+const MOD_VERSION = '1.5.0'
+type PluginEvent = { kind: 'limits' | 'import' | 'error'; n?: number; total?: number; error?: string; stage?: string }
+/** The mod's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message. */
+const report = ($: EngineInterface, t: Target, events: PluginEvent[]): Promise<boolean> =>
+  post($, t, '/v1/plugin-log', { provider: 'claude', version: MOD_VERSION, events })
+
 /** owner/name of a remote URL (https or ssh), never its credentials; null when it does not look like one. */
 function remoteName(remote: string | null): string | null {
   const m = /[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(remote ?? '')
@@ -66,6 +73,7 @@ let projectName: string | null = null
 let projectNote: string | null = null
 let target_: Target | undefined
 let lastSentLimits = ''
+let lastLimitsReport = 0
 let lastTurnEnd = 0
 const turnStart = new Map<string, number>()
 // permission checks that went to the decider (tool_use_id -> tool), and whether a person was then asked (classic PermissionRequest:
@@ -81,7 +89,11 @@ async function sendLimits($: EngineInterface): Promise<void> {
   $.ui.status(limits.map(r => `${r.kind === 'five_hour' ? '5h' : r.kind === 'seven_day' ? '7d' : r.kind} ${r.percentUsed}%`).join(' · '))
   const key = JSON.stringify(limits)
   if (key === lastSentLimits || !target_) return
-  if (await post($, target_, '/v1/limits', { limits })) lastSentLimits = key
+  if (await post($, target_, '/v1/limits', { limits })) {
+    lastSentLimits = key
+    const now = await $.clock.now()
+    if (now - lastLimitsReport > 3_600_000) { lastLimitsReport = now; await report($, target_, [{ kind: 'limits', n: limits.length }]) } // at most once an hour
+  }
 }
 
 async function sendActivity($: EngineInterface, end?: { at: string; reason: string }): Promise<void> {
@@ -197,6 +209,7 @@ function startImport($: EngineInterface, t: Target, files: { path: string; size:
       (total.unread ? `; не вдалося прочитати файлів: ${total.unread} (великі логи потребують node, python або PowerShell)` : '')
     $.ui.toast(msg, { timeoutMs: 15_000 })
     $.ui.status(total.failed ? 'імпорт: не все надіслано' : `імпорт: +${total.added}`)
+    void report($, t, [{ kind: 'import', n: total.added, total: total.found }, ...(total.failed ? [{ kind: 'error' as const, error: 'NotSent', stage: 'import' }] : [])])
     done(msg)
   }
   const step = async (): Promise<void> => {
@@ -217,7 +230,12 @@ function startImport($: EngineInterface, t: Target, files: { path: string; size:
       }
       await send()
       finish()
-    } catch { importing = false; $.ui.toast('Імпорт історії перервано через помилку'); done('Імпорт історії перервано через помилку.') }
+    } catch (e) {
+      importing = false
+      $.ui.toast('Імпорт історії перервано через помилку')
+      void report($, t, [{ kind: 'error', error: e instanceof Error ? e.name : 'Error', stage: 'import' }]) // the type only, never the message
+      done('Імпорт історії перервано через помилку.')
+    }
   }
   $.clock.after(0, () => void step())
   return finished

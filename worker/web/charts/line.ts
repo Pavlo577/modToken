@@ -1,7 +1,7 @@
 // Line chart.
 import { responsive, svg } from '../lib/dom.ts'
 import { fmtAxis } from '../lib/format.ts'
-import { clipNote, drawMarker, empty, MARK_ROOM, place, tipOf } from './base.ts'
+import { clipNote, drawMarker, empty, MARK_ROOM, motion, place, tipOf } from './base.ts'
 import type { Host, Marker, Series, TipRow } from './base.ts'
 import { evenLabels, logAxis, niceMax, sharedMax, smooth, ticks } from './scale.ts'
 
@@ -35,7 +35,7 @@ export function lineChart(container: HTMLElement, opts: LineOptions): void {
   if (!labels.length || !all.some(v => v > 0)) return empty(container, undefined, height)
   let first = true // draw the lines in only the first time, not on every resize
   responsive(container, W => {
-    const animate = first
+    const animate = first && !motion.quiet
     first = false
     const m = { l: 44, r: 14, t: 14 + (opts.marker ? MARK_ROOM : 0), b: 26 }
     const iw = W - m.l - m.r, ih = height - m.t - m.b

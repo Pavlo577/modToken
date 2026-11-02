@@ -2,6 +2,7 @@
 // and delete (`?purge=1`: the device and all it sent).
 import { PROJECT_MODES } from '../activity.ts'
 import { createDevice, deleteDevice, newDeviceToken } from '../devices.ts'
+import { pluginLogRead } from '../pluginlog.ts'
 import { json, str, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -16,6 +17,8 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
     ).bind(email).all()
     return json(results.map(({ providers, ...d }) => ({ ...d, providers: providers ? String(providers).split(',') : [] })))
   }
+
+  if (path === '/plugin-log' && req.method === 'GET') return pluginLogRead(env, email)
 
   if (path === '/devices' && req.method === 'POST') {
     const body = (await req.json().catch(() => null)) as { name?: unknown; project_mode?: unknown } | null

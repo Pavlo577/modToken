@@ -6,6 +6,7 @@ import { otlpIgnored, otlpLogs } from './otlp-ingest.ts'
 import { activityIngest, modConfig } from './activity.ts'
 import { deviceImport } from './import.ts'
 import { limitsIngest } from './limits.ts'
+import { pluginLogIngest } from './pluginlog.ts'
 import { text } from './util.ts'
 
 export type { Env }
@@ -21,6 +22,7 @@ export default {
     if (url.pathname === '/v1/activity' && req.method === 'POST') return activityIngest(req, env) // the mod's sessions and turns
     if (url.pathname === '/v1/import' && req.method === 'POST') return deviceImport(req, env) // the mod's /tracker-import: history from local logs
     if (url.pathname === '/v1/config' && req.method === 'GET') return modConfig(req, env) // what the device lets the mod send
+    if (url.pathname === '/v1/plugin-log' && req.method === 'POST') return pluginLogIngest(req, env) // the plugins' own reports (works / failed)
     if (url.pathname.startsWith('/api/admin/')) return admin(req, env, url)
     if (url.pathname === '/auth/logout' && req.method === 'GET') return signOutResponse(env) // the dashboard's "Вийти"
     // the site's root has no page of its own: the dashboard, behind Access (signed in it opens, otherwise Access asks to sign in first)

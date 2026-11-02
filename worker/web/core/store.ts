@@ -1,5 +1,6 @@
 // What was loaded for the shown period, cached requests and the regrouping by time zone.
 import * as S from '../lib/stats.ts'
+import { motion } from '../charts/base.ts'
 import { api } from '../lib/api.ts'
 import type { Bucket, DeviceRow, LimitRow, Prices, SessionRow, Totals } from '../lib/types.ts'
 import type { Period } from './range.ts'
@@ -23,7 +24,8 @@ const memo = new Map<string, { t: number; v: unknown }>()
 
 export const get = async <T>(path: string): Promise<T> => {
   const hit = memo.get(path)
-  if (hit && Date.now() - hit.t < 45_000) return hit.v as T
+  // a live update re-renders with what is loaded: an old answer is fine then (fetching again would read the database on every update)
+  if (hit && (Date.now() - hit.t < 45_000 || motion.quiet)) return hit.v as T
   const v = await api<T>(path)
   memo.set(path, { t: Date.now(), v })
   if (memo.size > 40) memo.delete(memo.keys().next().value as string)

@@ -23,13 +23,55 @@ function projectSelect(d: DeviceRow): HTMLElement {
   return sel
 }
 
-function deviceRow(d: DeviceRow): HTMLElement {
+/** One entry of the plugins' own log (GET /api/admin/plugin-log): a kind, counts, an error's type and stage, the plugin's version. */
+interface PluginEntry { device_id: string; ts: string; kind: string; service: string; n?: number; total?: number; error?: string; stage?: string; version?: string }
+
+const PLUGIN_NAME: Record<string, string> = { 'codex-plugin': 'Плагін Codex', 'claude-mod': 'Мод Claude' }
+const STAGE: Record<string, string> = { limits: 'ліміти', history: 'імпорт історії', import: 'імпорт історії' }
+
+const ago = (ts: string): string => {
+  const m = Math.round((Date.now() - Date.parse(ts)) / 60_000)
+  return m < 2 ? 'щойно' : m < 60 ? `${m} хв тому` : m < 1440 ? `${Math.round(m / 60)} год тому` : `${Math.round(m / 1440)} дн тому`
+}
+
+/** What an entry says, in words. */
+function entryText(e: PluginEntry): string {
+  switch (e.kind) {
+    case 'limits': return `ліміти надіслано${e.n ? ` (вікон: ${e.n})` : ''}`
+    case 'history_hook': return 'хук імпорту історії запустився'
+    case 'history_imported': return `історію імпортовано: додано ${e.n ?? 0} з ${e.total ?? 0}`
+    case 'import': return `/tracker-import: додано ${e.n ?? 0} з ${e.total ?? 0}`
+    case 'error': return `помилка ${e.error ?? ''}${e.stage ? ` (${STAGE[e.stage] ?? e.stage})` : ''}`
+    default: return e.kind
+  }
+}
+
+/** Per plugin of the device: its version, the last limits and import, and a failure newer than the last success; then the log itself. */
+function pluginBox(entries: PluginEntry[]): HTMLElement | '' {
+  if (!entries.length) return ''
+  const lines = [...new Set(entries.map(e => e.service))].map(service => {
+    const own = entries.filter(e => e.service === service) // newest first
+    const limits = own.find(e => e.kind === 'limits'), hist = own.find(e => e.kind === 'history_imported' || e.kind === 'import')
+    const err = own.find(e => e.kind === 'error')
+    const failing = err && (!limits || err.ts > limits.ts)
+    return el('div', { class: 'plug' + (failing ? ' bad' : '') },
+      el('b', {}, `${PLUGIN_NAME[service] ?? service}${own[0].version ? ' ' + own[0].version : ''}`),
+      el('span', {}, [limits ? `ліміти ${ago(limits.ts)}` : 'ліміти ще не надсилав', hist ? `${entryText(hist)} (${ago(hist.ts)})` : '', failing ? `${entryText(err)} ${ago(err.ts)}` : ''].filter(Boolean).join(' · ')))
+  })
+  const log = el('div', { class: 'plug-log hide' }, ...entries.slice(0, 20).map(e => el('div', {},
+    el('small', {}, new Date(e.ts).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' })), ` ${PLUGIN_NAME[e.service] ?? e.service}: ${entryText(e)}`)))
+  const toggle = el('button', { type: 'button', class: 'link', onclick: () => { log.classList.toggle('hide'); toggle.textContent = log.classList.contains('hide') ? 'Журнал плагіна' : 'Сховати журнал' } }, 'Журнал плагіна')
+  return el('div', { class: 'plugins' }, ...lines, toggle, log)
+}
+
+function deviceRow(d: DeviceRow, log: PluginEntry[] = []): HTMLElement {
   const added = d.created_at.slice(0, 10)
   const seen = d.last_seen
   return el('div', { class: 'dev' },
     el('div', {}, el('b', {}, d.name), d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
       ...[...d.providers].sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Агент надсилав дані з цього пристрою' }, providerLabel(p))),
-      el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані'))),
+      el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані')),
+      pluginBox(log.filter(e => e.device_id === d.id))),
     el('div', { class: 'dev-actions' }, ...(d.revoked ? [] : [
       projectSelect(d),
       el('button', { title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
@@ -57,8 +99,8 @@ const deleteButton = (d: DeviceRow): HTMLElement => el('button', { class: 'dange
 } }, 'Видалити')
 
 export async function loadDevices(): Promise<DeviceRow[]> {
-  const list = await api<DeviceRow[]>('/devices')
-  $('dev-list').replaceChildren(...(list.length ? list.map(deviceRow) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
+  const [list, log] = await Promise.all([api<DeviceRow[]>('/devices'), api<PluginEntry[]>('/plugin-log').catch(() => [] as PluginEntry[])])
+  $('dev-list').replaceChildren(...(list.length ? list.map(d => deviceRow(d, log)) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
   fillHistoryDevices(list)
   return list
 }

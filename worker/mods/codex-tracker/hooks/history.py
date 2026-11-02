@@ -94,7 +94,25 @@ def calls(path):
 def send(site, token, turns):
     body = json.dumps({'provider': 'codex', 'turns': turns}).encode()
     req = urllib.request.Request(site + '/v1/import', data=body, headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
-    urllib.request.urlopen(req, timeout=60).read()
+    return json.loads(urllib.request.urlopen(req, timeout=60).read() or b'{}').get('added', 0)
+
+
+def plugin_version():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.codex-plugin', 'plugin.json'), encoding='utf-8') as f:
+            return str(json.load(f).get('version', ''))
+    except (OSError, ValueError):
+        return ''
+
+
+def report(site, token, events, timeout=5):
+    """The plugin's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message or a path."""
+    try:
+        body = json.dumps({'provider': 'codex', 'version': plugin_version(), 'events': events}).encode()
+        req = urllib.request.Request(site + '/v1/plugin-log', data=body, headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
+        urllib.request.urlopen(req, timeout=timeout).read()
+    except Exception:
+        pass
 
 
 def main():
@@ -109,11 +127,13 @@ def main():
             rows += calls(path)
         except OSError:  # a file that cannot be read is skipped, not the whole import
             pass
+    added = 0
     for i in range(0, len(rows), CHUNK):
-        send(site, token, rows[i:i + CHUNK])
+        added += send(site, token, rows[i:i + CHUNK]) or 0
     os.makedirs(DATA, exist_ok=True)
     with open(MARKER, 'w', encoding='utf-8') as f:
         f.write(f'{datetime.now(timezone.utc).isoformat()} {len(rows)}\n')
+    report(site, token, [{'kind': 'history_imported', 'n': added, 'total': len(rows)}])
 
 
 def detach():
@@ -126,6 +146,9 @@ def detach():
     flags = 0x00000008 | 0x00000200 if os.name == 'nt' else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     subprocess.Popen([sys.executable, os.path.abspath(__file__), '--run'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, close_fds=True, start_new_session=os.name != 'nt', creationflags=flags)
+    site, token = site_and_token()
+    if site:
+        report(site, token, [{'kind': 'history_hook'}], timeout=3)  # the dashboard sees that Codex ran the hook
 
 
 if __name__ == '__main__':
@@ -136,6 +159,9 @@ if __name__ == '__main__':
             os.makedirs(DATA, exist_ok=True)
             with open(os.path.join(DATA, 'last-error.txt'), 'w', encoding='utf-8') as f:
                 f.write(f'{datetime.now(timezone.utc).isoformat()} history: {type(e).__name__}: {e}\n')
+            site, token = site_and_token()
+            if site:
+                report(site, token, [{'kind': 'error', 'error': type(e).__name__, 'stage': 'history'}])
         except Exception:
             pass
     sys.exit(0)
