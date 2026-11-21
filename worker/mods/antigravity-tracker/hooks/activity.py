@@ -73,7 +73,7 @@ def call(site, token, path, body=None, timeout=5):
     req = urllib.request.Request(
         site + path,
         data=None if body is None else json.dumps(body).encode('utf-8'),
-        headers={'content-type': 'application/json', 'x-device-token': token},
+        headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-antigravity/1.0'},
         method='GET' if body is None else 'POST',
     )
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read() or b'{}')

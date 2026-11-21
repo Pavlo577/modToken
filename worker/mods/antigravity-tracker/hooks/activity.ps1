@@ -25,7 +25,7 @@ function Save-Json($p, $obj) {
 }
 
 function Call-Api($site, $tok, $path, $body) {
-  $headers = @{ 'x-device-token' = $tok }
+  $headers = @{ 'x-device-token' = $tok; 'user-agent' = 'modToken-antigravity/1.0' }
   if ($null -eq $body) { return Invoke-RestMethod -Uri ($site + $path) -Method Get -Headers $headers -TimeoutSec 5 }
   $json = $body | ConvertTo-Json -Depth 8 -Compress
   return Invoke-RestMethod -Uri ($site + $path) -Method Post -ContentType 'application/json' -Headers $headers -Body $json -TimeoutSec 5

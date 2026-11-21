@@ -73,7 +73,7 @@ def post(site, token, path, body, timeout=5):
     req = urllib.request.Request(
         site + path,
         data=json.dumps(body).encode('utf-8'),
-        headers={'content-type': 'application/json', 'x-device-token': token},
+        headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-antigravity/1.0'},
         method='POST',
     )
     urllib.request.urlopen(req, timeout=timeout).read()
@@ -281,8 +281,12 @@ def main():
         if not st:
             tidy_states()
 
-        # Persist latest context fill for hooks/activity.py (Stop hook)
-        ctx_tokens = non_neg_int(cu.get('input_tokens')) if cu else None
+        # Persist latest context fill for hooks/activity.py (Stop hook): total context = new input + cache read + cache write
+        ctx_tokens = (
+            non_neg_int(cu.get('input_tokens'))
+            + non_neg_int(cu.get('cache_read_input_tokens'))
+            + non_neg_int(cu.get('cache_creation_input_tokens'))
+        ) if cu else None
         if cu is not None or cw_size > 0 or pct_val is not None:
             st['last_context'] = {
                 'tokens': ctx_tokens,

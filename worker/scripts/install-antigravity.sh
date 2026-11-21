@@ -45,11 +45,11 @@ def load_json(p):
     except (OSError, ValueError):
         return {}
 
-# 1. Write resolved hooks.json at plugin root
+# 1. Write resolved hooks.json at plugin root (flat handler list for SessionStart, PreInvocation, Stop)
 act_cmd = f'python3 "{os.path.join(plugin, "hooks", "activity.py")}"'
 hooks = {
     'token-tracker': {
-        ev: [{'hooks': [{'type': 'command', 'command': f'{act_cmd} {ev}', 'timeout': 10}]}]
+        ev: [{'type': 'command', 'command': f'{act_cmd} {ev}', 'timeout': 10}]
         for ev in ('SessionStart', 'PreInvocation', 'Stop')
     }
 }

@@ -36,7 +36,7 @@ function Load-Config {
 
 function Post-Json($site, $tok, $path, $body) {
   $json = $body | ConvertTo-Json -Depth 12 -Compress
-  Invoke-RestMethod -Uri ($site + $path) -Method Post -ContentType 'application/json' -Headers @{ 'x-device-token' = $tok } -Body $json -TimeoutSec 5 | Out-Null
+  Invoke-RestMethod -Uri ($site + $path) -Method Post -ContentType 'application/json' -Headers @{ 'x-device-token' = $tok; 'user-agent' = 'modToken-antigravity/1.0' } -Body $json -TimeoutSec 5 | Out-Null
 }
 
 function Plugin-Version {
@@ -166,7 +166,12 @@ try {
       $lastCuSig = $cuSig; $lastCallMs = $nowMs
     }
 
-    $ctxObj = @{ tokens = if ($cu -and $null -ne $cu.input_tokens) { [int64]$cu.input_tokens } else { $null }; window = if ($cwSize -gt 0) { $cwSize } else { $null }; pct = if ($cw -and $null -ne $cw.used_percentage) { [double]$cw.used_percentage } else { $null } }
+    $ctxTok = if ($cu) {
+      (if ($cu.input_tokens -ge 0) { [int64]$cu.input_tokens } else { 0 }) +
+      (if ($cu.cache_read_input_tokens -ge 0) { [int64]$cu.cache_read_input_tokens } else { 0 }) +
+      (if ($cu.cache_creation_input_tokens -ge 0) { [int64]$cu.cache_creation_input_tokens } else { 0 })
+    } else { $null }
+    $ctxObj = @{ tokens = $ctxTok; window = if ($cwSize -gt 0) { $cwSize } else { $null }; pct = if ($cw -and $null -ne $cw.used_percentage) { [double]$cw.used_percentage } else { $null } }
     Save-Json $stPath @{ seq = $seq; total_input = $totalIn; total_output = $totalOut; cost_usd = $costTotal; subagent_usd = $costSub; last_cu_sig = $lastCuSig; last_call_ms = $lastCallMs; last_context = $ctxObj }
   }
 

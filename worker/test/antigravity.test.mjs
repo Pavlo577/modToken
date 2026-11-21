@@ -250,6 +250,9 @@ test('antigravity plugin & install-antigravity.sh: idempotent install, chains ex
   assert.equal(manifest.name, 'token-tracker')
   const hooks = JSON.parse(readFileSync(PLUGIN + 'hooks.json', 'utf8'))
   assert.deepEqual(Object.keys(hooks['token-tracker']).sort(), ['PreInvocation', 'SessionStart', 'Stop'])
+  for (const ev of ['SessionStart', 'PreInvocation', 'Stop']) {
+    assert.equal(hooks['token-tracker'][ev][0].type, 'command', `${ev} must use flat handler object`)
+  }
 
   const base = mkdtempSync(join(tmpdir(), 'tt-agy-inst-'))
   const cliDir = join(base, 'antigravity-cli')

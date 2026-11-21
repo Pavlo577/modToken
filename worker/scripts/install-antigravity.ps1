@@ -26,9 +26,9 @@ $slScript = Join-Path $plugin 'hooks\statusline.ps1'
 $actBase = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$actScript`""
 $hooksObj = @{
   'token-tracker' = @{
-    SessionStart  = @(@{ hooks = @(@{ type = 'command'; command = "$actBase -EventName SessionStart"; timeout = 10 }) })
-    PreInvocation = @(@{ hooks = @(@{ type = 'command'; command = "$actBase -EventName PreInvocation"; timeout = 10 }) })
-    Stop          = @(@{ hooks = @(@{ type = 'command'; command = "$actBase -EventName Stop"; timeout = 10 }) })
+    SessionStart  = @(@{ type = 'command'; command = "$actBase -EventName SessionStart"; timeout = 10 })
+    PreInvocation = @(@{ type = 'command'; command = "$actBase -EventName PreInvocation"; timeout = 10 })
+    Stop          = @(@{ type = 'command'; command = "$actBase -EventName Stop"; timeout = 10 })
   }
 }
 [System.IO.File]::WriteAllText((Join-Path $plugin 'hooks.json'), ($hooksObj | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding $false))
