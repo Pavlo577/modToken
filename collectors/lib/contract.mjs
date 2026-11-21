@@ -11,7 +11,7 @@ export const BATCH = 300
 /** At most this many limit readings per call (the Worker ignores the rest). */
 export const MAX_LIMITS = 8
 /** Agents the Worker accepts. A new agent needs a label and colour in the dashboard (worker/web/core/palette.ts) too. */
-export const PROVIDERS = ['claude', 'codex', 'gemini', 'mistral', 'opencode']
+export const PROVIDERS = ['claude', 'codex', 'gemini', 'mistral', 'opencode', 'antigravity']
 
 /**
  * One turn = one question of the user and everything the model did until it finished (several model calls, tools),

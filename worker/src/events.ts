@@ -5,7 +5,7 @@ import { int, str } from './util.ts'
 export const MAX_ROWS = 500
 
 /** The agents whose turns can be stored; a row without `provider` is Claude's (older mods and the cloud hook). */
-export const PROVIDERS = ['claude', 'codex', 'gemini', 'mistral', 'opencode'] as const
+export const PROVIDERS = ['claude', 'codex', 'gemini', 'mistral', 'opencode', 'antigravity'] as const
 export type Provider = (typeof PROVIDERS)[number]
 
 /** The provider of a row, or null when it names an unknown one. */

@@ -15,6 +15,7 @@ const clear = () => stdout.write('\r' + ' '.repeat(60) + '\r')
 /** Collected now: Codex when it is on the machine, Claude Code only after the user chose it. */
 const enabledAgents = () => AGENTS.filter(a => (a.enabled ?? a.detect).call(a))
 const hasNotify = agent => typeof agent.notifyInfo === 'function'
+const hasHook = agent => typeof agent.hookState === 'function'
 
 /** After the hook is added the agent has to be restarted to pick it up. */
 const AFTER_HOOK = {
@@ -76,9 +77,9 @@ function showStatus(agent) {
   row('Знайдено', `${agent.detect() ? 'так' : 'ні'} (${agent.home})`)
   row('Останній синк', when(st.lastSync))
   row('Надіслано', `${st.turns} ходів з ${st.files} файлів`)
-  row('Stop-hook', hookText[agent.hookState()])
+  if (hasHook(agent)) row('Stop-hook', hookText[agent.hookState()])
   if (hasNotify(agent)) row('Notify (запасний)', notifyText[agent.notifyState()])
-  if (agent.hookState() === 'ours' || (hasNotify(agent) && agent.notifyState() === 'ours')) {
+  if ((hasHook(agent) && agent.hookState() === 'ours') || (hasNotify(agent) && agent.notifyState() === 'ours')) {
     const n = lastNotify(agent.id)
     row('Останній виклик', n ? `${when(n.at)}: ${summarize(n) ?? 'викликано'}` : `${agent.title} ще жодного разу не викликав програму (зроби хід і відкрий знову)`)
   }
@@ -168,6 +169,7 @@ async function setupAgent(rl, agent) {
   if (agent.importHistory) { out('  Надсилаю історію, що була до прив\'язки пристрою (це безпечно повторювати, нічого не задвоїться)...'); await runImport(agent) }
   out('  Надсилаю нове...')
   await runSync(agent)
+  if (!hasHook(agent)) return out('  Нове підтягується щоразу, коли відкриваєш цю програму (окремого hook для цього агента ще нема).')
   await offerHook(rl, agent)
   if (hasNotify(agent) && agent.hookState() !== 'ours') await offerNotify(rl, agent) // the older way, when the hook was not wanted
 }
@@ -213,7 +215,7 @@ async function firstRun(rl) {
 /** The automatic-update switches of every agent, numbered; picking one turns it on or off. */
 async function updateMenu(rl) {
   const items = []
-  for (const agent of AGENTS.filter(a => a.detect())) {
+  for (const agent of AGENTS.filter(a => a.detect() && hasHook(a))) {
     items.push({ label: `${agent.title}: Stop-hook`, on: agent.hookState() === 'ours', toggle: () => (agent.hookState() === 'ours' ? offerHookRemove : offerHook)(rl, agent) })
     if (hasNotify(agent)) items.push({ label: `${agent.title}: notify (запасний)`, on: agent.notifyState() === 'ours', toggle: () => (agent.notifyState() === 'ours' ? offerRestore : offerNotify)(rl, agent) })
   }

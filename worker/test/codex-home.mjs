@@ -9,5 +9,6 @@ mkdirSync(join(dir, 'codex'), { recursive: true })
 process.env.CODEX_HOME = join(dir, 'codex')
 process.env.TOKEN_TRACKER_HOME = join(dir, 'tt')
 process.env.CLAUDE_CONFIG_DIR = join(dir, 'claude') // never the real ~/.claude of whoever runs the tests
+process.env.ANTIGRAVITY_HOME = join(dir, 'agy') // nor the real ~/.gemini/antigravity; antigravity.test.mjs puts its fixtures here and removes them
 mkdirSync(join(dir, 'claude'), { recursive: true })
 export const codex = (await import('../../collectors/agents/codex.mjs')).default

@@ -22,6 +22,7 @@ const PROVIDERS: Record<string, { label: string; color: string }> = {
   gemini: { label: 'Gemini', color: '#3d8bff' },
   mistral: { label: 'Mistral', color: '#ffc24a' },
   opencode: { label: 'OpenCode', color: '#9b7bff' },
+  antigravity: { label: 'Antigravity', color: '#18c3d1' },
 }
 export const providerLabel = (p: string): string => PROVIDERS[p]?.label ?? p
 export const providerColor = (p: string): string => PROVIDERS[p]?.color ?? '#6f655c'

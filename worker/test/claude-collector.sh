@@ -5,7 +5,7 @@ set -u
 B=http://127.0.0.1:8787
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d)
-export CODEX_HOME=$T/none TOKEN_TRACKER_HOME=$T/tt CLAUDE_CONFIG_DIR=$T/claude
+export CODEX_HOME=$T/none TOKEN_TRACKER_HOME=$T/tt CLAUDE_CONFIG_DIR=$T/claude ANTIGRAVITY_HOME=$T/none
 fail=0
 run() { if [ -n "${COLLECTOR_BIN:-}" ]; then "$COLLECTOR_BIN" "$@"; else node "$HERE/collectors/token-tracker.mjs" "$@"; fi; }
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1 (got $2, want $3)"; fail=1; fi; }
