@@ -40,9 +40,11 @@ export function projectFor(v: unknown, mode: ProjectMode): string | null {
   return mode === 'name' && NAME.test(v) ? v : null
 }
 
-/** Whose activity it is: `codex` (the Codex plugin says so), or `claude` (the mod, which does not say). */
-export const activityProvider = (body: unknown): 'claude' | 'codex' =>
-  body && typeof body === 'object' && (body as { provider?: unknown }).provider === 'codex' ? 'codex' : 'claude'
+/** Whose activity it is: `codex`, `antigravity`, or `claude` (the mod, which does not say). */
+export const activityProvider = (body: unknown): 'claude' | 'codex' | 'antigravity' => {
+  const p = body && typeof body === 'object' ? (body as { provider?: unknown }).provider : undefined
+  return p === 'codex' || p === 'antigravity' ? p : 'claude'
+}
 
 export function parseActivity(body: unknown, mode: ProjectMode): { session: ModSession | null; turns: ModTurn[] } | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null

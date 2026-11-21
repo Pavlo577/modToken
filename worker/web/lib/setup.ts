@@ -40,8 +40,23 @@ export const codexToml = (origin: string, token: string): string =>
 export const codexInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install-codex.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
 export const codexInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install-codex.ps1))) ${origin.replace(/\/$/, '')} ${token}`
 
+// Antigravity CLI (`agy`): uses the documented statusLine JSON payload (tokens, cache, cost, subscription quota) and plugin hooks
+// (SessionStart, PreInvocation, Stop for session/turn activity), installed by scripts/install-antigravity.sh / .ps1.
+export const antigravityInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install-antigravity.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
+export const antigravityInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install-antigravity.ps1))) ${origin.replace(/\/$/, '')} ${token}`
+export const antigravityConfigJson = (origin: string, token: string): string => JSON.stringify({ site: origin.replace(/\/$/, ''), token }, null, 2)
+export const antigravitySettingsJson = (win = false): string => JSON.stringify({
+  statusLine: {
+    type: 'command',
+    command: win
+      ? 'powershell -NoProfile -ExecutionPolicy Bypass -File "%USERPROFILE%\\.gemini\\config\\plugins\\token-tracker\\hooks\\statusline.ps1"'
+      : 'python3 ~/.gemini/config/plugins/token-tracker/hooks/statusline.py',
+    stack_with_default: true,
+  },
+}, null, 2)
+
 // ---- The "Add device" box: the agent and the place it runs pick the one best way to set it up; the manual settings come last.
-export type Agent = 'claude' | 'codex'
+export type Agent = 'claude' | 'codex' | 'antigravity'
 export type Place = 'windows' | 'linux' | 'cloud'
 /** One step: text (`code` in backticks) and, when there is something to paste, the snippet. */
 export interface Step { text: string; code?: string }
@@ -73,6 +88,32 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
       ],
     }
   }
+  if (agent === 'antigravity') {
+    const win = place === 'windows'
+    const cfgPath = win ? '%USERPROFILE%\\.gemini\\antigravity-cli\\token-tracker\\config.json' : '~/.gemini/antigravity-cli/token-tracker/config.json'
+    const setPath = win ? '%USERPROFILE%\\.gemini\\antigravity-cli\\settings.json' : '~/.gemini/antigravity-cli/settings.json'
+    if (place === 'cloud') return {
+      steps: [
+        { text: 'Antigravity CLI у контейнері / віддаленому середовищі: виконай команду встановлення (поставить плагін у `~/.gemini/config/plugins/token-tracker` і підключить `statusLine`; потрібен `python3`):', code: antigravityInstallSh(origin, token) },
+        { text: `Дозволь у мережі \`${host}\` і \`raw.githubusercontent.com\`. Дані з'являться після першої відповіді \`agy\`.` },
+      ],
+      manual: [
+        { text: `Збережи \`${cfgPath}\` (права \`600\`):`, code: antigravityConfigJson(origin, token) },
+        { text: `Додай блок \`statusLine\` у \`${setPath}\` (стандартний статус-бар залишиться завдяки \`stack_with_default\`):`, code: antigravitySettingsJson(false) },
+      ],
+    }
+    return {
+      steps: [
+        { text: win ? 'Відкрий PowerShell і виконай (поставить плагін Antigravity і підключить `statusLine` для токенів, вартості, лімітів та активності):' : 'У терміналі виконай (поставить плагін Antigravity і підключить `statusLine` для токенів, вартості, лімітів та активності; потрібен `python3`):', code: win ? antigravityInstallPs(origin, token) : antigravityInstallSh(origin, token) },
+        { text: "Перезапусти Antigravity CLI (`agy`). Дані з'являться на дашборді після першої відповіді." },
+      ],
+      manual: [
+        { text: `Збережи \`${cfgPath}\`:`, code: antigravityConfigJson(origin, token) },
+        { text: `Додай блок \`statusLine\` у \`${setPath}\` (якщо вже є свій \`statusLine\`, команда встановлення збереже його як ланцюжок):`, code: antigravitySettingsJson(win) },
+        { text: 'Плагін `token-tracker` (`~/.gemini/config/plugins/token-tracker`) надсилає лише числа, модель, ID та дозволений проєкт; текст запитів і відповідей ніколи не читається.' },
+      ],
+    }
+  }
   const toml = codexToml(origin, token)
   if (place === 'cloud') return {
     steps: [
@@ -99,11 +140,11 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
  * the device's data and name say (the only agent it sent from; "win", "cloud", "linux" / "ubuntu" / "mac" in the name), else the given defaults.
  */
 export function guessSetup(name: string, providers: string[], saved: { agent?: string; place?: string } | undefined, fallback: { agent: Agent; place: Place }): { agent: Agent; place: Place } {
-  const agents: Agent[] = ['claude', 'codex'], places: Place[] = ['windows', 'linux', 'cloud']
+  const agents: Agent[] = ['claude', 'codex', 'antigravity'], places: Place[] = ['windows', 'linux', 'cloud']
   const n = name.toLowerCase()
   const agent = agents.find(a => a === saved?.agent)
     ?? (providers.length === 1 && agents.includes(providers[0] as Agent) ? (providers[0] as Agent) : undefined)
-    ?? (n.includes('codex') ? 'codex' : n.includes('claude') ? 'claude' : fallback.agent)
+    ?? (n.includes('antigravity') || /\bagy\b/.test(n) ? 'antigravity' : n.includes('codex') ? 'codex' : n.includes('claude') ? 'claude' : fallback.agent)
   const place = places.find(p => p === saved?.place)
     ?? (/win/.test(n) ? 'windows' : /cloud|хмар|remote|ccr|web/.test(n) ? 'cloud' : /linux|ubuntu|debian|fedora|mac|wsl/.test(n) ? 'linux' : fallback.place)
   return { agent, place }

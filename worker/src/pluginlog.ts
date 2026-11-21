@@ -12,7 +12,7 @@ const MAX_BODY = 8_000
 const MAX_EVENTS = 20
 
 export interface PluginEvent { kind: string; n?: number; total?: number; error?: string; stage?: string }
-export interface PluginLog { provider: 'claude' | 'codex'; version: string; events: PluginEvent[] }
+export interface PluginLog { provider: 'claude' | 'codex' | 'antigravity'; version: string; events: PluginEvent[] }
 
 const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1e9 ? v : undefined)
 const word = (v: unknown, re: RegExp): string | undefined => (typeof v === 'string' && re.test(v) ? v : undefined)
@@ -33,7 +33,8 @@ export function parsePluginLog(body: unknown): PluginLog | null {
     if (stage) x.stage = stage
     events.push(x)
   }
-  return { provider: b.provider === 'codex' ? 'codex' : 'claude', version: word(b.version, /^[\w.-]{1,20}$/) ?? '', events }
+  const provider = b.provider === 'codex' || b.provider === 'antigravity' ? b.provider : 'claude'
+  return { provider, version: word(b.version, /^[\w.-]{1,20}$/) ?? '', events }
 }
 
 /** POST /v1/plugin-log, with the device token. */
@@ -49,7 +50,7 @@ export async function pluginLogIngest(req: Request, env: Env): Promise<Response>
   await recordDropped(env, dev.id, 'plugin_log', body)
   if (env.EVENTS && log.events.length) {
     const now = new Date().toISOString()
-    const service = log.provider === 'codex' ? 'codex-plugin' : 'claude-mod'
+    const service = log.provider === 'codex' ? 'codex-plugin' : log.provider === 'antigravity' ? 'antigravity-plugin' : 'claude-mod'
     const sql = 'INSERT INTO events (device_id, user_email, dedupe, ts, name, service, session_id, prompt_id, surface, attrs) VALUES (?, ?, ?, ?, ?, ?, \'\', \'\', \'\', ?)'
     await env.EVENTS.batch(log.events.map(({ kind, ...rest }) => env.EVENTS!.prepare(sql)
       .bind(dev.id, dev.user_email, crypto.randomUUID(), now, 'plugin.' + kind, service, JSON.stringify({ ...rest, version: log.version }))))

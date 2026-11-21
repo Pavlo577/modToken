@@ -39,7 +39,9 @@ export function renderLimits(): void {
   if (!kinds.length) {
     $('limits').replaceChildren(el('div', { class: 'empty' }, lp === 'codex'
       ? 'Ще немає даних про ліміти Codex. Їх надсилає плагін token-tracker для Codex, якого ставить команда встановлення (Пристрої → Додати пристрій; у Codex дозволь його хук): вони з\'являться після першої відповіді Codex.'
-      : 'Ще немає даних про ліміти. Їх надсилає мод token-tracker з пристроїв із підпискою (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Claude.'))
+      : lp === 'antigravity'
+        ? 'Ще немає даних про ліміти Antigravity. Їх надсилає плагін token-tracker / statusLine для Antigravity CLI (Пристрої → Додати пристрій): вони з\'являться після першої відповіді agy.'
+        : 'Ще немає даних про ліміти. Їх надсилає мод token-tracker з пристроїв із підпискою (Пристрої → Додати пристрій): вони з\'являться після першої відповіді Claude.'))
   } else {
     $('limits').replaceChildren(...kinds.map(([k, title, span]) => {
       const l = latest[k], pct = Math.min(100, l.percent)

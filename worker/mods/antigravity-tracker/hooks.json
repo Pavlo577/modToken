@@ -1,0 +1,37 @@
+{
+  "token-tracker": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/plugins/token-tracker/hooks/activity.py SessionStart",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/plugins/token-tracker/hooks/activity.py PreInvocation",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.gemini/config/plugins/token-tracker/hooks/activity.py Stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

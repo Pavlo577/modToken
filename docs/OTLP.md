@@ -24,7 +24,7 @@ Token Tracker takes **OpenTelemetry only**: an agent exports its API-request eve
 **The structure the Worker extracts: one `ModelCall` per request to the model (agent-neutral).**
 ```ts
 type ModelCall = {
-  provider: 'claude' | 'codex' | 'gemini' | 'mistral'  // from the device's setting / resource service.name
+  provider: 'claude' | 'codex' | 'antigravity' | 'gemini' | 'mistral'  // from the device's setting / resource service.name
   call_id: string        // idempotency key: the same call sent twice is counted once
   session_id: string     // the conversation
   turn_key: string       // what groups calls into one turn
@@ -38,17 +38,19 @@ type ModelCall = {
   is_subagent: boolean
 }
 ```
-| Field | Claude Code (**verified** in its monitoring docs: event `claude_code.api_request`) | Codex (`openai/codex` crate `codex-rs/otel`; **seen** from Codex Desktop 0.146) | Gemini CLI / Mistral Vibe (**not verified**: read their telemetry docs first) |
-|---|---|---|---|
-| service | `claude-code`, `claude-code-desktop` ... | any name starting with `codex`: Codex Desktop sends `codex-app-server` (originator `Codex_Desktop`); the CLI names are not verified | |
-| event | `claude_code.api_request` | `codex.sse_event` with `event.kind` = `response.completed`; `codex.user_prompt` for the turn | |
-| `call_id` | `request_id` | none in the event: `conversation.id` + `timeUnixNano` | the agent's request id; else a hash of `(session, timeUnixNano, sequence)` |
-| `session_id` | `session.id` | `conversation.id` | the agent's session / thread attribute |
-| `turn_key` | `prompt.id` | none on the call (only `codex.turn_cost` has `turn.id`): each call is a `step` row, each `codex.user_prompt` a `main` row with no tokens | `prompt_id` (Gemini) / trace id (Mistral) |
-| `ts` | `timeUnixNano` (or `event.timestamp`) | the same | the same |
-| tokens | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | (`input_token_count`, `output_token_count` arrive as **strings** of digits, the others as numbers) `input_token_count` minus `cached_token_count` and `cache_write_token_count` (the input includes both: Codex's own `non_cached_input()` subtracts the cached part); `output_token_count` (reasoning included); `cached_token_count`; `cache_write_token_count` | Gemini counts cached inside input: subtract it |
-| `duration_ms` | `duration_ms` | none on the call: from the session's last `codex.websocket_request` before it to the completed response, read from the events database at arrival (0 when that request is not there) | the agent's duration attribute |
-| `is_subagent` | `agent_id` / `query_source` | false; a session Codex started by itself (its `codex.conversation_starts` has `approval_policy` never and `sandbox_policy` read-only: the chat title, a read-only look at the project) has `bg` rows, not turns | from the agent's metadata, never from text |
+| Field | Claude Code (**verified** in its monitoring docs: event `claude_code.api_request`) | Codex (`openai/codex` crate `codex-rs/otel`; **seen** from Codex Desktop 0.146) | Antigravity CLI (`agy`; **documented** `statusLine` JSON + plugin hooks in `mods/antigravity-tracker`) | Gemini CLI / Mistral Vibe (**not verified**: read their telemetry docs first) |
+|---|---|---|---|---|
+| service | `claude-code`, `claude-code-desktop` ... | any name starting with `codex`: Codex Desktop sends `codex-app-server` (originator `Codex_Desktop`); the CLI names are not verified | `antigravity-cli` (any name starting with `antigravity`) | |
+| event | `claude_code.api_request` | `codex.sse_event` with `event.kind` = `response.completed`; `codex.user_prompt` for the turn | `antigravity.api_request` | |
+| `call_id` | `request_id` | none in the event: `conversation.id` + `timeUnixNano` | `request_id` (`<conversation_id>:sl:<seq>`) | the agent's request id; else a hash of `(session, timeUnixNano, sequence)` |
+| `session_id` | `session.id` | `conversation.id` | `session.id` (`conversation_id`) | the agent's session / thread attribute |
+| `turn_key` | `prompt.id` | none on the call (only `codex.turn_cost` has `turn.id`): each call is a `step` row, each `codex.user_prompt` a `main` row with no tokens | `prompt.id` (active turn id from `PreInvocation` hook, else per-delta turn id) | `prompt_id` (Gemini) / trace id (Mistral) |
+| `ts` | `timeUnixNano` (or `event.timestamp`) | the same | the same | the same |
+| tokens | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` | (`input_token_count`, `output_token_count` arrive as **strings** of digits, the others as numbers) `input_token_count` minus `cached_token_count` and `cache_write_token_count` (the input includes both: Codex's own `non_cached_input()` subtracts the cached part); `output_token_count` (reasoning included); `cached_token_count`; `cache_write_token_count` | `input_tokens` (new non-cached input delta), `output_tokens`, `cache_read_tokens`, `cache_creation_tokens` (from `statusLine` `context_window` deltas) | Gemini counts cached inside input: subtract it |
+| `duration_ms` | `duration_ms` | none on the call: from the session's last `codex.websocket_request` before it to the completed response, read from the events database at arrival (0 when that request is not there) | `duration_ms` (elapsed ms since previous snapshot or `PreInvocation` start) | the agent's duration attribute |
+| `is_subagent` | `agent_id` / `query_source` | false; a session Codex started by itself (its `codex.conversation_starts` has `approval_policy` never and `sandbox_policy` read-only: the chat title, a read-only look at the project) has `bg` rows, not turns | `agent_id` / `query_source` (`subagent` when `cost.subagent_usd` accounts for the delta) | from the agent's metadata, never from text |
+
+**Antigravity CLI setup**: Antigravity CLI (`agy`) has no built-in OTLP exporter, so `scripts/install-antigravity.sh` / `install-antigravity.ps1` installs the Antigravity plugin `token-tracker` (`worker/mods/antigravity-tracker`) in `~/.gemini/config/plugins/token-tracker`, stores `{ site, token }` in `~/.gemini/antigravity-cli/token-tracker/config.json` (`chmod 600`), and registers a `statusLine` command in `~/.gemini/antigravity-cli/settings.json` (`stack_with_default: true`, chaining any existing user `statusLine`). On each state update the `statusLine` bridge (`hooks/statusline.py`, Windows `.ps1`) reads only numeric token/cost/quota fields from Antigravity's documented `statusLine` JSON payload (never `email`, `conversation_title`, `cwd`, or `transcript_path`), emits per-delta `antigravity.api_request` OTLP/HTTP JSON records to `POST /v1/logs` and subscription quota snapshots to `POST /v1/limits` (`provider: "antigravity"`), and detaches network calls so the TUI status line never stalls. Plugin hooks (`hooks/activity.py` / `.ps1` on `SessionStart`, `PreInvocation`, `Stop`) send sessions and turn timings (`wall_ms`, `think_ms`, `context_pct`, `project` per `GET /v1/config`) to `POST /v1/activity` (`provider: "antigravity"`) and health reports to `POST /v1/plugin-log`.
 
 **Codex setup**: `scripts/install-codex.sh` / `install-codex.ps1` (the dashboard's "Add device" box shows the line) writes this into `~/.codex/config.toml` between marker lines; by hand it is (`protocol` has no default and must be given, the Worker reads JSON):
 ```toml

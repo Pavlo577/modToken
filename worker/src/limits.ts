@@ -12,9 +12,11 @@ const MAX_LIMITS = 8
 
 export type LimitReading = { kind: string; percent: number; resets_at: string }
 
-/** Whose limits they are: `codex`, or `claude` (the mod, which does not say). */
-export const limitsProvider = (body: unknown): 'claude' | 'codex' =>
-  body && typeof body === 'object' && (body as { provider?: unknown }).provider === 'codex' ? 'codex' : 'claude'
+/** Whose limits they are: `codex`, `antigravity`, or `claude` (the mod, which does not say). */
+export const limitsProvider = (body: unknown): 'claude' | 'codex' | 'antigravity' => {
+  const p = body && typeof body === 'object' ? (body as { provider?: unknown }).provider : undefined
+  return p === 'codex' || p === 'antigravity' ? p : 'claude'
+}
 
 /** The readings of a request body that are well formed (unknown fields and malformed readings are dropped). */
 export function parseLimits(body: unknown): LimitReading[] | null {

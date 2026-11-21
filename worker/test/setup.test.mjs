@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { antigravityInstallPs, antigravityInstallSh, cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -92,7 +92,7 @@ test('setup: install-codex.sh writes its [otel] block once, replaces it on a sec
 test('setup: each agent and place gets one best way first and the manual settings last; the token is where it must be', () => {
   const O = 'https://x.test', T = 'tok-123'
   const codeOf = steps => steps.map(st => st.code ?? '').join('\n')
-  for (const agent of ['claude', 'codex']) for (const place of ['windows', 'linux', 'cloud']) {
+  for (const agent of ['claude', 'codex', 'antigravity']) for (const place of ['windows', 'linux', 'cloud']) {
     const plan = setupPlan(agent, place, O, T)
     assert.ok(plan.steps.length > 0 && plan.manual.length > 0, `${agent}/${place}`)
     assert.ok(codeOf(plan.steps).includes(T) && codeOf(plan.manual).includes(T), `${agent}/${place}: the token`)
@@ -102,6 +102,8 @@ test('setup: each agent and place gets one best way first and the manual setting
   assert.equal(setupPlan('claude', 'linux', O, T).steps[0].code, pcInstallSh(O, T))
   assert.equal(setupPlan('codex', 'windows', O, T).steps[0].code, codexInstallPs(O, T))
   assert.equal(setupPlan('codex', 'linux', O, T).steps[0].code, codexInstallSh(O, T))
+  assert.equal(setupPlan('antigravity', 'windows', O, T).steps[0].code, antigravityInstallPs(O, T))
+  assert.equal(setupPlan('antigravity', 'linux', O, T).steps[0].code, antigravityInstallSh(O, T))
   assert.ok(codeOf(setupPlan('codex', 'linux', O, T).manual).includes('protocol = "json"'))
   // the claude.ai/code setup script cannot read the environment: the token goes into the variables only, never into the script line
   const cloud = setupPlan('claude', 'cloud', O, T)
@@ -118,5 +120,7 @@ test('setup: a device shown again gets its last choice, else what its data and n
   assert.deepEqual(guessSetup('cloud', [], undefined, def), { agent: 'claude', place: 'cloud' })
   assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'codex', place: 'cloud' }, def), { agent: 'codex', place: 'cloud' })
   assert.deepEqual(guessSetup('codex-ubuntu', [], undefined, { agent: 'claude', place: 'windows' }), { agent: 'codex', place: 'linux' })
+  assert.deepEqual(guessSetup('linux-agy', [], undefined, def), { agent: 'antigravity', place: 'linux' })
+  assert.deepEqual(guessSetup('box', ['antigravity'], undefined, def), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'nope' }, def), def) // unknown saved values and two agents: the defaults
 })

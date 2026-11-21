@@ -6,7 +6,7 @@ import { pluginLogRead } from '../pluginlog.ts'
 import { json, str, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
-const PROVIDERS = ['claude', 'codex'] as const // the agents a device can send from (token_events.provider)
+const PROVIDERS = ['claude', 'codex', 'antigravity'] as const // the agents a device can send from (token_events.provider)
 const isMode = (v: unknown): v is (typeof PROJECT_MODES)[number] => typeof v === 'string' && (PROJECT_MODES as readonly string[]).includes(v)
 
 export const deviceRoutes: Routes = async ({ req, env, email, path }) => {

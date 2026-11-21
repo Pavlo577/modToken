@@ -4,7 +4,7 @@ import { int, str } from './util.ts'
 
 /** One request to the model, whatever the agent. */
 export interface ModelCall {
-  provider: 'claude' | 'codex'
+  provider: 'claude' | 'codex' | 'antigravity'
   /** The same call sent twice is counted once. */
   call_id: string
   session_id: string
@@ -152,18 +152,45 @@ export function codexCallMs(ts: string, request: string | null, previous: string
   return ms > 0 && ms <= 3 * 60_000 ? ms : 0 // the receiver looks for the request 3 minutes back at most (CODEX_CALL_WINDOW)
 }
 
+/**
+ * Antigravity CLI (`agy`): the `antigravity.api_request` event (sent by the token-tracker statusLine bridge in mods/antigravity-tracker,
+ * or any OTLP exporter using the same GenAI/Claude-compatible attribute names). `input_tokens` holds new non-cached input only.
+ */
+function antigravityCall(a: Attrs, rec: LogRecord): ModelCall | null {
+  const name = (text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : '')).replace(/^antigravity\./, '')
+  if (name !== 'api_request') return null
+  const ts = isoFromNanos(rec.timeUnixNano) || (Date.parse(text(a, 'event.timestamp')) ? new Date(text(a, 'event.timestamp')).toISOString() : '')
+  const input = count(a, 'input_tokens'), output = count(a, 'output_tokens'), read = count(a, 'cache_read_tokens'), write = count(a, 'cache_creation_tokens')
+  if (!ts || input + output + read + write === 0) return null
+  const session = text(a, 'session.id')
+  const call = text(a, 'request_id') || `${session}:${rec.timeUnixNano ?? ts}:${text(a, 'event.sequence')}`
+  const source = text(a, 'query_source')
+  const kind: CallKind = text(a, 'agent_id') !== '' || source === 'subagent' || source.startsWith('agent:') ? 'sub' : MAIN_SOURCES.has(source) ? 'main' : 'bg'
+  const model = text(a, 'model') || 'unknown'
+  const prompt = text(a, 'prompt.id') || str(call)
+  return {
+    provider: 'antigravity', call_id: str(call), session_id: session, turn_key: kind === 'main' ? prompt : `${prompt}:${kind}:${model}`, ts, kind,
+    model, input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: write,
+    duration_ms: count(a, 'duration_ms'),
+    cost_micros: count(a, 'cost_usd_micros') || (typeof a.get('cost_usd') === 'number' ? Math.round((a.get('cost_usd') as number) * 1e6) : 0),
+    is_subagent: kind === 'sub',
+  }
+}
+
 /** Which agent an exporter is, by its `service.name`; one adapter per agent (Gemini and Mistral follow once their telemetry is read). */
 const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) | undefined> = {
   'claude-code': claudeCall,
   codex: codexCall,
+  'antigravity-cli': antigravityCall,
 }
 
 /**
  * `claude-code` (terminal), `claude-code-desktop` (the Claude app) and the like: one adapter, matched by the start of the name. Codex names
  * the service after its originator (codex_cli_rs, codex_exec, codex_vscode ...), so every name that starts with `codex` is Codex.
+ * Antigravity CLI and its plugin send `antigravity-cli` (or any `antigravity*` service name).
  */
 const adapterFor = (service: string) =>
-  ADAPTERS[service] ?? (service.startsWith('claude-code') ? ADAPTERS['claude-code'] : service.startsWith('codex') ? ADAPTERS.codex : undefined)
+  ADAPTERS[service] ?? (service.startsWith('claude-code') ? ADAPTERS['claude-code'] : service.startsWith('codex') ? ADAPTERS.codex : service.startsWith('antigravity') ? ADAPTERS['antigravity-cli'] : undefined)
 
 export const MAX_RECORDS = 5000
 

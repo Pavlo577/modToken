@@ -40,7 +40,7 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
   const to = Date.parse(url.searchParams.get('to') ?? '') || Date.now() + 86_400_000
   const from = Math.max(Date.parse(url.searchParams.get('from') ?? '') || to - 30 * 86_400_000, to - 400 * 86_400_000)
   const a = new Date(from).toISOString(), b = new Date(to).toISOString()
-  const provider = ['claude', 'codex'].includes(url.searchParams.get('provider') ?? '') ? url.searchParams.get('provider')! : null
+  const provider = ['claude', 'codex', 'antigravity'].includes(url.searchParams.get('provider') ?? '') ? url.searchParams.get('provider')! : null
   const all = <T>(sql: string) => env.DB.prepare(sql).bind(email, a, b, ...(provider ? [provider] : [])).all<T>().then(r => r.results)
   const only = (col: string) => (provider ? ` AND ${col} = ?4` : '') // one agent's rows, when the page shows one
 
@@ -58,7 +58,7 @@ export const modStatsRoutes: Routes = async ({ req, env, url, email, path }) => 
       WHERE e.user_email = ?1 AND e.ts >= ?2 AND e.ts < ?3${only('e.provider')} GROUP BY s.project ORDER BY output DESC LIMIT 100`),
     // why sessions came without a project (the mod's word: off, no_repo, config_failed ...)
     all<{ note: string | null; n: number }>(`SELECT project_note AS note, COUNT(*) AS n FROM mod_sessions WHERE user_email = ?1 AND started_at >= ?2 AND started_at < ?3${only('provider')} AND project IS NULL GROUP BY note ORDER BY n DESC`),
-    provider === 'claude' ? Promise.resolve(NO_DECISIONS) : codexPermissions(env, email, a, b),
+    provider && provider !== 'codex' ? Promise.resolve(NO_DECISIONS) : codexPermissions(env, email, a, b),
     // the projects by day (UTC days): where the tokens went over time
     all<{ day: string; project: string | null; output: number; cost_micros: number }>(
       `SELECT substr(e.ts, 1, 10) AS day, s.project, SUM(e.output_tokens) AS output, SUM(e.cost_micros) AS cost_micros

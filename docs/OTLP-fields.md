@@ -14,7 +14,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `prompt.id` | id | ties all events of one user prompt together (absent on start-up events) | column |
 | `terminal.type` | string | the surface: non-interactive (Claude app), ssh-session, pycharm, linux (cloud) ... | column |
 | `ccr.session.id` | id | the cloud session id (cse_...) *(only: cloud sessions)* | stored |
-| `service.name` | string | the program: claude-code, claude-code-desktop (a resource attribute; in the Claude app also on the record) | column |
+| `service.name` | string | the program: claude-code, claude-code-desktop, codex-*, antigravity-cli (a resource attribute; in the Claude app also on the record) | column |
 | `service.version` | string | version of the program *(only: Claude app)* | stored |
 | `claude.deployment_mode` | string | how Claude runs (1p = first party) *(only: Claude app)* | stored |
 | `os.type` | string | operating system *(only: Claude app)* | stored |
@@ -27,6 +27,22 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `user.id` | id | anonymous id of this installation (differs per machine) | identity |
 | `organization.id` | id | the organization uuid | identity |
 | `wsl.version` | string | WSL version, only when running on Windows Subsystem for Linux *(only: WSL)* *(documented only)* | stored |
+
+## `antigravity.api_request`
+| field | type | meaning | handling |
+|---|---|---|---|
+| `input_tokens` | int | new input of the call, cache excluded | counted |
+| `output_tokens` | int | what the model wrote | counted |
+| `cache_read_tokens` | int | input served from the cache | counted |
+| `cache_creation_tokens` | int | input written to the cache (1h + 5m) | counted |
+| `duration_ms` | int | how long the call / tool / connection took | counted |
+| `model` | string | model id | counted |
+| `effort` | string | thinking effort setting (medium ...) | stored |
+| `cost_usd` | float | the agent's own price estimate of the call in dollars | counted |
+| `cost_usd_micros` | int | the same in millionths of a dollar | counted |
+| `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
+| `query_source` | string | who asked: repl_main_thread (you), sdk (app / cloud), subagent or agent:<type> (a sub-agent call), anything else a background request (prompt_suggestion, generate_session_title, away_summary ...); sub-agent and background calls get turn rows of their own | counted |
+| `agent_id` | id | set on sub-agent calls only; makes the call a sub-agent call *(documented only)* | counted |
 
 ## `api_error`
 | field | type | meaning | handling |
@@ -66,7 +82,7 @@ Generated from `worker/src/otlp-fields.ts` by `bun run fields`; do not edit by h
 | `model` | string | model id | counted |
 | `speed` | string | normal or fast | stored |
 | `effort` | string | thinking effort setting (medium ...) | stored |
-| `cost_usd` | float | Claude Code's own price estimate of the call in dollars | counted |
+| `cost_usd` | float | the agent's own price estimate of the call in dollars | counted |
 | `cost_usd_micros` | int | the same in millionths of a dollar | counted |
 | `request_id` | id | the API request id; the call id of the counting (a call is counted once) | counted |
 | `client_request_id` | id | client-side id of the request | stored |

@@ -19,6 +19,7 @@ export const devColor = (name: string): string => PALETTE[Math.max(0, seenDevice
 const PROVIDERS: Record<string, { label: string; color: string }> = {
   claude: { label: 'Claude', color: '#ff7a1a' },
   codex: { label: 'Codex', color: '#35c98c' },
+  antigravity: { label: 'Antigravity', color: '#6fd3e8' },
   gemini: { label: 'Gemini', color: '#3d8bff' },
   mistral: { label: 'Mistral', color: '#ffc24a' },
   opencode: { label: 'OpenCode', color: '#9b7bff' },

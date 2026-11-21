@@ -33,8 +33,8 @@ function projectSelect(d: DeviceRow): HTMLElement {
 /** One entry of the plugins' own log (GET /api/admin/plugin-log): a kind, counts, an error's type and stage, the plugin's version. */
 interface PluginEntry { device_id: string; ts: string; kind: string; service: string; n?: number; total?: number; error?: string; stage?: string; version?: string }
 
-const PLUGIN_NAME: Record<string, string> = { 'codex-plugin': 'Плагін Codex', 'claude-mod': 'Мод Claude' }
-const STAGE: Record<string, string> = { limits: 'ліміти', history: 'імпорт історії', import: 'імпорт історії' }
+const PLUGIN_NAME: Record<string, string> = { 'codex-plugin': 'Плагін Codex', 'claude-mod': 'Мод Claude', 'antigravity-plugin': 'Плагін Antigravity' }
+const STAGE: Record<string, string> = { limits: 'ліміти', history: 'імпорт історії', import: 'імпорт історії', statusline: 'статус-бар', activity: 'активність' }
 
 const ago = (ts: string): string => {
   const m = Math.round((Date.now() - Date.parse(ts)) / 60_000)
@@ -53,7 +53,7 @@ function entryText(e: PluginEntry): string {
   }
 }
 
-const SERVICE_OF: Record<string, string> = { claude: 'claude-mod', codex: 'codex-plugin' }
+const SERVICE_OF: Record<string, string> = { claude: 'claude-mod', codex: 'codex-plugin', antigravity: 'antigravity-plugin' }
 /** The plugin sends its limits after every turn (to the log at most once an hour): silent when the agent worked over two hours after them. */
 const SILENT_MS = 2 * 3_600_000
 

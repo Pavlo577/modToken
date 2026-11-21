@@ -13,20 +13,22 @@ export const MAX_IMPORT_BODY = 1_000_000
 
 export interface ImportResult { added: number; received: number; skipped_live: number; invalid: number }
 
-export type ImportProvider = 'claude' | 'codex'
-/** Whose history it is: `codex` (the Codex plugin says so), or `claude` (the mod and the dashboard, which do not say). */
-export const importProvider = (body: unknown): ImportProvider =>
-  body && typeof body === 'object' && (body as { provider?: unknown }).provider === 'codex' ? 'codex' : 'claude'
+export type ImportProvider = 'claude' | 'codex' | 'antigravity'
+/** Whose history it is: `codex`, `antigravity`, or `claude` (the mod and the dashboard, which do not say). */
+export const importProvider = (body: unknown): ImportProvider => {
+  const p = body && typeof body === 'object' ? (body as { provider?: unknown }).provider : undefined
+  return p === 'codex' || p === 'antigravity' ? p : 'claude'
+}
 
 /**
  * Adds the well-formed turns from before the device's first OTLP call (later ones OTLP counted already); a turn imported twice counts once.
- * For Codex the limit is the device's first OTLP call from Codex: a device where Claude reported first may have older Codex history.
+ * For non-Claude agents the limit is the device's first OTLP call from that provider: a device where Claude reported first may have older history.
  */
 export async function importTurns(env: Env, email: string, dev: { id: string; otlp_since: string | null }, turns: unknown[], provider: ImportProvider = 'claude'): Promise<ImportResult> {
   // Anything from the time this device already reports through OTLP is counted there; importing it again would count it twice.
-  const limit = provider === 'codex'
-    ? (await env.DB.prepare(`SELECT ts FROM token_events WHERE user_email = ? AND provider = 'codex' AND device_id = ? AND turn_id >= 'otlp:' AND turn_id < 'otlp;' ORDER BY ts LIMIT 1`)
-        .bind(email, dev.id).first<{ ts: string }>())?.ts ?? '9999'
+  const limit = provider !== 'claude'
+    ? (await env.DB.prepare(`SELECT ts FROM token_events WHERE user_email = ? AND provider = ? AND device_id = ? AND turn_id >= 'otlp:' AND turn_id < 'otlp;' ORDER BY ts LIMIT 1`)
+        .bind(email, provider, dev.id).first<{ ts: string }>())?.ts ?? '9999'
     : dev.otlp_since ?? '9999'
   const latest = new Date(Date.now() + 86_400_000).toISOString()
 
