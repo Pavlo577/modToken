@@ -144,9 +144,12 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
 export function guessSetup(name: string, providers: string[], saved: { agent?: string; place?: string } | undefined, fallback: { agent: Agent; place: Place }): { agent: Agent; place: Place } {
   const agents: Agent[] = ['claude', 'codex', 'antigravity'], places: Place[] = ['windows', 'linux', 'cloud']
   const n = name.toLowerCase()
-  const agent = agents.find(a => a === saved?.agent)
-    ?? (providers.length === 1 && agents.includes(providers[0] as Agent) ? (providers[0] as Agent) : undefined)
-    ?? (n.includes('antigravity') || /\bagy\b/.test(n) ? 'antigravity' : n.includes('codex') ? 'codex' : n.includes('claude') ? 'claude' : fallback.agent)
+  const byName: Agent | undefined = n.includes('antigravity') || /(?:^|[^a-z])agy(?:$|[^a-z])/.test(n) ? 'antigravity' : n.includes('codex') ? 'codex' : n.includes('claude') ? 'claude' : undefined
+  const agent = (providers.length === 1 && agents.includes(providers[0] as Agent) ? (providers[0] as Agent) : undefined)
+    ?? (providers.length === 0 ? byName : undefined)
+    ?? agents.find(a => a === saved?.agent)
+    ?? byName
+    ?? fallback.agent
   const place = places.find(p => p === saved?.place)
     ?? (/win/.test(n) ? 'windows' : /cloud|хмар|remote|ccr|web/.test(n) ? 'cloud' : /linux|ubuntu|debian|fedora|mac|wsl/.test(n) ? 'linux' : fallback.place)
   return { agent, place }

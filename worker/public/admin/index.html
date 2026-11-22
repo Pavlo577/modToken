@@ -221,37 +221,87 @@
 
 
   <section id="tab-devices" class="tab hide">
-    <div class="card">
-      <h2>Додати пристрій</h2>
-      <p class="sub" style="margin-bottom:14px">Пристрій це одне місце, де працює агент: комп'ютер, сервер або хмарне середовище. Обери агента й місце, створи токен і виконай показані кроки.</p>
-      <div class="setup-pick" id="setup-pick">
-        <div class="pick"><span class="sub">Агент</span><div class="seg" id="setup-agent" role="group" aria-label="Агент"><button type="button" data-v="claude" aria-pressed="true">Claude Code</button><button type="button" data-v="codex" aria-pressed="false">Codex</button><button type="button" data-v="antigravity" aria-pressed="false">Antigravity</button></div></div>
-        <div class="pick"><span class="sub">Де працює</span><div class="seg" id="setup-place" role="group" aria-label="Де працює"><button type="button" data-v="windows" aria-pressed="false">Windows</button><button type="button" data-v="linux" aria-pressed="true">Ubuntu / macOS</button><button type="button" data-v="cloud" aria-pressed="false">Хмара</button></div></div>
+    <div class="grid cols2 dev-top-grid">
+      <div class="card">
+        <div class="card-head" style="margin-bottom:10px">
+          <div>
+            <h2>Додати пристрій</h2>
+            <p class="sub">Обери агента й середовище та натисни «Створити токен» — назва підтягнеться з комп'ютера автоматично.</p>
+          </div>
+        </div>
+        <div class="setup-pick" id="setup-pick">
+          <div class="pick"><span class="sub">Агент</span><div class="seg" id="setup-agent" role="group" aria-label="Агент"><button type="button" data-v="claude" aria-pressed="true">Claude Code</button><button type="button" data-v="codex" aria-pressed="false">Codex</button><button type="button" data-v="antigravity" aria-pressed="false">Antigravity</button></div></div>
+          <div class="pick"><span class="sub">Де працює</span><div class="seg" id="setup-place" role="group" aria-label="Де працює"><button type="button" data-v="windows" aria-pressed="false">Windows</button><button type="button" data-v="linux" aria-pressed="true">Ubuntu / macOS</button><button type="button" data-v="cloud" aria-pressed="false">Хмара</button></div></div>
+        </div>
+        <form id="new-device" class="dev-form">
+          <input id="dev-name" placeholder="Назва (необов'язково — авто з ПК)" maxlength="60">
+          <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
+            <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репо</option><option value="hash">Проєкт: хеш</option>
+          </select>
+          <button class="primary" type="submit">Створити токен</button>
+        </form>
+        <div id="setup-box" class="setup-result hide">
+          <p class="sub" id="setup-for" style="margin:0 0 8px"></p>
+          <div id="setup-steps"></div>
+          <div class="setup-foot">
+            <button type="button" class="sm-btn" id="setup-manual-btn">Встановити вручну</button>
+            <span class="note" style="margin:0">Токен показується один раз.</span>
+          </div>
+          <div id="setup-manual" class="hide"></div>
+        </div>
       </div>
-      <form id="new-device"><input id="dev-name" placeholder="Назва пристрою (необов'язково — визначиться автоматично)" maxlength="60">
-        <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
-          <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репозиторію</option><option value="hash">Проєкт: анонімний хеш</option>
-        </select><button class="primary" type="submit">Створити токен</button></form>
-      <p class="note">Команда встановлення також ставить у систему консольну програму <code>modtoken</code> (Windows PowerShell та Linux/macOS): запусти <code>modtoken</code> для меню, <code>modtoken update</code> щоб оновити всі плагіни й OTLP однією командою без повторного копіювання токена, або <code>modtoken doctor</code> для діагностики.</p>
-      <p class="note">Проєкт потрібен для зрізу «куди йдуть токени» на вкладці «Інсайти». Назва це <code>власник/репозиторій</code> з git remote; хеш дає ті самі групи без назви. Змінити можна будь-коли в списку пристроїв.</p>
-      <div id="setup-box" class="hide">
-        <p class="sub" id="setup-for" style="margin:16px 0 0"></p>
-        <div id="setup-steps"></div>
-        <button type="button" id="setup-manual-btn" style="margin-top:14px">Встановити вручну</button>
-        <div id="setup-manual" class="hide"></div>
-        <p class="note">Токен показується один раз і діє лише для надсилання даних. Потрібно встановити ще раз: «Новий токен» у списку пристроїв (дані пристрою лишаються).</p>
+
+      <div class="card modtoken-card">
+        <div class="card-head" style="margin-bottom:10px">
+          <div>
+            <h2>Консольна програма <code>modtoken</code></h2>
+            <p class="sub">Єдине меню в терміналі або PowerShell: сама знаходить уже введений токен на ПК, підключає й оновлює всі плагіни та OTLP.</p>
+          </div>
+        </div>
+        <div class="mt-block">
+          <div class="mt-row-head">
+            <span class="sub"><b>Windows</b> (PowerShell)</span>
+            <button type="button" class="sm-btn primary" id="copy-mt-win">Копіювати для Windows</button>
+          </div>
+          <pre class="snip mt-snip" id="mt-cmd-win"></pre>
+        </div>
+        <div class="mt-block">
+          <div class="mt-row-head">
+            <span class="sub"><b>Linux / macOS</b> (Термінал)</span>
+            <button type="button" class="sm-btn" id="copy-mt-sh">Копіювати для Linux / macOS</button>
+          </div>
+          <pre class="snip mt-snip" id="mt-cmd-sh"></pre>
+        </div>
+        <div class="mt-quick">
+          <span class="sub">Команди після встановлення (натисни, щоб скопіювати):</span>
+          <div class="mt-pills">
+            <button type="button" class="sm-btn" data-copy="modtoken" title="Відкрити інтерактивне меню"><code>modtoken</code> меню</button>
+            <button type="button" class="sm-btn" data-copy="modtoken update" title="Оновити всі плагіни, хуки та OTLP на ПК"><code>modtoken update</code> оновити все</button>
+            <button type="button" class="sm-btn" data-copy="modtoken doctor" title="Перевірити зв'язок із сервером, версії та хуки"><code>modtoken doctor</code> діагностика</button>
+          </div>
+        </div>
       </div>
     </div>
+
     <div class="card">
-      <h2>Імпорт історії</h2>
-      <p class="sub" style="margin-bottom:14px">Додай токени зі старих сесій Claude Code, які були до підключення OpenTelemetry. Файли читаються лише в браузері; на сервер йдуть тільки числа, назва моделі та id, без тексту розмов. Повторний імпорт нічого не дублює.</p>
-      <div class="row"><select id="hist-device" aria-label="Пристрій"></select>
+      <div class="card-head" style="margin-bottom:12px">
+        <div>
+          <h2>Мої пристрої за агентами</h2>
+          <p class="sub">Натисни <code>✎</code> біля назви, щоб перейменувати пристрій, або «+ Додати» у потрібному агенті.</p>
+        </div>
+      </div>
+      <div id="dev-list" class="dev-groups"></div>
+    </div>
+
+    <details class="more card">
+      <summary><b>Імпорт старої історії з файлів</b> <span class="sub">ручне завантаження логів Claude Code (<code>~/.claude/projects</code>) через браузер</span></summary>
+      <p class="sub" style="margin:12px 0">Файли читаються лише в браузері; на сервер йдуть тільки числа, назва моделі та id. Повторний імпорт нічого не дублює (пропущені сесії автоматично відновлюються).</p>
+      <div class="dtools"><select id="hist-device" aria-label="Пристрій"></select>
         <input id="hist-files" type="file" webkitdirectory multiple accept=".jsonl" aria-label="Папка з логами">
         <button class="primary" type="button" id="hist-go" disabled>Імпортувати</button></div>
-      <p class="note">Вибери папку <code>~/.claude/projects</code> (на Windows <code>%USERPROFILE%\.claude\projects</code>). Те, що вже надходить через OTLP, пропускається. Або без браузера: у Claude Code з модом token-tracker виконай <code>/tracker-import</code>, пристрій обирати не треба.</p>
+      <p class="note">Або без браузера: у Claude Code виконай <code>/tracker-import</code>, а в Codex історія підтягується автоматично хуком на старті сесії.</p>
       <p class="sub" id="hist-status" role="status"></p>
-    </div>
-    <div class="card"><h2 style="margin-bottom:6px">Мої пристрої</h2><div id="dev-list"></div></div>
+    </details>
   </section>
 </div>
 <script type="module" src="app.js"></script>

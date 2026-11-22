@@ -167,6 +167,7 @@ test('setup: a device shown again gets its last choice, else what its data and n
   assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'codex', place: 'cloud' }, def), { agent: 'codex', place: 'cloud' })
   assert.deepEqual(guessSetup('codex-ubuntu', [], undefined, { agent: 'claude', place: 'windows' }), { agent: 'codex', place: 'linux' })
   assert.deepEqual(guessSetup('linux-agy', [], undefined, def), { agent: 'antigravity', place: 'linux' })
+  assert.deepEqual(guessSetup('win-agy', [], { agent: 'codex', place: 'windows' }, def), { agent: 'antigravity', place: 'windows' })
   assert.deepEqual(guessSetup('box', ['antigravity'], undefined, def), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'nope' }, def), def) // unknown saved values and two agents: the defaults
 })

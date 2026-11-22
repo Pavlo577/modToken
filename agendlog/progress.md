@@ -50,3 +50,7 @@
   - Додано інтерактивне меню та команди `modtoken status`, `modtoken update`, `modtoken doctor`, `modtoken install [all|claude|codex|antigravity]`, `modtoken token <site> <token>`.
   - Реалізовано автовиявлення агентів на ПК і автоматичне підхоплення вже збереженого токена з Claude (`settings.json`), Codex (`config.toml`) або Antigravity (`token-tracker/config.json`) у `~/.modtoken/config.json`.
   - Усі інсталятори (`install*.{sh,ps1}`) автоматично ставлять команду `modtoken` у систему (`~/.local/bin/modtoken` на Linux/macOS та `%USERPROFILE%\.modtoken\modtoken.cmd` + User `PATH` на Windows).
+- [x] **Редизайн UI вкладки «Пристрої» та картка копіювання `modtoken` (`worker/public/admin/index.html`, `worker/public/admin/styles.css`, `worker/web/tabs/devices.ts`, `worker/web/lib/setup.ts`):**
+  - Додано окрему картку «Консольна програма `modtoken`» з командами та кнопками швидкого копіювання для Windows (PowerShell), Linux / macOS та швидких команд (`modtoken`, `modtoken update`, `modtoken doctor`).
+  - Рядки пристроїв переведено на вирівняну 2-колонкову сітку з компактною кнопкою перейменування `✎` біля назви, окремими картками-групами для кожного агента, згортанням відкликаних токенів у `<details class="revoked-fold">` та перенесенням «Імпорту старої історії» в розкривний блок унізу сторінки.
+  - Виправлено `guessSetup`, щоб пристрій без даних з явною назвою агента (наприклад, `win-agy`) завжди потрапляв у секцію свого агента (`Antigravity`), навіть якщо в `localStorage` лишився старий вибір.

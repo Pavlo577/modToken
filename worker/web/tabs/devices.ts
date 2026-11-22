@@ -3,7 +3,7 @@ import { load } from '../core/load.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
-import { guessSetup, setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
+import { guessSetup, modtokenCliPs, modtokenCliSh, setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
 
@@ -137,16 +137,17 @@ function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): 
     } catch (err) { alert('Не вдалося перейменувати: ' + (err as Error).message) }
   }
 
-  return el('div', { class: 'dev' },
-    el('div', {},
-      el('b', {}, d.name),
-      el('span', { class: 'dev-place', title: 'Середовище пристрою' }, PLACE_LABEL[pick.place]),
-      d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
-      ...otherAgents.sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Цей токен також надсилав дані від іншого агента' }, '+ ' + providerLabel(p))),
-      el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані')),
+  return el('div', { class: 'dev' + (d.revoked ? ' revoked' : '') },
+    el('div', { class: 'dev-main' },
+      el('div', { class: 'dev-title-row' },
+        el('b', { class: 'dev-name', title: 'Натисни, щоб перейменувати пристрій', onclick: doRename }, d.name),
+        el('button', { type: 'button', class: 'rename-btn', title: 'Перейменувати пристрій', 'aria-label': 'Перейменувати ' + d.name, onclick: doRename }, '✎'),
+        el('span', { class: 'dev-place', title: 'Середовище пристрою' }, PLACE_LABEL[pick.place]),
+        d.revoked ? el('span', { class: 'tag', style: 'margin-left:0' }, 'відкликано') : '',
+        ...otherAgents.sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Цей токен також надсилав дані від іншого агента' }, '+ ' + providerLabel(p)))),
+      el('small', {}, 'Додано ' + added + (seen ? ' · активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані')),
       pluginBox(sectionLog, sectionSeen)),
     el('div', { class: 'dev-actions' },
-      el('button', { type: 'button', title: 'Змінити назву цього пристрою', onclick: doRename }, 'Перейменувати'),
       ...(d.revoked ? [] : [
         projectSelect(d),
         el('button', { type: 'button', title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
@@ -183,6 +184,8 @@ export async function loadDevices(): Promise<DeviceRow[]> {
   }
   const groups = AGENTS.map(a => {
     const devs = byAgent.get(a) ?? []
+    const activeDevs = devs.filter(d => !d.revoked)
+    const revokedDevs = devs.filter(d => d.revoked)
     const color = providerColor(a)
     const label = providerLabel(a)
     return el('div', { class: 'dev-group' },
@@ -190,11 +193,16 @@ export async function loadDevices(): Promise<DeviceRow[]> {
         el('div', { class: 'dev-group-title' },
           el('i', { style: `background:${color}` }),
           el('span', {}, label),
-          el('span', { class: 'dev-group-count' }, `· ${countWord(devs.length)}`)),
+          el('span', { class: 'dev-group-count' }, `· ${countWord(activeDevs.length)}${revokedDevs.length ? ` (+${revokedDevs.length} відкл.)` : ''}`)),
         el('button', { type: 'button', class: 'dev-group-add', onclick: () => pickAgentForAdd(a) }, `+ Додати в ${label}`)),
-      ...(devs.length
-        ? devs.map(d => deviceRow(d, a, log))
-        : [el('div', { class: 'dev-group-empty' }, `Для ${label} ще немає підключених пристроїв.`)]))
+      ...(activeDevs.length
+        ? activeDevs.map(d => deviceRow(d, a, log))
+        : [el('div', { class: 'dev-group-empty' }, `Для ${label} немає активних пристроїв.`)]),
+      ...(revokedDevs.length
+        ? [el('details', { class: 'revoked-fold' },
+            el('summary', {}, `Відкликані пристрої (${revokedDevs.length})`),
+            ...revokedDevs.map(d => deviceRow(d, a, log)))]
+        : []))
   })
   $('dev-list').replaceChildren(...groups)
   fillHistoryDevices(list)
@@ -207,9 +215,9 @@ const withCode = (text: string): (string | HTMLElement)[] => text.split('`').map
 async function copyText(text: string, btn: HTMLElement): Promise<void> {
   try {
     await navigator.clipboard.writeText(text)
-    const t = btn.textContent
-    btn.textContent = 'Скопійовано'
-    setTimeout(() => (btn.textContent = t), 1500)
+    const prev = [...btn.childNodes]
+    btn.textContent = 'Скопійовано ✓'
+    setTimeout(() => btn.replaceChildren(...prev), 1500)
   } catch { alert('Не вдалося скопіювати, виділи текст вручну.') }
 }
 
@@ -247,6 +255,16 @@ export function initDevices(): void {
   const place = choice<Place>('setup-place', render)
   place.set(defaultPlace())
   updatePlaceholder()
+
+  // Populate the `modtoken` console manager card & its copy buttons
+  const winCmd = modtokenCliPs(), shCmd = modtokenCliSh()
+  $('mt-cmd-win').textContent = winCmd
+  $('mt-cmd-sh').textContent = shCmd
+  $('copy-mt-win').addEventListener('click', e => void copyText(winCmd, e.currentTarget as HTMLElement))
+  $('copy-mt-sh').addEventListener('click', e => void copyText(shCmd, e.currentTarget as HTMLElement))
+  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(btn => {
+    btn.addEventListener('click', () => void copyText(btn.dataset.copy ?? '', btn))
+  })
 
   pickAgentForAdd = (a: Agent) => {
     agent.set(a)
