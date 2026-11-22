@@ -54,5 +54,14 @@ if ($needDir) {
   $s.env | Add-Member -Force -NotePropertyName CLAUDE_CODE_PLUGIN_DIRS -NotePropertyValue ($cur -join ';')
   [System.IO.File]::WriteAllText($settings, ($s | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding $false))
 }
+try {
+  $mt = Join-Path $HOME '.modtoken'; New-Item -ItemType Directory -Force $mt | Out-Null
+  [System.IO.File]::WriteAllText((Join-Path $mt 'config.json'), (@{ site = $Origin; token = $Token } | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
+  Invoke-RestMethod "$raw/scripts/modtoken.ps1" -OutFile (Join-Path $mt 'modtoken.ps1')
+  [System.IO.File]::WriteAllText((Join-Path $mt 'modtoken.cmd'), "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $mt 'modtoken.ps1')`" %*`r`n", (New-Object System.Text.UTF8Encoding $false))
+  $up = [Environment]::GetEnvironmentVariable('Path', 'User'); $pts = @("$up" -split ';' | Where-Object { $_ })
+  if ($pts -notcontains $mt) { [Environment]::SetEnvironmentVariable('Path', (($pts + $mt) -join ';'), 'User') }
+  if (($env:PATH -split ';') -notcontains $mt) { $env:PATH = "$mt;$env:PATH" }
+} catch {}
 if ($env:COMPUTERNAME) { try { Invoke-RestMethod -Uri "$Origin/v1/config?agent=claude&host=$([Uri]::EscapeDataString($env:COMPUTERNAME))" -Headers @{ 'x-device-token' = $Token; 'User-Agent' = 'modToken-claude/1.0' } -TimeoutSec 3 | Out-Null } catch {} }
-Write-Host 'Готово. Перезапусти Claude Code (і Claude Desktop / IDE, якщо відкриті); стару історію додасть команда /tracker-import.'
+Write-Host 'Готово. Перезапусти Claude Code (і Claude Desktop / IDE, якщо відкриті); стару історію додасть команда /tracker-import (консольна програма керування й оновлення: modtoken).'

@@ -64,5 +64,14 @@ if ($chain) { $cfgObj.chain_command = $chain }
 
 Write-Host "  Плагін встановлено в $plugin"
 Write-Host "  statusLine підключено в $settingsPath"
+try {
+  $mt = Join-Path $HOME '.modtoken'; New-Item -ItemType Directory -Force $mt | Out-Null
+  [System.IO.File]::WriteAllText((Join-Path $mt 'config.json'), (@{ site = $Origin; token = $Token } | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
+  Invoke-RestMethod "$raw/scripts/modtoken.ps1" -OutFile (Join-Path $mt 'modtoken.ps1')
+  [System.IO.File]::WriteAllText((Join-Path $mt 'modtoken.cmd'), "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $mt 'modtoken.ps1')`" %*`r`n", (New-Object System.Text.UTF8Encoding $false))
+  $up = [Environment]::GetEnvironmentVariable('Path', 'User'); $pts = @("$up" -split ';' | Where-Object { $_ })
+  if ($pts -notcontains $mt) { [Environment]::SetEnvironmentVariable('Path', (($pts + $mt) -join ';'), 'User') }
+  if (($env:PATH -split ';') -notcontains $mt) { $env:PATH = "$mt;$env:PATH" }
+} catch {}
 if ($env:COMPUTERNAME) { try { Invoke-RestMethod -Uri "$Origin/v1/config?agent=antigravity&host=$([Uri]::EscapeDataString($env:COMPUTERNAME))" -Headers @{ 'x-device-token' = $Token; 'User-Agent' = 'modToken-antigravity/1.0' } -TimeoutSec 3 | Out-Null } catch {} }
-Write-Host "Готово. Перезапусти Antigravity CLI (agy); дані з'являться на дашборді після першої відповіді."
+Write-Host "Готово. Перезапусти Antigravity CLI (agy); дані з'являться на дашборді після першої відповіді (консольна програма керування й оновлення: modtoken)."

@@ -46,3 +46,7 @@
   - Розділено список «Мої пристрої» на 3 секції агентів (`Claude Code`, `Codex`, `Antigravity`) зі швидким додаванням `+ Додати в ...` і бейджем середовища (`Windows`, `Ubuntu / macOS`, `Хмара`).
   - Додано перейменування пристроїв (`PATCH /api/admin/devices/:id` з `{ name }` + кнопка «Перейменувати» в UI).
   - Зроблено назву пристрою необов'язковою при створенні токена: сервер генерує `<agent>-<place>(-N)`, а під час виконання інсталятора на ПК (`GET /v1/config?agent=...&host=...`) автоматично оновлює тимчасову автоназву на `<agent>-<hostname>`, не зачіпаючи власні назви користувача.
+- [x] **Консольна програма `modtoken` для Windows та Linux/macOS (`worker/scripts/modtoken.sh`, `worker/scripts/modtoken.ps1`, `worker/scripts/install*.{sh,ps1}`, `worker/web/lib/setup.ts`, `worker/public/admin/index.html`, `worker/test/setup.test.mjs`):**
+  - Додано інтерактивне меню та команди `modtoken status`, `modtoken update`, `modtoken doctor`, `modtoken install [all|claude|codex|antigravity]`, `modtoken token <site> <token>`.
+  - Реалізовано автовиявлення агентів на ПК і автоматичне підхоплення вже збереженого токена з Claude (`settings.json`), Codex (`config.toml`) або Antigravity (`token-tracker/config.json`) у `~/.modtoken/config.json`.
+  - Усі інсталятори (`install*.{sh,ps1}`) автоматично ставлять команду `modtoken` у систему (`~/.local/bin/modtoken` на Linux/macOS та `%USERPROFILE%\.modtoken\modtoken.cmd` + User `PATH` на Windows).

@@ -107,5 +107,14 @@ if ($got) {
 
 if (-not $got) { Write-Host '  Не вдалося завантажити скрипти хуків: ліміти Codex не надсилатимуться' }
 elseif ($hooksOk) { Write-Host "  Хуки встановлено в $dir\hooks.json (працюють у Codex CLI, Desktop та IDE)" }
+try {
+  $mt = Join-Path $HOME '.modtoken'; New-Item -ItemType Directory -Force $mt | Out-Null
+  [System.IO.File]::WriteAllText((Join-Path $mt 'config.json'), (@{ site = $Origin; token = $Token } | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
+  Invoke-RestMethod "$raw/scripts/modtoken.ps1" -OutFile (Join-Path $mt 'modtoken.ps1')
+  [System.IO.File]::WriteAllText((Join-Path $mt 'modtoken.cmd'), "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $mt 'modtoken.ps1')`" %*`r`n", (New-Object System.Text.UTF8Encoding $false))
+  $up = [Environment]::GetEnvironmentVariable('Path', 'User'); $pts = @("$up" -split ';' | Where-Object { $_ })
+  if ($pts -notcontains $mt) { [Environment]::SetEnvironmentVariable('Path', (($pts + $mt) -join ';'), 'User') }
+  if (($env:PATH -split ';') -notcontains $mt) { $env:PATH = "$mt;$env:PATH" }
+} catch {}
 if ($env:COMPUTERNAME) { try { Invoke-RestMethod -Uri "$Origin/v1/config?agent=codex&host=$([Uri]::EscapeDataString($env:COMPUTERNAME))" -Headers @{ 'x-device-token' = $Token; 'User-Agent' = 'modToken-codex/1.0' } -TimeoutSec 3 | Out-Null } catch {} }
-Write-Host "Готово. Перезапусти Codex і схвали хуки (/hooks або Settings → Hooks → Review hooks); дані з'являться після першого запиту."
+Write-Host "Готово. Перезапусти Codex і схвали хуки (/hooks або Settings → Hooks → Review hooks); дані з'являться після першого запиту (консольна програма керування й оновлення: modtoken)."

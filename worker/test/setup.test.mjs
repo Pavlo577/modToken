@@ -126,7 +126,7 @@ test('setup: install.sh sets CLAUDE_CODE_PLUGIN_DIRS when claude CLI is missing'
 })
 
 test('setup: PowerShell installers have no UTF-8 BOM and install.ps1 writes BOM-free UTF-8', () => {
-  for (const name of ['install.ps1', 'install-codex.ps1', 'install-antigravity.ps1']) {
+  for (const name of ['install.ps1', 'install-codex.ps1', 'install-antigravity.ps1', 'modtoken.ps1']) {
     const buf = readFileSync(new URL('../scripts/' + name, import.meta.url))
     assert.equal(buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf, false, `${name} must not start with UTF-8 BOM`)
     assert.ok(buf.subarray(0, 2).toString('utf8') === '# ', `${name} starts with comment`)
@@ -182,4 +182,49 @@ test('setup: autoDeviceName and hostDeviceName build unique names and never over
   assert.equal(hostDeviceName('claude-windows-2', 'claude', 'DESKTOP-IOOOI', ['claude-DESKTOP-IOOOI']), 'claude-DESKTOP-IOOOI-2')
   assert.equal(hostDeviceName('my-custom-pc', 'claude', 'DESKTOP-IOOOI', []), null)
   assert.equal(hostDeviceName('claude-linux', 'claude', 'localhost', []), null)
+})
+
+test('setup: modtoken.sh auto-discovers existing token on PC, updates all detected agents, runs doctor, and never prints full token', () => {
+  const root = mkdtempSync(join(tmpdir(), 'tt-modtoken-'))
+  const mtHome = join(root, 'mt'), binDir = join(root, 'bin')
+  const claudeDir = join(root, 'claude'), codexDir = join(root, 'codex'), agyCli = join(root, 'agy-cli'), agyCfg = join(root, 'agy-cfg')
+  const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+  const secretToken = 'deadbeef1234567890cafebabe9876543210'
+  // Pre-configure only Claude on this PC; Codex folder exists but is unconfigured
+  spawnSync('bash', [new URL('../scripts/install.sh', import.meta.url).pathname, 'https://x.test', secretToken], {
+    env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir, TT_RAW: raw, PATH: '/usr/bin:/bin' }, encoding: 'utf8',
+  })
+  writeFileSync(join(root, 'dummy'), '')
+  spawnSync('mkdir', ['-p', codexDir, agyCli, agyCfg])
+
+  const runMt = (...args) => spawnSync('bash', [new URL('../scripts/modtoken.sh', import.meta.url).pathname, ...args], {
+    env: {
+      ...process.env, TT_RAW: raw, MODTOKEN_HOME: mtHome, MODTOKEN_BIN_DIR: binDir,
+      CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir, ANTIGRAVITY_CLI_DIR: agyCli, GEMINI_CONFIG_DIR: agyCfg,
+      PATH: '/usr/bin:/bin',
+    },
+    encoding: 'utf8',
+  })
+
+  // 1. status auto-discovers token from Claude settings.json, masks it, and saves ~/.modtoken/config.json
+  const st = runMt('status')
+  assert.equal(st.status, 0, st.stderr)
+  assert.equal(st.stdout.includes(secretToken), false, 'full token must never be printed')
+  assert.ok(st.stdout.includes('dead…3210'))
+  assert.deepEqual(JSON.parse(readFileSync(join(mtHome, 'config.json'), 'utf8')), { site: 'https://x.test', token: secretToken })
+
+  // 2. update installs/updates Codex and Antigravity too using the discovered token without passing it again
+  const up = runMt('update')
+  assert.equal(up.status, 0, up.stderr)
+  assert.equal(up.stdout.includes(secretToken), false)
+  assert.ok(existsSync(join(binDir, 'modtoken')))
+  assert.ok(readFileSync(join(codexDir, 'config.toml'), 'utf8').includes(secretToken))
+  assert.ok(existsSync(join(codexDir, 'hooks.json')))
+  assert.ok(readFileSync(join(agyCli, 'token-tracker', 'config.json'), 'utf8').includes(secretToken))
+
+  // 3. doctor checks versions and configs without leaking the token
+  const doc = runMt('doctor')
+  assert.equal(doc.status, 0, doc.stderr)
+  assert.equal(doc.stdout.includes(secretToken), false)
+  assert.ok(doc.stdout.includes('Діагностика (doctor):'))
 })

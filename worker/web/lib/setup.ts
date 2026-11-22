@@ -44,6 +44,8 @@ export const codexInstallPs = (origin: string, token: string): string => `& ([sc
 // (SessionStart, PreInvocation, Stop for session/turn activity), installed by scripts/install-antigravity.sh / .ps1.
 export const antigravityInstallSh = (origin: string, token: string): string => `curl -fsSL ${RAW_SCRIPTS}/install-antigravity.sh | bash -s -- ${origin.replace(/\/$/, '')} ${token}`
 export const antigravityInstallPs = (origin: string, token: string): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/install-antigravity.ps1))) ${origin.replace(/\/$/, '')} ${token}`
+export const modtokenCliSh = (): string => `curl -fsSL ${RAW_SCRIPTS}/modtoken.sh | bash`
+export const modtokenCliPs = (): string => `& ([scriptblock]::Create((irm ${RAW_SCRIPTS}/modtoken.ps1)))`
 export const antigravityConfigJson = (origin: string, token: string): string => JSON.stringify({ site: origin.replace(/\/$/, ''), token }, null, 2)
 export const antigravitySettingsJson = (win = false): string => JSON.stringify({
   statusLine: {
