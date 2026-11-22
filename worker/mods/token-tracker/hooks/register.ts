@@ -30,8 +30,18 @@ async function target($: EngineInterface): Promise<Target | undefined> {
   return origin && token ? { origin: origin.replace(/\/$/, ''), token } : undefined
 }
 
+let cachedHost: string | undefined
+async function hostName($: EngineInterface): Promise<string> {
+  if (cachedHost !== undefined) return cachedHost
+  let raw = (await $.env.get('COMPUTERNAME')) ?? (await $.env.get('HOSTNAME')) ?? ''
+  if (!raw) raw = (await $.fs.read('/etc/hostname').catch(() => null)) ?? ''
+  if (!raw) raw = (await $.process.run(['hostname'], { timeoutMs: 1500 }).catch(() => null))?.stdout ?? ''
+  cachedHost = raw.trim().split('.')[0].slice(0, 32)
+  return cachedHost
+}
+
 async function post($: EngineInterface, t: Target, path: string, body: unknown): Promise<boolean> {
-  const host = ((await $.env.get('COMPUTERNAME')) ?? (await $.env.get('HOSTNAME')) ?? '').split('.')[0].slice(0, 32)
+  const host = await hostName($)
   const r = await $.http.fetch(`${t.origin}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-device-token': t.token, 'user-agent': 'modToken-claude/' + MOD_VERSION, ...(host ? { 'x-device-host': host } : {}) },
@@ -275,7 +285,10 @@ export const register: Register = on => {
       lastTurnEnd = 0
       let mode = target_ ? 'config_failed' : 'no_target'
       if (target_) {
-        const c = await $.http.fetch(`${target_.origin}/v1/config`, { headers: { 'x-device-token': target_.token, 'user-agent': 'modToken-claude/' + MOD_VERSION } }).catch(() => undefined)
+        const host = await hostName($)
+        const c = await $.http.fetch(`${target_.origin}/v1/config`, {
+          headers: { 'x-device-token': target_.token, 'user-agent': 'modToken-claude/' + MOD_VERSION, ...(host ? { 'x-device-host': host } : {}) },
+        }).catch(() => undefined)
         if (c?.ok) try { mode = String((JSON.parse(c.text) as { project?: unknown }).project ?? 'off') } catch { /* config_failed */ }
       }
       const p = await project($, mode)

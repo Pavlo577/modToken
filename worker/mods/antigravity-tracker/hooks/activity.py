@@ -6,7 +6,7 @@
 # - Stop: ends the turn with wall_ms, think_ms, and context fill from statusline.py's state file.
 # Reads ONLY conversationId, workspacePaths (used locally for git remote only) and modelName from stdin; never lastUserInput or transcriptPath.
 # Always prints `{}` to stdout and exits 0 so Antigravity is never blocked.
-import hashlib, json, os, re, subprocess, sys, tempfile, time, urllib.request
+import hashlib, json, os, re, socket, subprocess, sys, tempfile, time, urllib.request
 from datetime import datetime, timezone
 
 CLI_DIR = os.environ.get('ANTIGRAVITY_CLI_DIR') or os.path.join(os.path.expanduser('~'), '.gemini', 'antigravity-cli')
@@ -70,10 +70,11 @@ def site_and_token():
 
 
 def call(site, token, path, body=None, timeout=5):
+    host = (socket.gethostname() or '').split('.')[0][:32]
     req = urllib.request.Request(
         site + path,
         data=None if body is None else json.dumps(body).encode('utf-8'),
-        headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-antigravity/1.0'},
+        headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-antigravity/1.0', **({'x-device-host': host} if host else {})},
         method='GET' if body is None else 'POST',
     )
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read() or b'{}')

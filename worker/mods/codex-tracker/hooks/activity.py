@@ -10,7 +10,7 @@
 # - SessionEnd: the session's end.
 # Of the hook's input only hook_event_name, session_id, turn_id, transcript_path, cwd and reason are read: never the prompt, nor the last
 # answer. Between hooks the times live in the plugin's data folder (activity/<session>.json). Nothing is printed; a hook never fails Codex.
-import hashlib, json, os, re, sys, time, urllib.request
+import hashlib, json, os, re, socket, sys, time, urllib.request
 from datetime import datetime, timezone
 
 HOME = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
@@ -41,8 +41,9 @@ def site_and_token():
 
 
 def call(site, token, path, body=None, timeout=5):
+    host = (socket.gethostname() or '').split('.')[0][:32]
     req = urllib.request.Request(site + path, data=None if body is None else json.dumps(body).encode(),
-                                 headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='GET' if body is None else 'POST')
+                                 headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0', **({'x-device-host': host} if host else {})}, method='GET' if body is None else 'POST')
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read() or b'{}')
 
 
