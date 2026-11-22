@@ -2,7 +2,7 @@
 import { load } from '../core/load.ts'
 import { providerColor, providerLabel } from '../core/palette.ts'
 import { api } from '../lib/api.ts'
-import { $, el } from '../lib/dom.ts'
+import { $, el, svg } from '../lib/dom.ts'
 import { guessSetup, modtokenCliPs, modtokenCliSh, setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
 import { fillHistoryDevices, initHistory } from './history.ts'
@@ -32,6 +32,18 @@ const AGENTS: Agent[] = ['claude', 'codex', 'antigravity']
 const PLACE_LABEL: Record<Place, string> = { windows: 'Windows', linux: 'Ubuntu / macOS', cloud: 'Хмара' }
 const SERVICE_AGENT: Record<string, Agent> = { 'claude-mod': 'claude', 'codex-plugin': 'codex', 'antigravity-plugin': 'antigravity' }
 const defaultPlace = (): Place => (typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent) ? 'windows' : 'linux')
+
+const icon = (paths: string[], size = 15): SVGElement =>
+  svg('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
+    ...paths.map(d => svg('path', { d })))
+
+const ICON_EDIT = ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z']
+const ICON_KEY = ['m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4', 'm21 2-9.6 9.6', 'M7.5 12a4.5 4.5 0 1 0 4.5 4.5 4.5 4.5 0 0 0-4.5-4.5Z']
+const ICON_REVOKE = ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z', 'm4.93 4.93 14.14 14.14']
+const ICON_TRASH = ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M10 11v6', 'M14 11v6']
+const ICON_COPY = ['M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2', 'M16 2H10a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6Z']
+const ICON_CHECK = ['M20 6 9 17l-5-5']
+const ICON_PLUS = ['M12 5v14', 'M5 12h14']
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
 
@@ -141,7 +153,7 @@ function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): 
     el('div', { class: 'dev-main' },
       el('div', { class: 'dev-title-row' },
         el('b', { class: 'dev-name', title: 'Натисни, щоб перейменувати пристрій', onclick: doRename }, d.name),
-        el('button', { type: 'button', class: 'rename-btn', title: 'Перейменувати пристрій', 'aria-label': 'Перейменувати ' + d.name, onclick: doRename }, '✎'),
+        el('button', { type: 'button', class: 'icon-btn ghost', 'data-tip': 'Перейменувати пристрій', 'aria-label': 'Перейменувати ' + d.name, onclick: doRename }, icon(ICON_EDIT, 13)),
         el('span', { class: 'dev-place', title: 'Середовище пристрою' }, PLACE_LABEL[pick.place]),
         d.revoked ? el('span', { class: 'tag', style: 'margin-left:0' }, 'відкликано') : '',
         ...otherAgents.sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Цей токен також надсилав дані від іншого агента' }, '+ ' + providerLabel(p)))),
@@ -150,29 +162,29 @@ function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): 
     el('div', { class: 'dev-actions' },
       ...(d.revoked ? [] : [
         projectSelect(d),
-        el('button', { type: 'button', title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
+        el('button', { type: 'button', class: 'icon-btn', 'data-tip': 'Новий токен і команди встановлення', 'aria-label': 'Новий токен для ' + d.name, onclick: async () => {
           if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення.`)) return
           try {
             const { token } = await api<{ token: string }>('/devices/' + d.id + '/token', { method: 'POST' })
             showSetup(token, d.name, [sectionAgent])
           } catch (err) { alert('Не вдалося видати токен: ' + (err as Error).message) }
-        } }, 'Новий токен'),
-        el('button', { type: 'button', class: 'danger', title: 'Токен перестане діяти; дані пристрою лишаються в статистиці', onclick: async () => {
+        } }, icon(ICON_KEY)),
+        el('button', { type: 'button', class: 'icon-btn danger', 'data-tip': 'Відкликати токен (зупинити прийом даних)', 'aria-label': 'Відкликати ' + d.name, onclick: async () => {
           if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані; те, що вже надіслав, лишиться в статистиці.`)) return
           await api('/devices/' + d.id, { method: 'DELETE' })
           void loadDevices()
-        } }, 'Відкликати')]),
+        } }, icon(ICON_REVOKE))]),
       deleteButton(d)))
 }
 
 /** Deletes the device with everything it sent: its numbers leave the statistics. */
-const deleteButton = (d: DeviceRow): HTMLElement => el('button', { type: 'button', class: 'danger', title: 'Видалити пристрій разом з усіма його даними', onclick: async () => {
+const deleteButton = (d: DeviceRow): HTMLElement => el('button', { type: 'button', class: 'icon-btn danger', 'data-tip': 'Видалити пристрій разом з усіма даними', 'aria-label': 'Видалити ' + d.name, onclick: async () => {
   if (!confirm(`Видалити «${d.name}» разом з усіма його даними (токени, ліміти, сесії)? Статистика за минулі дні зменшиться. Скасувати це не можна.`)) return
   try {
     await api('/devices/' + d.id + '?purge=1', { method: 'DELETE' })
     void loadDevices()
   } catch (err) { alert('Не вдалося видалити: ' + (err as Error).message) }
-} }, 'Видалити')
+} }, icon(ICON_TRASH))
 
 const countWord = (n: number): string => (n === 0 ? 'немає пристроїв' : n === 1 ? '1 пристрій' : n < 5 ? `${n} пристрої` : `${n} пристроїв`)
 
@@ -194,7 +206,7 @@ export async function loadDevices(): Promise<DeviceRow[]> {
           el('i', { style: `background:${color}` }),
           el('span', {}, label),
           el('span', { class: 'dev-group-count' }, `· ${countWord(activeDevs.length)}${revokedDevs.length ? ` (+${revokedDevs.length} відкл.)` : ''}`)),
-        el('button', { type: 'button', class: 'dev-group-add', onclick: () => pickAgentForAdd(a) }, `+ Додати в ${label}`)),
+        el('button', { type: 'button', class: 'dev-group-add', 'data-tip': `Додати пристрій для ${label}`, onclick: () => pickAgentForAdd(a) }, icon(ICON_PLUS, 14), `Додати`)),
       ...(activeDevs.length
         ? activeDevs.map(d => deviceRow(d, a, log))
         : [el('div', { class: 'dev-group-empty' }, `Для ${label} немає активних пристроїв.`)]),
@@ -216,14 +228,24 @@ async function copyText(text: string, btn: HTMLElement): Promise<void> {
   try {
     await navigator.clipboard.writeText(text)
     const prev = [...btn.childNodes]
-    btn.textContent = 'Скопійовано ✓'
-    setTimeout(() => btn.replaceChildren(...prev), 1500)
+    const prevTip = btn.getAttribute('data-tip')
+    btn.classList.add('ok')
+    btn.setAttribute('data-tip', 'Скопійовано!')
+    if (btn.classList.contains('icon-btn')) btn.replaceChildren(icon(ICON_CHECK))
+    else btn.replaceChildren(icon(ICON_CHECK, 13), 'Скопійовано')
+    setTimeout(() => {
+      btn.classList.remove('ok')
+      if (prevTip) btn.setAttribute('data-tip', prevTip); else btn.removeAttribute('data-tip')
+      btn.replaceChildren(...prev)
+    }, 1500)
   } catch { alert('Не вдалося скопіювати, виділи текст вручну.') }
 }
 
 const stepNodes = (steps: Step[], numbered: boolean): HTMLElement[] => steps.flatMap((st, i) => [
-  el('p', { class: 'sub', style: 'margin:16px 0 6px' }, numbered && steps.length > 1 ? el('b', {}, `${i + 1}. `) : '', ...withCode(st.text)),
-  ...(st.code !== undefined ? [el('pre', { class: 'snip' }, st.code), el('button', { type: 'button', onclick: (e: Event) => void copyText(st.code ?? '', e.currentTarget as HTMLElement) }, 'Копіювати')] : []),
+  el('p', { class: 'sub', style: 'margin:14px 0 6px' }, numbered && steps.length > 1 ? el('b', {}, `${i + 1}. `) : '', ...withCode(st.text)),
+  ...(st.code !== undefined ? [el('div', { class: 'snip-row' },
+    el('pre', { class: 'snip' }, st.code),
+    el('button', { type: 'button', class: 'icon-btn primary', 'data-tip': 'Копіювати команду', 'aria-label': 'Копіювати', onclick: (e: Event) => void copyText(st.code ?? '', e.currentTarget as HTMLElement) }, icon(ICON_COPY)))] : []),
 ])
 
 /** A segmented choice: the pressed button's data-v, a way to press one, and a callback when the viewer changes it. */
@@ -256,13 +278,17 @@ export function initDevices(): void {
   place.set(defaultPlace())
   updatePlaceholder()
 
-  // Populate the `modtoken` console manager card & its copy buttons
+  // Populate the `modtoken` console manager card & its copy icon buttons
   const winCmd = modtokenCliPs(), shCmd = modtokenCliSh()
   $('mt-cmd-win').textContent = winCmd
   $('mt-cmd-sh').textContent = shCmd
-  $('copy-mt-win').addEventListener('click', e => void copyText(winCmd, e.currentTarget as HTMLElement))
-  $('copy-mt-sh').addEventListener('click', e => void copyText(shCmd, e.currentTarget as HTMLElement))
+  const winBtn = $('copy-mt-win'), shBtn = $('copy-mt-sh')
+  winBtn.replaceChildren(icon(ICON_COPY))
+  shBtn.replaceChildren(icon(ICON_COPY))
+  winBtn.addEventListener('click', () => void copyText(winCmd, winBtn))
+  shBtn.addEventListener('click', () => void copyText(shCmd, shBtn))
   document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(btn => {
+    btn.prepend(icon(ICON_COPY, 12))
     btn.addEventListener('click', () => void copyText(btn.dataset.copy ?? '', btn))
   })
 

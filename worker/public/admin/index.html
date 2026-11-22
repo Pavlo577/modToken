@@ -259,25 +259,25 @@
           </div>
         </div>
         <div class="mt-block">
-          <div class="mt-row-head">
-            <span class="sub"><b>Windows</b> (PowerShell)</span>
-            <button type="button" class="sm-btn primary" id="copy-mt-win">Копіювати для Windows</button>
+          <span class="sub"><b>Windows</b> (PowerShell)</span>
+          <div class="snip-row">
+            <pre class="snip mt-snip" id="mt-cmd-win"></pre>
+            <button type="button" class="icon-btn primary" id="copy-mt-win" data-tip="Копіювати команду для Windows" aria-label="Копіювати для Windows"></button>
           </div>
-          <pre class="snip mt-snip" id="mt-cmd-win"></pre>
         </div>
         <div class="mt-block">
-          <div class="mt-row-head">
-            <span class="sub"><b>Linux / macOS</b> (Термінал)</span>
-            <button type="button" class="sm-btn" id="copy-mt-sh">Копіювати для Linux / macOS</button>
+          <span class="sub"><b>Linux / macOS</b> (Термінал)</span>
+          <div class="snip-row">
+            <pre class="snip mt-snip" id="mt-cmd-sh"></pre>
+            <button type="button" class="icon-btn" id="copy-mt-sh" data-tip="Копіювати команду для Linux / macOS" aria-label="Копіювати для Linux / macOS"></button>
           </div>
-          <pre class="snip mt-snip" id="mt-cmd-sh"></pre>
         </div>
         <div class="mt-quick">
-          <span class="sub">Команди після встановлення (натисни, щоб скопіювати):</span>
+          <span class="sub">Швидкі команди в терміналі (натисни, щоб скопіювати):</span>
           <div class="mt-pills">
-            <button type="button" class="sm-btn" data-copy="modtoken" title="Відкрити інтерактивне меню"><code>modtoken</code> меню</button>
-            <button type="button" class="sm-btn" data-copy="modtoken update" title="Оновити всі плагіни, хуки та OTLP на ПК"><code>modtoken update</code> оновити все</button>
-            <button type="button" class="sm-btn" data-copy="modtoken doctor" title="Перевірити зв'язок із сервером, версії та хуки"><code>modtoken doctor</code> діагностика</button>
+            <button type="button" class="sm-btn pill-copy" data-copy="modtoken" data-tip="Копіювати: відкрити меню"><code>modtoken</code> меню</button>
+            <button type="button" class="sm-btn pill-copy" data-copy="modtoken update" data-tip="Копіювати: оновити всі плагіни та OTLP"><code>modtoken update</code> оновити</button>
+            <button type="button" class="sm-btn pill-copy" data-copy="modtoken doctor" data-tip="Копіювати: перевірити зв'язок і хуки"><code>modtoken doctor</code> діагностика</button>
           </div>
         </div>
       </div>
@@ -287,7 +287,7 @@
       <div class="card-head" style="margin-bottom:12px">
         <div>
           <h2>Мої пристрої за агентами</h2>
-          <p class="sub">Натисни <code>✎</code> біля назви, щоб перейменувати пристрій, або «+ Додати» у потрібному агенті.</p>
+          <p class="sub">Наведи на іконку праворуч від пристрою, щоб побачити дію (перейменувати, видати новий токен, відкликати або видалити).</p>
         </div>
       </div>
       <div id="dev-list" class="dev-groups"></div>
