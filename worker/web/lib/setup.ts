@@ -150,7 +150,10 @@ export function guessSetup(name: string, providers: string[], saved: { agent?: s
     ?? agents.find(a => a === saved?.agent)
     ?? byName
     ?? fallback.agent
+  const byHostCase: Place | undefined = /^(?:claude|codex|antigravity)-([A-Za-z0-9_-]{2,32})$/.test(name) && !/-(?:windows|linux|cloud)$/i.test(name)
+    ? (/[A-Z]{2,}/.test(name.replace(/^(?:claude|codex|antigravity)-/i, '')) ? 'windows' : 'linux')
+    : undefined
   const place = places.find(p => p === saved?.place)
-    ?? (/win/.test(n) ? 'windows' : /cloud|хмар|remote|ccr|web/.test(n) ? 'cloud' : /linux|ubuntu|debian|fedora|mac|wsl/.test(n) ? 'linux' : fallback.place)
+    ?? (/win/.test(n) ? 'windows' : /cloud|хмар|remote|ccr|web/.test(n) ? 'cloud' : /linux|ubuntu|debian|fedora|mac|wsl/.test(n) ? 'linux' : byHostCase ?? fallback.place)
   return { agent, place }
 }

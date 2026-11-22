@@ -286,7 +286,7 @@ export function initDevices(): void {
   let device = ''
   const updatePlaceholder = (): void => {
     const input = $<HTMLInputElement>('dev-name')
-    input.placeholder = `Назва (необов'язково — авто з ПК або ${agent.get()}-${place.get()})`
+    input.placeholder = "Назва (необов'язково — авто з ПК)"
   }
   const render = (): void => {
     updatePlaceholder()

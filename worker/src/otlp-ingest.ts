@@ -4,6 +4,7 @@
 import type { Env } from './env.ts'
 import { hourOf, refreshHourlyBuckets } from './buckets.ts'
 import type { BucketTarget } from './buckets.ts'
+import { maybeAutoNameDevice } from './devices.ts'
 import { MAX_RECORDS, codexCallMs, codexOwnSession, parseOtlpLogs } from './otlp.ts'
 import type { EventRow, ModelCall } from './otlp.ts'
 import { liveCall, pushLive } from './live.ts'
@@ -141,6 +142,7 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   const parsed = parseOtlpLogs(payload, env.DEBUG_OTLP === 'raw' ? 'raw' : env.DEBUG_OTLP === '1')
   if (!parsed) return text(`bad request (not OTLP logs, or more than ${MAX_RECORDS} records)`, 400)
 
+  await maybeAutoNameDevice(env, dev, parsed.calls[0]?.provider ?? null, req.headers.get('x-device-host'))
   const now = new Date().toISOString()
   await storeEvents(env, dev, parsed.events) // first: the Codex context below reads this request's events too
   await codexContext(env, dev.user_email, dev.id, parsed.calls)

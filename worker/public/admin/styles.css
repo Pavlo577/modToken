@@ -124,21 +124,22 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .code { font: 600 30px/1 ui-monospace, monospace; letter-spacing: 3px; padding: 14px 0; }
 .dev-top-grid { align-items: stretch; }
-.dev-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.dev-form input { flex: 1 1 200px; min-width: 170px; }
+.dev-form { display: flex; flex-direction: column; gap: 10px; margin-top: 2px; }
+.dev-form input { width: 100%; }
+.dev-form-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
 .setup-result { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .setup-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .sm-btn { padding: 5px 12px; font-size: 12.5px; border-radius: 999px; }
 .mt-block { margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
 .mt-block > .sub { margin: 0; font-size: 12.5px; }
-.snip-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.snip-row .snip { margin: 0; }
-.mt-snip { margin: 0; padding: 8px 12px; font-size: 12px; white-space: nowrap; overflow-x: auto; word-break: normal; }
+.snip-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 12px; padding: 3px 4px 3px 12px; }
+.snip.mt-snip, .snip-row > .snip { margin: 0; padding: 5px 4px 5px 0; border: 0; background: transparent; border-radius: 0; font-size: 12px; white-space: pre !important; word-break: normal !important; overflow-x: auto; scrollbar-width: none; }
+.snip.mt-snip::-webkit-scrollbar, .snip-row > .snip::-webkit-scrollbar { display: none; }
 .mt-quick { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .mt-quick .sub { margin: 0; font-size: 12px; }
 .mt-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .mt-pills code { background: transparent; padding: 0; color: var(--out); font-weight: 600; }
-.pill-copy { display: inline-flex; align-items: center; gap: 6px; }
+.pill-copy { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; font-size: 12px; white-space: nowrap; }
 
 .icon-btn { width: 32px; height: 32px; padding: 0; border-radius: 10px; display: inline-grid; place-items: center; flex: none; color: var(--text-2); background: var(--card-2); border: 1px solid var(--line); position: relative; }
 .icon-btn:hover { color: var(--text); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.2); }
@@ -197,8 +198,9 @@ tbody tr:last-child td { border-bottom: 0; }
 button.danger { color: var(--bad); }
 button.primary { background: var(--out); border-color: var(--out); color: #1a1008; font-weight: 600; }
 form { display: flex; gap: 8px; flex-wrap: wrap; } form input { flex: 1; min-width: 180px; }
-.setup-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin: 0 0 12px; }
-.setup-pick .pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; max-width: 100%; }
+.setup-pick { display: grid; gap: 8px; margin: 0 0 12px; }
+.setup-pick .pick { display: grid; grid-template-columns: 78px 1fr; align-items: center; gap: 8px; max-width: 100%; }
+.setup-pick .seg { justify-self: start; }
 .setup-pick .sub { margin: 0; white-space: nowrap; }
 .snip { margin: 0 0 8px; padding: 12px 14px; background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 12px; font: 12.5px/1.5 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 640px) {

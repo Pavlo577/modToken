@@ -199,22 +199,57 @@ print_status() {
   echo ""
 }
 
+agent_credentials() {
+  local agent="$1" s="" t=""
+  case "$agent" in
+    claude)
+      if [ -f "$CLAUDE_DIR/settings.json" ]; then
+        local ep hdr
+        ep=$(json_get "$CLAUDE_DIR/settings.json" "(d.get('env') or {}).get('OTEL_EXPORTER_OTLP_LOGS_ENDPOINT', '')")
+        hdr=$(json_get "$CLAUDE_DIR/settings.json" "(d.get('env') or {}).get('OTEL_EXPORTER_OTLP_LOGS_HEADERS', '')")
+        s="${ep%/v1/logs}"
+        t=$(printf '%s' "$hdr" | sed -nE 's/.*x-device-token=([0-9a-fA-F_-]{6,128}).*/\1/p')
+      fi
+      ;;
+    codex)
+      if [ -f "$CODEX_DIR/config.toml" ]; then
+        s=$(sed -nE 's/.*endpoint = "(https?:\/\/[^"]+)\/v1\/logs".*/\1/p' "$CODEX_DIR/config.toml" | head -n 1)
+        t=$(sed -nE 's/.*"x-device-token" = "([^"]+)".*/\1/p' "$CODEX_DIR/config.toml" | head -n 1)
+      fi
+      ;;
+    antigravity)
+      if [ -f "$AGY_DATA_DIR/config.json" ]; then
+        s=$(json_get "$AGY_DATA_DIR/config.json" "d.get('site', '')")
+        t=$(json_get "$AGY_DATA_DIR/config.json" "d.get('token', '')")
+      fi
+      ;;
+  esac
+  if [ -n "$s" ] && [ -n "$t" ]; then
+    printf '%s %s\n' "${s%/}" "$t"
+  else
+    printf '%s %s\n' "$SITE" "$TOKEN"
+  fi
+}
+
 run_agent_installer() {
-  local agent="$1" script_name=""
+  local agent="$1" script_name="" use_site="" use_tok=""
   case "$agent" in
     claude)      script_name="install.sh" ;;
     codex)       script_name="install-codex.sh" ;;
     antigravity) script_name="install-antigravity.sh" ;;
     *) echo "Невідомий агент: $agent"; return 1 ;;
   esac
-  if [ -z "$SITE" ] || [ -z "$TOKEN" ]; then
+  read -r use_site use_tok <<EOF
+$(agent_credentials "$agent")
+EOF
+  if [ -z "$use_site" ] || [ -z "$use_tok" ]; then
     echo "  Помилка: спочатку задайте сервер і токен (modtoken token <сайт> <токен>)"
     return 1
   fi
   local tmp
   tmp=$(mktemp)
   if curl -fsSL --max-time 30 "$RAW/scripts/$script_name" -o "$tmp"; then
-    TT_RAW="$RAW" bash "$tmp" "$SITE" "$TOKEN"
+    TT_RAW="$RAW" bash "$tmp" "$use_site" "$use_tok"
     rm -f "$tmp"
   else
     rm -f "$tmp"

@@ -196,6 +196,36 @@ function Prompt-CredentialsIfMissing {
   return $true
 }
 
+function Get-AgentCredentials([string]$agent) {
+  if ($agent -eq 'claude') {
+    $cSet = Join-Path $claudeDir 'settings.json'
+    if (Test-Path -LiteralPath $cSet) {
+      $ep = Read-JsonProp $cSet { param($d) $d.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT }
+      $hdr = Read-JsonProp $cSet { param($d) $d.env.OTEL_EXPORTER_OTLP_LOGS_HEADERS }
+      $m = [regex]::Match("$hdr", 'x-device-token=([0-9a-fA-F_-]{6,128})')
+      if ($ep -and $m.Success) { return @((($ep -replace '/v1/logs$', '').TrimEnd('/')), $m.Groups[1].Value) }
+    }
+  } elseif ($agent -eq 'codex') {
+    $xCfg = Join-Path $codexDir 'config.toml'
+    if (Test-Path -LiteralPath $xCfg) {
+      try {
+        $txt = Get-Content -Raw -Encoding UTF8 -LiteralPath $xCfg
+        $ms = [regex]::Match($txt, 'endpoint = "(https?://[^"]+?)/v1/logs"')
+        $mt = [regex]::Match($txt, '"x-device-token" = "([^"]+)"')
+        if ($ms.Success -and $mt.Success) { return @($ms.Groups[1].Value, $mt.Groups[1].Value) }
+      } catch {}
+    }
+  } elseif ($agent -eq 'antigravity') {
+    $aCfg = Join-Path $agyDataDir 'config.json'
+    if (Test-Path -LiteralPath $aCfg) {
+      $s = Read-JsonProp $aCfg { param($d) $d.site }
+      $t = Read-JsonProp $aCfg { param($d) $d.token }
+      if ($s -and $t) { return @($s.TrimEnd('/'), $t) }
+    }
+  }
+  return @($script:site, $script:token)
+}
+
 function Invoke-AgentInstaller([string]$agent) {
   $scriptName = switch ($agent) {
     'claude'      { 'install.ps1' }
@@ -204,9 +234,12 @@ function Invoke-AgentInstaller([string]$agent) {
     default       { '' }
   }
   if (-not $scriptName) { Write-Host "Невідомий агент: $agent"; return }
-  if (-not $script:site -or -not $script:token) { Write-Host '  Помилка: спочатку задайте сервер і токен'; return }
+  $creds = Get-AgentCredentials $agent
+  $useSite = if ($creds[0]) { $creds[0] } else { $script:site }
+  $useTok = if ($creds[1]) { $creds[1] } else { $script:token }
+  if (-not $useSite -or -not $useTok) { Write-Host '  Помилка: спочатку задайте сервер і токен'; return }
   $code = (Invoke-RestMethod "$raw/scripts/$scriptName").TrimStart([char]0xFEFF)
-  & ([scriptblock]::Create($code)) $script:site $script:token
+  & ([scriptblock]::Create($code)) $useSite $useTok
 }
 
 function Invoke-Install([string]$target = 'all', [string]$s = '', [string]$t = '') {

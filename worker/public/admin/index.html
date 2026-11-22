@@ -235,10 +235,12 @@
         </div>
         <form id="new-device" class="dev-form">
           <input id="dev-name" placeholder="Назва (необов'язково — авто з ПК)" maxlength="60">
-          <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
-            <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репо</option><option value="hash">Проєкт: хеш</option>
-          </select>
-          <button class="primary" type="submit">Створити токен</button>
+          <div class="dev-form-row">
+            <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
+              <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репо</option><option value="hash">Проєкт: хеш</option>
+            </select>
+            <button class="primary" type="submit">Створити токен</button>
+          </div>
         </form>
         <div id="setup-box" class="setup-result hide">
           <p class="sub" id="setup-for" style="margin:0 0 8px"></p>

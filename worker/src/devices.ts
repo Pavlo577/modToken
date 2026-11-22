@@ -49,8 +49,9 @@ export function hostDeviceName(
 }
 
 /**
- * If `dev.name` is still an auto-generated `<agent>-<place>` placeholder and the request supplies a valid machine hostname
- * (via `?host=` or `x-device-host`), upgrades `devices.name` in D1 to `<agent>-<hostname>`. No-op (0 queries) once named.
+ * If `dev.name` (or a sibling device on the same OS/place for `dev.user_email`) is still an auto-generated `<agent>-<place>`
+ * placeholder and the request supplies a valid machine hostname (via `?host=` or `x-device-host`), upgrades `devices.name` in D1
+ * to `<agent>-<hostname>` (and propagates the hostname to sibling `<other_agent>-<place>` placeholders on the same machine).
  */
 export async function maybeAutoNameDevice(
   env: Env,
@@ -58,12 +59,49 @@ export async function maybeAutoNameDevice(
   agent: string | null | undefined,
   rawHost: string | null | undefined,
 ): Promise<void> {
-  if (!rawHost || !isAutoDeviceName(dev.name)) return
-  const { results } = await env.DB.prepare('SELECT name FROM devices WHERE user_email = ? AND id != ?').bind(dev.user_email, dev.id).all<{ name: string }>()
-  const next = hostDeviceName(dev.name, agent, rawHost, results.map(r => r.name))
+  if (!rawHost) return
+  const placeMatch = /^(?:claude|codex|antigravity)-(windows|linux)(?:-\d+)?$/i.exec(dev.name.trim())
+  const inferredPlace = placeMatch
+    ? (placeMatch[1].toLowerCase() as 'windows' | 'linux')
+    : /[A-Z]{2,}/.test(rawHost.trim().split('.')[0] ?? '') ? 'windows' : 'linux'
+
+  if (!isAutoDeviceName(dev.name)) {
+    // Even if this device was already named (e.g. claude-KOTUS), check if sibling placeholders on the same OS still need the hostname
+    const { results } = await env.DB.prepare('SELECT id, name FROM devices WHERE user_email = ?').bind(dev.user_email).all<{ id: string; name: string }>()
+    const siblings = results.filter(r => new RegExp(`^(claude|codex|antigravity)-${inferredPlace}(-\\d+)?$`, 'i').test(r.name.trim()))
+    if (!siblings.length) return
+    const taken = results.map(r => r.name)
+    for (const sib of siblings) {
+      const sibAgent = sib.name.trim().split('-')[0].toLowerCase()
+      const next = hostDeviceName(sib.name, sibAgent, rawHost, taken.filter(n => n !== sib.name))
+      if (next && next !== sib.name) {
+        await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(next, sib.id).run()
+        const idx = taken.indexOf(sib.name)
+        if (idx !== -1) taken[idx] = next
+      }
+    }
+    return
+  }
+
+  const { results } = await env.DB.prepare('SELECT id, name FROM devices WHERE user_email = ?').bind(dev.user_email).all<{ id: string; name: string }>()
+  const taken = results.map(r => r.name)
+  const next = hostDeviceName(dev.name, agent, rawHost, taken.filter(n => n !== dev.name))
   if (next && next !== dev.name) {
     await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(next, dev.id).run()
+    const idx = taken.indexOf(dev.name)
+    if (idx !== -1) taken[idx] = next
     dev.name = next
+  }
+  for (const sib of results) {
+    if (sib.id === dev.id) continue
+    if (!new RegExp(`^(claude|codex|antigravity)-${inferredPlace}(-\\d+)?$`, 'i').test(sib.name.trim())) continue
+    const sibAgent = sib.name.trim().split('-')[0].toLowerCase()
+    const sibNext = hostDeviceName(sib.name, sibAgent, rawHost, taken.filter(n => n !== sib.name))
+    if (sibNext && sibNext !== sib.name) {
+      await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(sibNext, sib.id).run()
+      const idx = taken.indexOf(sib.name)
+      if (idx !== -1) taken[idx] = sibNext
+    }
   }
 }
 
@@ -166,9 +204,37 @@ export async function autoConsolidateDevices(env: Env, email: string, rows: { id
     const others = currentNames.filter(n => n !== oldName)
     const nextName = autoDeviceName(spec.agent, spec.place, others)
     await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ? AND user_email = ?').bind(nextName, dev.id, email).run()
+    dev.name = nextName
     const idx = currentNames.indexOf(oldName)
     if (idx !== -1) currentNames[idx] = nextName
     changed = true
+  }
+
+  // Propagate any already-discovered Windows or Linux hostname (e.g. claude-KOTUS -> KOTUS) to remaining *-windows / *-linux placeholders
+  let winHost: string | null = null
+  let linHost: string | null = null
+  for (const r of byName.values()) {
+    const m = /^(?:claude|codex|antigravity)-([A-Za-z0-9_-]{2,32})$/.exec(r.name.trim())
+    if (!m) continue
+    const h = m[1]
+    if (/^(windows|linux|cloud)$/i.test(h)) continue
+    if (/[A-Z]{2,}/.test(h) && !winHost) winHost = h
+    else if (!/[A-Z]{2,}/.test(h) && !linHost) linHost = h
+  }
+  for (const r of byName.values()) {
+    const pm = /^(claude|codex|antigravity)-(windows|linux)(?:-\d+)?$/i.exec(r.name.trim())
+    if (!pm) continue
+    const ag = pm[1].toLowerCase(), pl = pm[2].toLowerCase()
+    const host = pl === 'windows' ? winHost : linHost
+    if (!host) continue
+    const nextName = hostDeviceName(r.name, ag, host, currentNames.filter(n => n !== r.name))
+    if (nextName && nextName !== r.name) {
+      await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ? AND user_email = ?').bind(nextName, r.id, email).run()
+      const idx = currentNames.indexOf(r.name)
+      if (idx !== -1) currentNames[idx] = nextName
+      r.name = nextName
+      changed = true
+    }
   }
   return changed
 }

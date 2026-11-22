@@ -168,6 +168,8 @@ test('setup: a device shown again gets its last choice, else what its data and n
   assert.deepEqual(guessSetup('codex-ubuntu', [], undefined, { agent: 'claude', place: 'windows' }), { agent: 'codex', place: 'linux' })
   assert.deepEqual(guessSetup('linux-agy', [], undefined, def), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('win-agy', [], { agent: 'codex', place: 'windows' }, def), { agent: 'antigravity', place: 'windows' })
+  assert.deepEqual(guessSetup('claude-KOTUS', ['claude'], undefined, { agent: 'claude', place: 'linux' }), { agent: 'claude', place: 'windows' })
+  assert.deepEqual(guessSetup('antigravity-brolafkodev', ['antigravity'], undefined, { agent: 'claude', place: 'windows' }), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('box', ['antigravity'], undefined, def), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'nope' }, def), def) // unknown saved values and two agents: the defaults
 })
@@ -241,9 +243,17 @@ test('setup: autoConsolidateDevices merges legacy duplicates (linux-lekh-h + hom
   assert.equal(renamed.get('d-codex-active'), 'codex-windows')
   assert.equal(renamed.get('d-win-agy'), 'antigravity-windows')
   assert.equal(renamed.get('d-lin-agy'), 'antigravity-linux')
-  // Second run is a 0-change no-op
+  // Second run is a 0-change no-op when no resolved hostname is present
   const activeRows = rows.filter(r => !deleted.has(r.id)).map(r => ({ id: r.id, name: r.name }))
   assert.equal(await autoConsolidateDevices(env, 'u@example.com', activeRows), false)
+
+  // Once one Windows device has resolved its hostname (e.g. claude-KOTUS), autoConsolidateDevices propagates KOTUS to remaining *-windows placeholders
+  const winRow = rows.find(r => r.id === 'd-win-claude')
+  winRow.name = 'claude-KOTUS'
+  const withHostRows = rows.filter(r => !deleted.has(r.id)).map(r => ({ id: r.id, name: r.name }))
+  assert.equal(await autoConsolidateDevices(env, 'u@example.com', withHostRows), true)
+  assert.equal(renamed.get('d-codex-active'), 'codex-KOTUS')
+  assert.equal(renamed.get('d-win-agy'), 'antigravity-KOTUS')
 })
 
 test('setup: modtoken.sh auto-discovers existing token on PC, updates all detected agents, runs doctor, and never prints full token', () => {
