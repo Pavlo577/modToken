@@ -5,24 +5,35 @@
 # ~/.codex/config.toml ($CODEX_HOME if set), between marker lines, so running it again replaces only that block. A config that
 # already has an [otel] table of its own is left as it is (TOML allows one): the script says what to add by hand.
 # The prompt text stays off (log_user_prompt = false). The token is written to config.toml only, never printed.
-# Limits: OTLP carries none, so the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files, and a SessionStart hook that imports the
-# token history from before OpenTelemetry once,
-# needs python3) goes into a local marketplace in ~/.codex/token-tracker and is installed with `codex plugin`. Codex runs a plugin's hook
-# only after the user approves it once in Codex.
+# Limits & activity: OTLP carries none, so the hook scripts (mods/codex-tracker) are saved into ~/.codex/token-tracker/plugins/token-tracker
+# and registered once in ~/.codex/hooks.json (working across Codex CLI, Desktop, and IDE extensions; needs python3).
+# Any previously installed token-tracker@token-tracker-local plugin entry in config.toml is disabled automatically to prevent double firing.
 set -u
 ORIGIN="${1%/}"; TOKEN="${2:-}"
 [ -z "$ORIGIN" ] || [ -z "$TOKEN" ] && { echo "Використання: curl -fsSL …/install-codex.sh | bash -s -- https://<сайт> <токен пристрою>"; exit 1; }
 DIR="${CODEX_HOME:-$HOME/.codex}"
 CONFIG="$DIR/config.toml"
 RAW="${TT_RAW:-https://raw.githubusercontent.com/Pavlo577/modToken/main/worker}"
-MARKET="$DIR/token-tracker"; PLUGIN="$MARKET/plugins/token-tracker"
+PLUGIN="$DIR/token-tracker/plugins/token-tracker"
 BEGIN='# >>> token-tracker (written by the Token Tracker install command; run it again to update)'
 END='# <<< token-tracker'
 echo "Token Tracker для Codex: $CONFIG"
 mkdir -p "$DIR"; touch "$CONFIG"
 
-# the file without our earlier block
-REST=$(awk -v e="$END" 'index($0, "# >>> token-tracker") == 1 { skip = 1; next } $0 == e { skip = 0; next } !skip' "$CONFIG" | sed '/./,$!d')
+# the file without our earlier block; also disable legacy plugin duplicate if previously enabled in config.toml
+RAW_REST=$(awk -v e="$END" 'index($0, "# >>> token-tracker") == 1 { skip = 1; next } $0 == e { skip = 0; next } !skip' "$CONFIG" | sed '/./,$!d')
+if [ -n "$RAW_REST" ]; then
+  REST=$(printf '%s\n' "$RAW_REST" | awk '
+    /^[[:space:]]*\[plugins\.["\047]token-tracker@token-tracker-local["\047]\][[:space:]]*(#.*)?$/ { in_plug = 1; print; next }
+    /^[[:space:]]*\[/ { in_plug = 0; print; next }
+    in_plug && /^[[:space:]]*enabled[[:space:]]*=[[:space:]]*true([[:space:]]*(#.*)?)?$/ { sub(/true/, "false"); print; next }
+    /^[[:space:]]*plugins\.["\047]token-tracker@token-tracker-local["\047]\.enabled[[:space:]]*=[[:space:]]*true([[:space:]]*(#.*)?)?$/ { sub(/true/, "false"); print; next }
+    { print }
+  ')
+else
+  REST=""
+fi
+DISABLED_OLD=0; [ "$RAW_REST" != "$REST" ] && DISABLED_OLD=1
 if printf '%s\n' "$REST" | grep -Eq '^[[:space:]]*\[otel(\]|\.)'; then
   echo "  У $CONFIG уже є своя секція [otel]; її не чіпаю. Додай у неї вручну:"
   echo "    log_user_prompt = false"
@@ -42,19 +53,16 @@ fi
 } > "$CONFIG.tt-new" && mv "$CONFIG.tt-new" "$CONFIG"
 chmod 600 "$CONFIG" 2>/dev/null
 echo "  OpenTelemetry налаштовано"
+[ "$DISABLED_OLD" = 1 ] && echo "  Старий плагін token-tracker@token-tracker-local вимкнено в $CONFIG, щоб хуки не запускалися двічі"
 
-# the limits: the plugin in a local marketplace, installed when the codex command is there (after the config is written: `codex plugin`
-# adds its own entries to it)
-mkdir -p "$MARKET/.agents/plugins" "$PLUGIN/.codex-plugin" "$PLUGIN/hooks"
+# hook scripts live in ~/.codex/token-tracker/plugins/token-tracker and are registered once in ~/.codex/hooks.json
+mkdir -p "$PLUGIN/.codex-plugin" "$PLUGIN/hooks"
 GOT=1
 for f in .codex-plugin/plugin.json hooks/hooks.json hooks/limits.py hooks/limits.ps1 hooks/history.py hooks/history.ps1 hooks/activity.py hooks/activity.ps1; do
   curl -fsSL --max-time 30 "$RAW/mods/codex-tracker/$f" -o "$PLUGIN/$f" || GOT=0
 done
-cat > "$MARKET/.agents/plugins/marketplace.json" <<'JSON'
-{ "name": "token-tracker-local", "plugins": [{ "name": "token-tracker", "source": "./plugins/token-tracker" }] }
-JSON
 
-# Also register user-level $CODEX_HOME/hooks.json so Codex IDE extensions (which skip plugins) run the same hooks
+# Register user-level $CODEX_HOME/hooks.json as the single canonical hook source (works across CLI, Desktop, and IDE)
 HOOKS_PY='
 import json, os, sys
 p, plug = sys.argv[1:3]
@@ -98,21 +106,19 @@ for (const [ev, grp] of Object.entries(ours)) {
 doc.hooks = hooks;
 fs.writeFileSync(p, JSON.stringify(doc, null, 2) + "\n");
 '
+HOOKS_OK=0
 if [ "$GOT" = 1 ]; then
-  if command -v python3 >/dev/null; then python3 -c "$HOOKS_PY" "$DIR/hooks.json" "$PLUGIN"
-  elif command -v node >/dev/null; then node -e "$HOOKS_JS" "$DIR/hooks.json" "$PLUGIN"
+  if command -v python3 >/dev/null; then python3 -c "$HOOKS_PY" "$DIR/hooks.json" "$PLUGIN" && HOOKS_OK=1
+  elif command -v node >/dev/null; then node -e "$HOOKS_JS" "$DIR/hooks.json" "$PLUGIN" && HOOKS_OK=1
   fi
 fi
 
 if [ "$GOT" = 0 ]; then
-  echo "  Не вдалося завантажити плагін: ліміти Codex не надсилатимуться"
-elif command -v codex >/dev/null; then
-  codex plugin marketplace add "$MARKET" >/dev/null 2>&1
-  if codex plugin add token-tracker@token-tracker-local >/dev/null 2>&1; then echo "  плагін і user-хуки ($DIR/hooks.json) встановлено (у Codex схвали хуки: /hooks або Settings → Hooks → Review hooks)"
-  else echo "  плагін не вдалося встановити: codex plugin marketplace add \"$MARKET\" && codex plugin add token-tracker@token-tracker-local"; fi
-  command -v python3 >/dev/null || echo "  Немає python3: плагін не зможе надсилати ліміти"
+  echo "  Не вдалося завантажити скрипти хуків: ліміти Codex не надсилатимуться"
+elif [ "$HOOKS_OK" = 1 ]; then
+  echo "  Хуки встановлено в $DIR/hooks.json (працюють у Codex CLI, Desktop та IDE)"
+  command -v python3 >/dev/null || echo "  Немає python3: хуки не зможуть надсилати ліміти"
 else
-  echo "  Команди codex не знайдено. Плагін лежить у $MARKET (і $DIR/hooks.json для IDE); встанови його:"
-  echo "    codex plugin marketplace add \"$MARKET\" && codex plugin add token-tracker@token-tracker-local"
+  echo "  Немає python3/node, щоб оновити $DIR/hooks.json; скрипти збережено в $PLUGIN/hooks"
 fi
-echo "Готово. Перезапусти Codex (і за потреби повторно схвали хуки в /hooks або Settings → Hooks); дані з'являться після першого запиту."
+echo "Готово. Перезапусти Codex і схвали хуки (/hooks або Settings → Hooks → Review hooks); дані з'являться після першого запиту."

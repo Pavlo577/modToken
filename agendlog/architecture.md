@@ -47,4 +47,4 @@
 3. **Придушення спаму `*.delta` Codex та підтримка Claude Cowork (`worker/src/otlp.ts`, інсталятори):**
    - У `eventRowOf` відкидаються `codex.sse_event` із `event.kind`, що закінчується на `.delta`, а `install-codex.sh`/`.ps1` + `setup.ts` прописують `log_sse_deltas = false`, `log_agent_responses = false`, `log_guardian_assessments = false`.
    - `adapterFor` розпізнає `cowork` / `claude-cowork`.
-   - `install-codex.*` додатково мерджить user-level `$CODEX_HOME/hooks.json` (для Codex IDE); `install.*` додає `CLAUDE_CODE_PLUGIN_DIRS` fallback для Desktop/IDE, коли `claude` CLI відсутній; `CLOUD_MOD_DIR` змінено на `~/.claude/mods/token-tracker`.
+   - `install-codex.*` використовує user-level `$CODEX_HOME/hooks.json` як єдине джерело хуків для Codex CLI, Desktop та IDE (автоматично вимикаючи попередній дубль `[plugins."token-tracker@token-tracker-local"]` у `config.toml`); `install.*` додає `CLAUDE_CODE_PLUGIN_DIRS` fallback для Desktop/IDE, коли `claude` CLI відсутній; `CLOUD_MOD_DIR` змінено на `~/.claude/mods/token-tracker`.

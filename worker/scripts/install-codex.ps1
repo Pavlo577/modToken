@@ -3,28 +3,39 @@
 # Same as install-codex.sh: the [otel] table that exports Codex's log events to the site goes into %USERPROFILE%\.codex\config.toml
 # ($env:CODEX_HOME if set) between marker lines, replaced on every run; a config with an [otel] table of its own is left as it is.
 # The prompt text stays off (log_user_prompt = false). The token is never printed.
-# Limits: the token-tracker plugin (mods/codex-tracker: a Stop hook that reads them from Codex's session files, and a SessionStart hook that imports the
-# token history from before OpenTelemetry once) goes into a local
-# marketplace in .codex\token-tracker and is installed with `codex plugin`; Codex runs its hook after the user approves it once.
+# Limits & activity: hook scripts (mods/codex-tracker) are saved into .codex\token-tracker\plugins\token-tracker and registered
+# once in %USERPROFILE%\.codex\hooks.json (works across Codex CLI, Desktop, and IDE extensions); any previous
+# token-tracker@token-tracker-local plugin entry in config.toml is disabled automatically to prevent double firing.
 param([Parameter(Mandatory = $true)][string]$Origin, [Parameter(Mandatory = $true)][string]$Token)
 $ErrorActionPreference = 'Stop'
 $Origin = $Origin.TrimEnd('/')
 $dir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $config = Join-Path $dir 'config.toml'
 $raw = if ($env:TT_RAW) { $env:TT_RAW } else { 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker' }
-$market = Join-Path $dir 'token-tracker'; $plugin = Join-Path $market 'plugins\token-tracker'
+$plugin = Join-Path $dir 'token-tracker\plugins\token-tracker'
 $begin = '# >>> token-tracker (written by the Token Tracker install command; run it again to update)'
 $end = '# <<< token-tracker'
 Write-Host "Token Tracker для Codex: $config"
 New-Item -ItemType Directory -Force $dir | Out-Null
 
-# the file without our earlier block
+# the file without our earlier block; also disable legacy plugin duplicate if previously enabled in config.toml
 $lines = if (Test-Path $config) { @(Get-Content $config) } else { @() }
-$rest = New-Object System.Collections.Generic.List[string]; $skip = $false
+$rest = New-Object System.Collections.Generic.List[string]; $skip = $false; $inPlug = $false; $disabledOld = $false
 foreach ($l in $lines) {
-  if ($l -like '# >>> token-tracker*') { $skip = $true; continue }
-  if ($l -eq $end) { $skip = $false; continue }
-  if (-not $skip) { $rest.Add($l) }
+  if ($l -like '# >>> token-tracker*') { $skip = $true; $inPlug = $false; continue }
+  if ($skip) {
+    if ($l -eq $end) { $skip = $false }
+    continue
+  }
+  if ($l -match '^\s*\[plugins\.["'']token-tracker@token-tracker-local["'']\]\s*(#.*)?$') { $inPlug = $true; $rest.Add($l); continue }
+  if ($l -match '^\s*\[') { $inPlug = $false; $rest.Add($l); continue }
+  if ($inPlug -and $l -match '^(\s*enabled\s*=\s*)true(\s*(#.*)?)$') {
+    $rest.Add("$($Matches[1])false$($Matches[2])"); $disabledOld = $true; continue
+  }
+  if ($l -match '^(\s*plugins\.["'']token-tracker@token-tracker-local["'']\.enabled\s*=\s*)true(\s*(#.*)?)$') {
+    $rest.Add("$($Matches[1])false$($Matches[2])"); $disabledOld = $true; continue
+  }
+  $rest.Add($l)
 }
 while ($rest.Count -and -not $rest[$rest.Count - 1].Trim()) { $rest.RemoveAt($rest.Count - 1) }
 while ($rest.Count -and -not $rest[0].Trim()) { $rest.RemoveAt(0) }
@@ -46,20 +57,18 @@ $out.AddRange([string[]]@($begin, '[otel]', 'log_user_prompt = false',
   "exporter = { otlp-http = { endpoint = `"$Origin/v1/logs`", protocol = `"json`", headers = { `"x-device-token`" = `"$Token`" } } }", $end))
 [System.IO.File]::WriteAllLines($config, $out, (New-Object System.Text.UTF8Encoding $false)) # TOML: UTF-8 without a BOM
 Write-Host '  OpenTelemetry налаштовано'
+if ($disabledOld) { Write-Host "  Старий плагін token-tracker@token-tracker-local вимкнено в $config, щоб хуки не запускалися двічі" }
 
-# the limits: the plugin in a local marketplace, installed when the codex command is there (after the config is written: `codex plugin`
-# adds its own entries to it)
+# hook scripts live in .codex\token-tracker\plugins\token-tracker and are registered once in .codex\hooks.json
 $got = $true
 foreach ($f in '.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1', 'hooks/history.py', 'hooks/history.ps1', 'hooks/activity.py', 'hooks/activity.ps1') {
   $p = Join-Path $plugin $f
   New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
   try { Invoke-RestMethod "$raw/mods/codex-tracker/$f" -OutFile $p } catch { $got = $false }
 }
-New-Item -ItemType Directory -Force (Join-Path $market '.agents\plugins') | Out-Null
-'{ "name": "token-tracker-local", "plugins": [{ "name": "token-tracker", "source": "./plugins/token-tracker" }] }' |
-  Set-Content -Encoding ascii (Join-Path $market '.agents\plugins\marketplace.json')
 
-# Register user-level %USERPROFILE%\.codex\hooks.json for Codex IDE extensions while preserving custom user hooks
+# Register user-level %USERPROFILE%\.codex\hooks.json as the single canonical hook source across CLI, Desktop, and IDE
+$hooksOk = $false
 if ($got) {
   $hooksFile = Join-Path $dir 'hooks.json'
   $doc = @{}
@@ -89,21 +98,13 @@ if ($got) {
         -not ($grp.hooks -and ($grp.hooks | Where-Object { "$($_.command)" -like '*token-tracker*' -or "$($_.commandWindows)" -like '*token-tracker*' }))
       })
     }
-    $hooksMap[$ev] = @($cur) + @($ours[$ev])
+    $hooksMap[$ev] = @(@($cur) + @($ours[$ev]))
   }
   $doc['hooks'] = $hooksMap
   [System.IO.File]::WriteAllText($hooksFile, ($doc | ConvertTo-Json -Depth 12), (New-Object System.Text.UTF8Encoding $false))
+  $hooksOk = $true
 }
 
-if (-not $got) { Write-Host '  Не вдалося завантажити плагін: ліміти Codex не надсилатимуться' }
-elseif (Get-Command codex -ErrorAction SilentlyContinue) {
-  $ErrorActionPreference = 'Continue'
-  codex plugin marketplace add $market *> $null
-  codex plugin add token-tracker@token-tracker-local *> $null
-  if ($LASTEXITCODE) { Write-Host "  плагін не вдалося встановити: codex plugin marketplace add `"$market`"; codex plugin add token-tracker@token-tracker-local" }
-  else { Write-Host "  плагін і user-хуки ($dir\hooks.json) встановлено (у Codex схвали хуки: /hooks або Settings → Hooks → Review hooks)" }
-} else {
-  Write-Host "  Команди codex не знайдено. Плагін лежить у $market (і $dir\hooks.json для IDE); встанови його:"
-  Write-Host "    codex plugin marketplace add `"$market`"; codex plugin add token-tracker@token-tracker-local"
-}
-Write-Host "Готово. Перезапусти Codex (і повторно схвали хуки в Settings → Hooks → Review hooks після оновлення); дані з'являться після першого запиту."
+if (-not $got) { Write-Host '  Не вдалося завантажити скрипти хуків: ліміти Codex не надсилатимуться' }
+elseif ($hooksOk) { Write-Host "  Хуки встановлено в $dir\hooks.json (працюють у Codex CLI, Desktop та IDE)" }
+Write-Host "Готово. Перезапусти Codex і схвали хуки (/hooks або Settings → Hooks → Review hooks); дані з'являться після першого запиту."

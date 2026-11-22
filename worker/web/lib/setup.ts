@@ -125,12 +125,12 @@ export function setupPlan(agent: Agent, place: Place, origin: string, token: str
   const win = place === 'windows'
   return {
     steps: [
-      { text: win ? 'Відкрий PowerShell і виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін: ліміти й імпорт старої історії):' : 'У терміналі виконай (допише в config.toml Codex експорт OpenTelemetry і поставить плагін: ліміти й імпорт старої історії; йому потрібен `python3`):', code: win ? codexInstallPs(origin, token) : codexInstallSh(origin, token) },
-      { text: "Перезапусти Codex. Коли Codex спитає про хуки плагіна token-tracker, дозволь їх: вони надсилають ліміти, а на початку першої сесії один раз імпортують стару історію. Дані з'являться після першого запиту." },
+      { text: win ? 'Відкрий PowerShell і виконай (допише в config.toml Codex експорт OpenTelemetry і додасть хуки в `hooks.json`: ліміти, активність й імпорт старої історії):' : 'У терміналі виконай (допише в config.toml Codex експорт OpenTelemetry і додасть хуки в `hooks.json`: ліміти, активність й імпорт старої історії; потрібен `python3`):', code: win ? codexInstallPs(origin, token) : codexInstallSh(origin, token) },
+      { text: "Перезапусти Codex і схвали хуки (`/hooks` або `Settings → Hooks → Review hooks`): вони працюють у Codex CLI, Desktop та IDE і надсилають ліміти, активність та імпорт старої історії. Дані з'являться після першого запиту." },
     ],
     manual: [
       { text: `Допиши в кінець \`${win ? '%USERPROFILE%\\.codex\\config.toml' : '~/.codex/config.toml'}\`; якщо там уже є секція \`[otel]\`, додай ці ключі в неї:`, code: toml },
-      { text: "`protocol = \"json\"` обов'язковий: іншого формату сайт не приймає. Текст запитів лишається вимкненим (`log_user_prompt = false`). Так приходять лише токени: ліміти надсилає плагін token-tracker для Codex, його ставить команда вище (`codex plugin add token-tracker@token-tracker-local`)." },
+      { text: "`protocol = \"json\"` обов'язковий: іншого формату сайт не приймає. Текст запитів лишається вимкненим (`log_user_prompt = false`). Так приходять лише токени: ліміти й активність надсилають хуки Codex (`hooks.json`), їх додає команда вище." },
     ],
   }
 }

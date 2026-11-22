@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { antigravityInstallPs, antigravityInstallSh, cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
@@ -52,15 +52,23 @@ test('setup: the Codex one-liners and the [otel] table: logs endpoint, JSON, the
   for (const part of ['[otel]', 'log_user_prompt = false', 'log_agent_responses = false', 'log_guardian_assessments = false', 'log_sse_deltas = false', 'endpoint = "https://x.test/v1/logs"', 'protocol = "json"', '"x-device-token" = "tok"']) assert.ok(toml.includes(part), part)
 })
 
-test('setup: install-codex.sh writes its [otel] block once, replaces it on a second run, puts the plugin and user hooks.json in place, leaves user config alone', () => {
+test('setup: install-codex.sh writes its [otel] block once, disables legacy plugin duplicate, registers user hooks.json alone, leaves user config alone', () => {
   const home = mkdtempSync(join(tmpdir(), 'tt-codex-'))
-  const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '') // the plugin from this checkout, not the network
-  const run = (...args) => spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, ...args], { env: { ...process.env, CODEX_HOME: home, TT_RAW: raw, PATH: '/usr/bin:/bin' }, encoding: 'utf8' })
+  const binDir = mkdtempSync(join(tmpdir(), 'tt-codex-bin-'))
+  const stubLog = join(home, 'codex-stub.log')
+  const stub = join(binDir, 'codex')
+  writeFileSync(stub, `#!/bin/sh\necho "$@" >> "${stubLog}"\nexit 0\n`)
+  chmodSync(stub, 0o755)
+  const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '') // the scripts from this checkout, not the network
+  const run = (...args) => spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, ...args], { env: { ...process.env, CODEX_HOME: home, TT_RAW: raw, PATH: `${binDir}:/usr/bin:/bin` }, encoding: 'utf8' })
   const config = join(home, 'config.toml')
-  const user = 'model = "gpt-5.1-codex"\n\n[profiles.fast]\nmodel = "gpt-5-mini"\n'
+  const user = 'model = "gpt-5.1-codex"\n\n[profiles.fast]\nmodel = "gpt-5-mini"\n\n[plugins."token-tracker@token-tracker-local"]\nenabled = true\n\n[plugins."other@local"]\nenabled = true\n'
+  const userDisabled = user.replace('[plugins."token-tracker@token-tracker-local"]\nenabled = true', '[plugins."token-tracker@token-tracker-local"]\nenabled = false')
   writeFileSync(config, user)
   writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo my-custom-hook' }] }] } }))
-  assert.equal(run('https://x.test/', 'tok1').status, 0)
+  const r1 = run('https://x.test/', 'tok1')
+  assert.equal(r1.status, 0)
+  assert.ok(r1.stdout.includes('вимкнено'))
   const first = readFileSync(config, 'utf8')
   assert.equal(run('https://x.test', 'tok2').status, 0)
   assert.equal(run('https://x.test', 'tok2').status, 0)
@@ -68,7 +76,8 @@ test('setup: install-codex.sh writes its [otel] block once, replaces it on a sec
   assert.equal(text, first.replace('tok1', 'tok2')) // a second and a third run change nothing but the token
   assert.equal(text.split('[otel]').length, 2)
   assert.ok(!text.includes('notify'))
-  assert.ok(text.startsWith(user + '\n# >>> token-tracker')) // the user's config stays as it was, the block comes after it
+  assert.ok(text.startsWith(userDisabled + '\n# >>> token-tracker')) // legacy duplicate disabled, other plugins & config kept intact
+  assert.ok(text.includes('[plugins."other@local"]\nenabled = true'))
   assert.ok(text.includes('"x-device-token" = "tok2"') && !text.includes('tok1'))
   assert.ok(text.includes('log_sse_deltas = false'))
   assert.ok(text.includes('endpoint = "https://x.test/v1/logs", protocol = "json"'))
@@ -78,16 +87,22 @@ test('setup: install-codex.sh writes its [otel] block once, replaces it on a sec
   assert.equal(userHooks.hooks.Stop[0].hooks[0].command, 'echo my-custom-hook')
   assert.equal(userHooks.hooks.Interrupt[0].hooks[0].timeout, 3)
   assert.equal(userHooks.hooks.SessionEnd[0].hooks[0].timeout, 3)
-  // the plugin and its local marketplace, ready for `codex plugin add token-tracker@token-tracker-local`
-  const market = JSON.parse(readFileSync(join(home, 'token-tracker', '.agents', 'plugins', 'marketplace.json'), 'utf8'))
-  assert.deepEqual(market, { name: 'token-tracker-local', plugins: [{ name: 'token-tracker', source: './plugins/token-tracker' }] })
-  for (const f of ['.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1', 'hooks/history.py', 'hooks/history.ps1']) {
+  // scripts & plugin manifest for plugin_version() are downloaded, without marketplace.json or invoking codex plugin add
+  assert.equal(existsSync(join(home, 'token-tracker', '.agents', 'plugins', 'marketplace.json')), false)
+  assert.equal(existsSync(stubLog), false)
+  for (const f of ['.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py', 'hooks/limits.ps1', 'hooks/history.py', 'hooks/history.ps1', 'hooks/activity.py', 'hooks/activity.ps1']) {
     assert.equal(readFileSync(join(home, 'token-tracker', 'plugins', 'token-tracker', f), 'utf8'), readFileSync(new URL('../mods/codex-tracker/' + f, import.meta.url), 'utf8'), f)
   }
   const out = run('https://x.test', 'tok3')
   assert.equal(out.status, 0)
   assert.ok(!out.stdout.includes('tok3')) // the token is never printed
-  assert.ok(out.stdout.includes('codex plugin add token-tracker@token-tracker-local')) // no codex command here: how to install it by hand
+  assert.ok(!out.stdout.includes('codex plugin add'))
+  assert.ok(out.stdout.includes('hooks.json'))
+
+  // empty config.toml produces no stray leading blank line
+  const emptyHome = mkdtempSync(join(tmpdir(), 'tt-codex-emptycfg-'))
+  assert.equal(spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, 'https://x.test', 'tok0'], { env: { ...process.env, CODEX_HOME: emptyHome, TT_RAW: raw, PATH: '/usr/bin:/bin' }, encoding: 'utf8' }).status, 0)
+  assert.ok(readFileSync(join(emptyHome, 'config.toml'), 'utf8').startsWith('# >>> token-tracker'))
 
   writeFileSync(config, '[otel]\nenvironment = "prod"\n')
   const otel = run('https://x.test', 'tok4')
