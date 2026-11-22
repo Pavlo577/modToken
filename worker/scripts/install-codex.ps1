@@ -1,4 +1,4 @@
-﻿# Token Tracker for Codex CLI on a Windows computer, one command from the dashboard's "Add device" box (PowerShell):
+# Token Tracker for Codex CLI on a Windows computer, one command from the dashboard's "Add device" box (PowerShell):
 #   & ([scriptblock]::Create((irm <raw url of this file>))) https://<your-site> <device token>
 # Same as install-codex.sh: the [otel] table that exports Codex's log events to the site goes into %USERPROFILE%\.codex\config.toml
 # ($env:CODEX_HOME if set) between marker lines, replaced on every run; a config with an [otel] table of its own is left as it is.
@@ -19,7 +19,7 @@ Write-Host "Token Tracker для Codex: $config"
 New-Item -ItemType Directory -Force $dir | Out-Null
 
 # the file without our earlier block; also disable legacy plugin duplicate if previously enabled in config.toml
-$lines = if (Test-Path $config) { @(Get-Content $config) } else { @() }
+$lines = if (Test-Path $config) { @(Get-Content -Encoding UTF8 $config) } else { @() }
 $rest = New-Object System.Collections.Generic.List[string]; $skip = $false; $inPlug = $false; $disabledOld = $false
 foreach ($l in $lines) {
   if ($l -like '# >>> token-tracker*') { $skip = $true; $inPlug = $false; continue }

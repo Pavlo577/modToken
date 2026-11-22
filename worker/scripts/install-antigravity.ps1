@@ -1,4 +1,4 @@
-﻿# Token Tracker for Antigravity CLI (`agy`) on Windows (PowerShell), one command from the dashboard's "Add device" box:
+# Token Tracker for Antigravity CLI (`agy`) on Windows (PowerShell), one command from the dashboard's "Add device" box:
 #   & ([scriptblock]::Create((irm <raw url of this file>))) https://<your-site> <device token>
 # Installs the Antigravity plugin (`mods/antigravity-tracker`) into %USERPROFILE%\.gemini\config\plugins\token-tracker,
 # saves site/token into %USERPROFILE%\.gemini\antigravity-cli\token-tracker\config.json (never printed), and merges statusLine
