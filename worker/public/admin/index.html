@@ -228,7 +228,7 @@
         <div class="pick"><span class="sub">Агент</span><div class="seg" id="setup-agent" role="group" aria-label="Агент"><button type="button" data-v="claude" aria-pressed="true">Claude Code</button><button type="button" data-v="codex" aria-pressed="false">Codex</button><button type="button" data-v="antigravity" aria-pressed="false">Antigravity</button></div></div>
         <div class="pick"><span class="sub">Де працює</span><div class="seg" id="setup-place" role="group" aria-label="Де працює"><button type="button" data-v="windows" aria-pressed="false">Windows</button><button type="button" data-v="linux" aria-pressed="true">Ubuntu / macOS</button><button type="button" data-v="cloud" aria-pressed="false">Хмара</button></div></div>
       </div>
-      <form id="new-device"><input id="dev-name" placeholder="Назва пристрою, напр. linux-home" maxlength="60" required>
+      <form id="new-device"><input id="dev-name" placeholder="Назва пристрою (необов'язково — визначиться автоматично)" maxlength="60">
         <select id="dev-project" aria-label="Проєкт у статистиці" title="Що мод token-tracker може надсилати про репозиторій сесії">
           <option value="off">Проєкт: не надсилати</option><option value="name">Проєкт: назва репозиторію</option><option value="hash">Проєкт: анонімний хеш</option>
         </select><button class="primary" type="submit">Створити токен</button></form>

@@ -236,7 +236,7 @@ test('codex history: as the hook runs it (no --run), it returns at once and the 
     assert.equal(r.code, 0); assert.equal(r.out, '')
     assert.ok(Date.now() - started < 3000)
     assert.ok(existsSync(join(data, 'history-started'))) // the trace that the hook ran
-    for (let i = 0; i < 50 && !existsSync(join(data, 'history-imported')); i++) await new Promise(ok => setTimeout(ok, 100))
+    for (let i = 0; i < 50 && (!existsSync(join(data, 'history-imported')) || s.logs.length < 2); i++) await new Promise(ok => setTimeout(ok, 100))
     assert.equal(s.got.length, 1)
     assert.equal(JSON.parse(s.got[0].body).turns[0].input, 500)
     assert.deepEqual(s.logs.map(l => l.events[0].kind).sort(), ['history_hook', 'history_imported']) // the hook ran, then the import finished

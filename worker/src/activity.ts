@@ -4,6 +4,7 @@
 // context_window?, perm_asks, perm_denied, perm_wait_ms }]. The project (a repository's owner/name, or `h:` and 12 hex characters) is kept only as
 // far as the device's project_mode allows: off keeps none, hash keeps a hash only, name keeps either. Anything else in the body is ignored.
 import type { Env } from './env.ts'
+import { hostDeviceName, isAutoDeviceName } from './devices.ts'
 import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { json, text } from './util.ts'
@@ -83,6 +84,13 @@ async function deviceMode(env: Env, id: string): Promise<ProjectMode> {
 export async function modConfig(req: Request, env: Env): Promise<Response> {
   const dev = await authDevice(req, env)
   if (!dev) return text('unauthorized', 401)
+  const url = new URL(req.url)
+  const host = url.searchParams.get('host')
+  if (host && isAutoDeviceName(dev.name)) {
+    const { results } = await env.DB.prepare('SELECT name FROM devices WHERE user_email = ? AND id != ?').bind(dev.user_email, dev.id).all<{ name: string }>()
+    const next = hostDeviceName(dev.name, url.searchParams.get('agent'), host, results.map(r => r.name))
+    if (next) await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(next, dev.id).run()
+  }
   return json({ project: await deviceMode(env, dev.id) })
 }
 

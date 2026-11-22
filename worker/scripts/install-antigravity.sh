@@ -92,4 +92,5 @@ PY
 
 echo "  Плагін встановлено в $PLUGIN"
 echo "  statusLine підключено в $SETTINGS"
+case "$RAW" in file://*) ;; *) (HOST_NAME=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo ""); [ -n "$HOST_NAME" ] && curl -fsSL --connect-timeout 2 --max-time 3 -H "x-device-token: $TOKEN" -H "user-agent: modToken-antigravity/1.0" "$ORIGIN/v1/config?agent=antigravity&host=$HOST_NAME" </dev/null >/dev/null 2>&1) & ;; esac
 echo "Готово. Перезапусти Antigravity CLI (agy); дані з'являться на дашборді після першої відповіді."

@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { antigravityInstallPs, antigravityInstallSh, cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
+import { autoDeviceName, hostDeviceName, isAutoDeviceName } from '../src/devices.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -168,4 +169,17 @@ test('setup: a device shown again gets its last choice, else what its data and n
   assert.deepEqual(guessSetup('linux-agy', [], undefined, def), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('box', ['antigravity'], undefined, def), { agent: 'antigravity', place: 'linux' })
   assert.deepEqual(guessSetup('box', ['claude', 'codex'], { agent: 'nope' }, def), def) // unknown saved values and two agents: the defaults
+})
+
+test('setup: autoDeviceName and hostDeviceName build unique names and never overwrite custom names', () => {
+  assert.equal(autoDeviceName('claude', 'windows', []), 'claude-windows')
+  assert.equal(autoDeviceName('claude', 'windows', ['claude-windows']), 'claude-windows-2')
+  assert.equal(autoDeviceName('codex', 'windows', ['CODEX-WINDOWS', 'codex-windows-2']), 'codex-windows-3')
+  assert.equal(isAutoDeviceName('claude-windows'), true)
+  assert.equal(isAutoDeviceName('antigravity-linux-2'), true)
+  assert.equal(isAutoDeviceName('my-custom-pc'), false)
+  assert.equal(hostDeviceName('claude-windows', 'claude', 'DESKTOP-IOOOI.local', []), 'claude-DESKTOP-IOOOI')
+  assert.equal(hostDeviceName('claude-windows-2', 'claude', 'DESKTOP-IOOOI', ['claude-DESKTOP-IOOOI']), 'claude-DESKTOP-IOOOI-2')
+  assert.equal(hostDeviceName('my-custom-pc', 'claude', 'DESKTOP-IOOOI', []), null)
+  assert.equal(hostDeviceName('claude-linux', 'claude', 'localhost', []), null)
 })

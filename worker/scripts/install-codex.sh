@@ -121,4 +121,5 @@ elif [ "$HOOKS_OK" = 1 ]; then
 else
   echo "  Немає python3/node, щоб оновити $DIR/hooks.json; скрипти збережено в $PLUGIN/hooks"
 fi
+case "$RAW" in file://*) ;; *) (HOST_NAME=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo ""); [ -n "$HOST_NAME" ] && curl -fsSL --connect-timeout 2 --max-time 3 -H "x-device-token: $TOKEN" -H "user-agent: modToken-codex/1.0" "$ORIGIN/v1/config?agent=codex&host=$HOST_NAME" </dev/null >/dev/null 2>&1) & ;; esac
 echo "Готово. Перезапусти Codex і схвали хуки (/hooks або Settings → Hooks → Review hooks); дані з'являться після першого запиту."

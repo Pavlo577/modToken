@@ -2,6 +2,52 @@
 import type { Env } from './env.ts'
 import { randomHex, sha256 } from './util.ts'
 
+export const PROVIDERS = ['claude', 'codex', 'antigravity'] as const
+export const PLACES = ['windows', 'linux', 'cloud'] as const
+
+const AUTO_NAME_RE = /^(claude|codex|antigravity)-(windows|linux|cloud)(-\d+)?$/i
+
+/** Returns true when `name` is still an auto-generated `<agent>-<place>(-N)` placeholder. */
+export const isAutoDeviceName = (name: string): boolean => AUTO_NAME_RE.test(name.trim())
+
+function uniqueName(base: string, existingNames: string[]): string {
+  const taken = new Set(existingNames.map(n => n.trim().toLowerCase()))
+  const cleanBase = base.slice(0, 56)
+  if (!taken.has(cleanBase.toLowerCase())) return cleanBase
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${cleanBase}-${i}`
+    if (!taken.has(candidate.toLowerCase())) return candidate
+  }
+  return `${cleanBase}-${Date.now() % 10000}`
+}
+
+/** Builds a unique default device name (`<agent>-<place>` or `<agent>-<place>-2`) when the user leaves the name blank. */
+export function autoDeviceName(agent: string, place: string, existingNames: string[] = []): string {
+  const a = (PROVIDERS as readonly string[]).includes(agent) ? agent : 'claude'
+  const p = (PLACES as readonly string[]).includes(place) ? place : 'linux'
+  return uniqueName(`${a}-${p}`, existingNames)
+}
+
+/**
+ * Computes `<agent>-<hostname>` when an install script reports the machine's hostname (`GET /v1/config?agent=...&host=...`),
+ * but ONLY if the device still has its auto-generated `<agent>-<place>` placeholder name (never overwrites a custom name).
+ */
+export function hostDeviceName(
+  currentName: string,
+  agent: string | null | undefined,
+  rawHost: string | null | undefined,
+  existingNames: string[] = [],
+): string | null {
+  if (!isAutoDeviceName(currentName) || typeof rawHost !== 'string') return null
+  const firstLabel = rawHost.trim().split('.')[0] ?? ''
+  const host = firstLabel.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
+  if (host.length < 2 || /^localhost$/i.test(host)) return null
+  const prefix = typeof agent === 'string' && (PROVIDERS as readonly string[]).includes(agent)
+    ? agent
+    : currentName.trim().split('-')[0].toLowerCase()
+  return uniqueName(`${prefix}-${host}`, existingNames)
+}
+
 /** A new device for `email` with a fresh random token; the token is returned once and only its hash is stored. */
 export async function createDevice(env: Env, email: string, name: string, projectMode = 'off'): Promise<string> {
   const token = randomHex(32)

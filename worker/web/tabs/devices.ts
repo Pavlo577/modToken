@@ -1,13 +1,15 @@
-// The Devices tab: add a device (its token and the OpenTelemetry settings to paste), the device list, a new token to set a device up again, revoke.
+// The Devices tab: add a device grouped by agent (its token and the OpenTelemetry settings to paste), rename, a new token, revoke.
+import { load } from '../core/load.ts'
+import { providerColor, providerLabel } from '../core/palette.ts'
 import { api } from '../lib/api.ts'
 import { $, el } from '../lib/dom.ts'
-import { providerColor, providerLabel } from '../core/palette.ts'
-import { fillHistoryDevices, initHistory } from './history.ts'
 import { guessSetup, setupPlan, type Agent, type Place, type Step } from '../lib/setup.ts'
 import type { DeviceRow } from '../lib/types.ts'
+import { fillHistoryDevices, initHistory } from './history.ts'
 
 /** Shows the setup steps for a token (a new device's, or a device's new one); set by initDevices. */
 let showSetup: (token: string, device: string, providers?: string[]) => void = () => {}
+let pickAgentForAdd: (agent: Agent) => void = () => {}
 
 /** The agent and place last chosen for each device (by name), in this browser: preselected when its commands are shown again. */
 const SETUP_KEY = 'tt-setup'
@@ -15,6 +17,21 @@ const savedSetups = (): Record<string, { agent?: string; place?: string }> => { 
 const saveSetup = (device: string, agent: string, place: string): void => {
   try { localStorage.setItem(SETUP_KEY, JSON.stringify({ ...savedSetups(), [device]: { agent, place } })) } catch { /* private mode */ }
 }
+const renameSavedSetup = (oldName: string, newName: string): void => {
+  try {
+    const cur = savedSetups()
+    if (cur[oldName]) {
+      cur[newName] = cur[oldName]
+      if (oldName !== newName) delete cur[oldName]
+      localStorage.setItem(SETUP_KEY, JSON.stringify(cur))
+    }
+  } catch { /* private mode */ }
+}
+
+const AGENTS: Agent[] = ['claude', 'codex', 'antigravity']
+const PLACE_LABEL: Record<Place, string> = { windows: 'Windows', linux: 'Ubuntu / macOS', cloud: 'Хмара' }
+const SERVICE_AGENT: Record<string, Agent> = { 'claude-mod': 'claude', 'codex-plugin': 'codex', 'antigravity-plugin': 'antigravity' }
+const defaultPlace = (): Place => (typeof navigator !== 'undefined' && /Win/i.test(navigator.userAgent) ? 'windows' : 'linux')
 
 const PROJECT: Record<DeviceRow['project_mode'], string> = { off: 'Проєкт: не надсилати', name: 'Проєкт: назва', hash: 'Проєкт: хеш' }
 
@@ -88,33 +105,67 @@ function pluginBox(entries: PluginEntry[], seen: Record<string, string> = {}): H
   return el('div', { class: 'plugins' }, ...quiet, ...lines, ...(entries.length ? [toggle, log] : []))
 }
 
-function deviceRow(d: DeviceRow, log: PluginEntry[] = []): HTMLElement {
+/** Which agent section(s) a device belongs to: any agent it already reported data for (OTLP turns or plugin log), else its guessed/saved agent. */
+function deviceAgents(d: DeviceRow, log: PluginEntry[]): Agent[] {
+  const fromData = new Set<Agent>()
+  for (const p of d.providers) if ((AGENTS as readonly string[]).includes(p)) fromData.add(p as Agent)
+  for (const e of log) if (e.device_id === d.id && SERVICE_AGENT[e.service]) fromData.add(SERVICE_AGENT[e.service])
+  if (fromData.size) return AGENTS.filter(a => fromData.has(a))
+  const pick = guessSetup(d.name, d.providers, savedSetups()[d.name], { agent: 'claude', place: defaultPlace() })
+  return [pick.agent]
+}
+
+function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): HTMLElement {
   const added = d.created_at.slice(0, 10)
-  const seen = d.last_seen
+  const seen = d.seen?.[sectionAgent] ?? d.last_seen
+  const pick = guessSetup(d.name, [sectionAgent], savedSetups()[d.name], { agent: sectionAgent, place: defaultPlace() })
+  const sectionService = SERVICE_OF[sectionAgent]
+  const sectionLog = log.filter(e => e.device_id === d.id && (!sectionService || e.service === sectionService))
+  const sectionSeen = d.revoked ? {} : (d.seen?.[sectionAgent] ? { [sectionAgent]: d.seen[sectionAgent] } : {})
+  const otherAgents = d.providers.filter(p => p !== sectionAgent)
+
+  const doRename = async () => {
+    const raw = prompt('Нова назва пристрою:', d.name)
+    if (raw === null) return
+    const next = raw.trim()
+    if (!next || next === d.name) return
+    try {
+      await api('/devices/' + d.id, { method: 'PATCH', body: JSON.stringify({ name: next }) })
+      renameSavedSetup(d.name, next)
+      void loadDevices()
+      void load()
+    } catch (err) { alert('Не вдалося перейменувати: ' + (err as Error).message) }
+  }
+
   return el('div', { class: 'dev' },
-    el('div', {}, el('b', {}, d.name), d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
-      ...[...d.providers].sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Агент надсилав дані з цього пристрою' }, providerLabel(p))),
+    el('div', {},
+      el('b', {}, d.name),
+      el('span', { class: 'dev-place', title: 'Середовище пристрою' }, PLACE_LABEL[pick.place]),
+      d.revoked ? el('span', { class: 'tag' }, 'відкликано') : '',
+      ...otherAgents.sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Цей токен також надсилав дані від іншого агента' }, '+ ' + providerLabel(p))),
       el('small', {}, 'Додано ' + added + (seen ? ' · остання активність ' + new Date(seen).toLocaleString('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }) : ' · ще не надсилав дані')),
-      pluginBox(log.filter(e => e.device_id === d.id), d.revoked ? {} : d.seen)),
-    el('div', { class: 'dev-actions' }, ...(d.revoked ? [] : [
-      projectSelect(d),
-      el('button', { title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
-        if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення (для кожного агента, що там працює).`)) return
-        try {
-          const { token } = await api<{ token: string }>('/devices/' + d.id + '/token', { method: 'POST' })
-          showSetup(token, d.name, d.providers)
-        } catch (err) { alert('Не вдалося видати токен: ' + (err as Error).message) }
-      } }, 'Новий токен'),
-      el('button', { class: 'danger', title: 'Токен перестане діяти; дані пристрою лишаються в статистиці', onclick: async () => {
-        if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані; те, що вже надіслав, лишиться в статистиці.`)) return
-        await api('/devices/' + d.id, { method: 'DELETE' })
-        void loadDevices()
-      } }, 'Відкликати')]),
+      pluginBox(sectionLog, sectionSeen)),
+    el('div', { class: 'dev-actions' },
+      el('button', { type: 'button', title: 'Змінити назву цього пристрою', onclick: doRename }, 'Перейменувати'),
+      ...(d.revoked ? [] : [
+        projectSelect(d),
+        el('button', { type: 'button', title: 'Показати команди встановлення ще раз: пристрій отримає новий токен', onclick: async () => {
+          if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення.`)) return
+          try {
+            const { token } = await api<{ token: string }>('/devices/' + d.id + '/token', { method: 'POST' })
+            showSetup(token, d.name, [sectionAgent])
+          } catch (err) { alert('Не вдалося видати токен: ' + (err as Error).message) }
+        } }, 'Новий токен'),
+        el('button', { type: 'button', class: 'danger', title: 'Токен перестане діяти; дані пристрою лишаються в статистиці', onclick: async () => {
+          if (!confirm(`Відкликати «${d.name}»? Він перестане надсилати дані; те, що вже надіслав, лишиться в статистиці.`)) return
+          await api('/devices/' + d.id, { method: 'DELETE' })
+          void loadDevices()
+        } }, 'Відкликати')]),
       deleteButton(d)))
 }
 
 /** Deletes the device with everything it sent: its numbers leave the statistics. */
-const deleteButton = (d: DeviceRow): HTMLElement => el('button', { class: 'danger', title: 'Видалити пристрій разом з усіма його даними', onclick: async () => {
+const deleteButton = (d: DeviceRow): HTMLElement => el('button', { type: 'button', class: 'danger', title: 'Видалити пристрій разом з усіма його даними', onclick: async () => {
   if (!confirm(`Видалити «${d.name}» разом з усіма його даними (токени, ліміти, сесії)? Статистика за минулі дні зменшиться. Скасувати це не можна.`)) return
   try {
     await api('/devices/' + d.id + '?purge=1', { method: 'DELETE' })
@@ -122,9 +173,30 @@ const deleteButton = (d: DeviceRow): HTMLElement => el('button', { class: 'dange
   } catch (err) { alert('Не вдалося видалити: ' + (err as Error).message) }
 } }, 'Видалити')
 
+const countWord = (n: number): string => (n === 0 ? 'немає пристроїв' : n === 1 ? '1 пристрій' : n < 5 ? `${n} пристрої` : `${n} пристроїв`)
+
 export async function loadDevices(): Promise<DeviceRow[]> {
   const [list, log] = await Promise.all([api<DeviceRow[]>('/devices'), api<PluginEntry[]>('/plugin-log').catch(() => [] as PluginEntry[])])
-  $('dev-list').replaceChildren(...(list.length ? list.map(d => deviceRow(d, log)) : [el('div', { class: 'empty' }, 'Пристроїв ще немає')]))
+  const byAgent = new Map<Agent, DeviceRow[]>(AGENTS.map(a => [a, []]))
+  for (const d of list) {
+    for (const a of deviceAgents(d, log)) byAgent.get(a)?.push(d)
+  }
+  const groups = AGENTS.map(a => {
+    const devs = byAgent.get(a) ?? []
+    const color = providerColor(a)
+    const label = providerLabel(a)
+    return el('div', { class: 'dev-group' },
+      el('div', { class: 'dev-group-head' },
+        el('div', { class: 'dev-group-title' },
+          el('i', { style: `background:${color}` }),
+          el('span', {}, label),
+          el('span', { class: 'dev-group-count' }, `· ${countWord(devs.length)}`)),
+        el('button', { type: 'button', class: 'dev-group-add', onclick: () => pickAgentForAdd(a) }, `+ Додати в ${label}`)),
+      ...(devs.length
+        ? devs.map(d => deviceRow(d, a, log))
+        : [el('div', { class: 'dev-group-empty' }, `Для ${label} ще немає підключених пристроїв.`)]))
+  })
+  $('dev-list').replaceChildren(...groups)
   fillHistoryDevices(list)
   return list
 }
@@ -159,7 +231,12 @@ export function initDevices(): void {
   initHistory()
   let token = '' // the token being set up: shown once, kept only while the page is open so the choice can still change
   let device = ''
+  const updatePlaceholder = (): void => {
+    const input = $<HTMLInputElement>('dev-name')
+    input.placeholder = `Назва (необов'язково — авто з ПК або ${agent.get()}-${place.get()})`
+  }
   const render = (): void => {
+    updatePlaceholder()
     if (!token) return
     saveSetup(device, agent.get(), place.get()) // remembered for the next time this device's commands are shown
     const plan = setupPlan(agent.get(), place.get(), location.origin, token)
@@ -168,6 +245,16 @@ export function initDevices(): void {
   }
   const agent = choice<Agent>('setup-agent', render)
   const place = choice<Place>('setup-place', render)
+  place.set(defaultPlace())
+  updatePlaceholder()
+
+  pickAgentForAdd = (a: Agent) => {
+    agent.set(a)
+    updatePlaceholder()
+    $('setup-pick').scrollIntoView({ behavior: 'smooth', block: 'start' })
+    $<HTMLInputElement>('dev-name').focus()
+  }
+
   $('setup-manual-btn').addEventListener('click', () => {
     const box = $('setup-manual')
     box.classList.toggle('hide')
@@ -179,7 +266,7 @@ export function initDevices(): void {
     const pick = guessSetup(name, providers, savedSetups()[name], { agent: agent.get(), place: place.get() })
     agent.set(pick.agent); place.set(pick.place)
     render()
-    $('setup-for').textContent = `Налаштування для «${name}»: обери агента й місце вгорі, команда вже з токеном цього пристрою.`
+    $('setup-for').textContent = `Налаштування для «${name}»: виконай кроки нижче (якщо назву не вводили, інсталятор автоматично підставить ім'я комп'ютера).`
     $('setup-manual').classList.add('hide')
     $('setup-manual-btn').textContent = 'Встановити вручну'
     $('setup-box').classList.remove('hide')
@@ -189,9 +276,15 @@ export function initDevices(): void {
   $('new-device').addEventListener('submit', async e => {
     e.preventDefault()
     const name = $<HTMLInputElement>('dev-name')
+    const curAgent = agent.get(), curPlace = place.get()
     try {
-      const r = await api<{ token: string }>('/devices', { method: 'POST', body: JSON.stringify({ name: name.value, project_mode: $<HTMLSelectElement>('dev-project').value }) })
-      showSetup(r.token, name.value.trim())
+      const r = await api<{ token: string; device: string }>('/devices', {
+        method: 'POST',
+        body: JSON.stringify({ name: name.value.trim(), agent: curAgent, place: curPlace, project_mode: $<HTMLSelectElement>('dev-project').value }),
+      })
+      const createdName = r.device || name.value.trim() || `${curAgent}-${curPlace}`
+      saveSetup(createdName, curAgent, curPlace)
+      showSetup(r.token, createdName, [curAgent])
       name.value = ''
       void loadDevices()
     } catch (err) { alert('Не вдалося створити пристрій: ' + (err as Error).message) }

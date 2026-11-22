@@ -54,4 +54,5 @@ if ($needDir) {
   $s.env | Add-Member -Force -NotePropertyName CLAUDE_CODE_PLUGIN_DIRS -NotePropertyValue ($cur -join ';')
   [System.IO.File]::WriteAllText($settings, ($s | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding $false))
 }
+if ($env:COMPUTERNAME) { try { Invoke-RestMethod -Uri "$Origin/v1/config?agent=claude&host=$([Uri]::EscapeDataString($env:COMPUTERNAME))" -Headers @{ 'x-device-token' = $Token; 'User-Agent' = 'modToken-claude/1.0' } -TimeoutSec 3 | Out-Null } catch {} }
 Write-Host 'Готово. Перезапусти Claude Code (і Claude Desktop / IDE, якщо відкриті); стару історію додасть команда /tracker-import.'

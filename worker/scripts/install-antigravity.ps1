@@ -64,4 +64,5 @@ if ($chain) { $cfgObj.chain_command = $chain }
 
 Write-Host "  Плагін встановлено в $plugin"
 Write-Host "  statusLine підключено в $settingsPath"
+if ($env:COMPUTERNAME) { try { Invoke-RestMethod -Uri "$Origin/v1/config?agent=antigravity&host=$([Uri]::EscapeDataString($env:COMPUTERNAME))" -Headers @{ 'x-device-token' = $Token; 'User-Agent' = 'modToken-antigravity/1.0' } -TimeoutSec 3 | Out-Null } catch {} }
 Write-Host "Готово. Перезапусти Antigravity CLI (agy); дані з'являться на дашборді після першої відповіді."

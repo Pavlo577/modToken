@@ -1,13 +1,13 @@
 // Admin routes about devices: list, add (the token is shown once), a new token for a device, what the mod may send about projects, revoke,
 // and delete (`?purge=1`: the device and all it sent).
 import { PROJECT_MODES } from '../activity.ts'
-import { createDevice, deleteDevice, newDeviceToken } from '../devices.ts'
+import { PROVIDERS, autoDeviceName, createDevice, deleteDevice, newDeviceToken } from '../devices.ts'
 import { pluginLogRead } from '../pluginlog.ts'
 import { json, str, text } from '../util.ts'
 import type { Routes } from './context.ts'
 
-const PROVIDERS = ['claude', 'codex', 'antigravity'] as const // the agents a device can send from (token_events.provider)
 const isMode = (v: unknown): v is (typeof PROJECT_MODES)[number] => typeof v === 'string' && (PROJECT_MODES as readonly string[]).includes(v)
+const isProvider = (v: unknown): v is (typeof PROVIDERS)[number] => typeof v === 'string' && (PROVIDERS as readonly string[]).includes(v)
 
 /** Devices with no interactions yet (last_seen null) stay at the top (newest first), then the most recently used. */
 export function sortDevices<T extends { last_seen?: unknown; created_at?: unknown }>(rows: T[]): T[] {
@@ -38,9 +38,13 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
   if (path === '/plugin-log' && req.method === 'GET') return pluginLogRead(env, email)
 
   if (path === '/devices' && req.method === 'POST') {
-    const body = (await req.json().catch(() => null)) as { name?: unknown; project_mode?: unknown } | null
-    const name = str(body?.name, 60).trim()
-    if (!name) return text('name required', 400)
+    const body = (await req.json().catch(() => null)) as { name?: unknown; project_mode?: unknown; agent?: unknown; place?: unknown } | null
+    let name = str(body?.name, 60).trim()
+    if (!name) {
+      if (!isProvider(body?.agent)) return text('name required', 400)
+      const { results } = await env.DB.prepare('SELECT name FROM devices WHERE user_email = ?').bind(email).all<{ name: string }>()
+      name = autoDeviceName(body.agent, typeof body?.place === 'string' ? body.place : 'linux', results.map(r => r.name))
+    }
     const mode = body?.project_mode ?? 'off'
     if (!isMode(mode)) return text('project_mode: off, name or hash', 400)
     return json({ token: await createDevice(env, email, name, mode), device: name })
@@ -61,16 +65,25 @@ export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
     return new Response(null, { status: 204 })
   }
   if (dev && req.method === 'PATCH') {
-    const body = (await req.json().catch(() => null)) as { project_mode?: unknown } | null
-    if (!isMode(body?.project_mode)) return text('project_mode: off, name or hash', 400)
-    const mode = body.project_mode
-    const r = await env.DB.prepare('UPDATE devices SET project_mode = ? WHERE id = ? AND user_email = ?').bind(mode, dev[1], email).run()
+    const body = (await req.json().catch(() => null)) as { name?: unknown; project_mode?: unknown } | null
+    const hasName = body !== null && typeof body === 'object' && body.name !== undefined
+    const hasMode = body !== null && typeof body === 'object' && body.project_mode !== undefined
+    if (!hasName && !hasMode) return text('name or project_mode required', 400)
+    const nextName = hasName ? str(body?.name, 60).trim() : null
+    if (hasName && !nextName) return text('name required', 400)
+    if (hasMode && !isMode(body?.project_mode)) return text('project_mode: off, name or hash', 400)
+    const mode = hasMode ? (body!.project_mode as (typeof PROJECT_MODES)[number]) : null
+    const r = nextName && mode
+      ? await env.DB.prepare('UPDATE devices SET name = ?, project_mode = ? WHERE id = ? AND user_email = ?').bind(nextName, mode, dev[1], email).run()
+      : nextName
+        ? await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ? AND user_email = ?').bind(nextName, dev[1], email).run()
+        : await env.DB.prepare('UPDATE devices SET project_mode = ? WHERE id = ? AND user_email = ?').bind(mode, dev[1], email).run()
     if (!r.meta.changes) return text('not found', 404)
     // what is already stored follows the new setting: off forgets every project of the device, hash forgets the names
-    if (mode !== 'name') {
+    if (mode && mode !== 'name') {
       await env.DB.prepare(`UPDATE mod_sessions SET project = NULL WHERE device_id = ? AND project IS NOT NULL ${mode === 'hash' ? "AND project NOT LIKE 'h:%'" : ''}`).bind(dev[1]).run()
     }
-    return json({ project_mode: mode })
+    return json({ ...(nextName ? { name: nextName } : {}), ...(mode ? { project_mode: mode } : {}) })
   }
 
   return null
