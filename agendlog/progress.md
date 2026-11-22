@@ -16,3 +16,6 @@
 - [x] Виправлено баг у дедуплікації квот `statusline.py` / `statusline.ps1`: при обчисленні `resetsAt` із `reset_in_seconds` час округлюється до хвилини, щоб уникнути зайвих повторних POST `/v1/limits` через мілісекундний дрейф.
 - [x] Проведено повний E2E-тест на живому локальному `wrangler dev` + D1 (`DB` і `EVENTS`): пройшли всі 74 перевірки `test/otlp.sh` та повний цикл Antigravity (`install-antigravity.sh`, `SessionStart` → `PreInvocation` → фоновий `statusLine` (~165 ms) → `Stop` → перевірка `devices`, `turns`, `buckets`, `limits`, `mod-stats`, `plugin-log`, `insights` і нульовий витік секретів).
 - [x] Виправлено 3 баги, виявлені під час живого тестування на `ait.bdev.pp.ua` (версія плагіна `1.0.1`): додано `User-Agent` (обхід Cloudflare `403 error 1010` для `Python-urllib`), виправлено плоский формат `hooks.json` для `SessionStart`/`PreInvocation`/`Stop` та формулу `last_context.tokens` (сума з кешованими токенами). Деталі в `agendlog/bugs.md`.
+
+## 2026-11-22
+- [x] Оновлено сортування списку «Мої пристрої» (`GET /api/admin/devices` у `worker/src/admin/devices.ts`): пристрої без жодної взаємодії (`last_seen IS NULL`) відображаються зверху (новіші спочатку), далі — за часом останньої взаємодії (`last_seen DESC`). Додано юніт-тест.

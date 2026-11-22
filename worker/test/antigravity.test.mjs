@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { activityProvider } from '../src/activity.ts'
+import { sortDevices } from '../src/admin/devices.ts'
 import { importProvider } from '../src/import.ts'
 import { limitsProvider } from '../src/limits.ts'
 import { parseOtlpLogs } from '../src/otlp.ts'
@@ -287,4 +288,14 @@ test('antigravity plugin & install-antigravity.sh: idempotent install, chains ex
   assert.deepEqual(JSON.parse(readFileSync(cfgPath, 'utf8')), { site: 'https://x.test', token: 'tok-two', chain_command: '~/my-bar.sh' })
   assert.ok(existsSync(join(cfgDir, 'plugins', 'token-tracker', 'hooks.json')))
   assert.equal(run('https://x.test').status, 1) // missing token refused
+})
+
+test('devices: devices without interactions stay at the top (newest first), then sorted by last_seen descending', () => {
+  const ordered = sortDevices([
+    { name: 'older-used', created_at: '2026-11-20T10:00:00Z', last_seen: '2026-11-21T10:00:00Z' },
+    { name: 'never-old', created_at: '2026-11-19T10:00:00Z', last_seen: null },
+    { name: 'latest-used', created_at: '2026-11-18T10:00:00Z', last_seen: '2026-11-22T00:01:00Z' },
+    { name: 'never-new', created_at: '2026-11-21T23:00:00Z', last_seen: null },
+  ])
+  assert.deepEqual(ordered.map(d => d.name), ['never-new', 'never-old', 'latest-used', 'older-used'])
 })

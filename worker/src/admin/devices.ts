@@ -9,19 +9,30 @@ import type { Routes } from './context.ts'
 const PROVIDERS = ['claude', 'codex', 'antigravity'] as const // the agents a device can send from (token_events.provider)
 const isMode = (v: unknown): v is (typeof PROJECT_MODES)[number] => typeof v === 'string' && (PROJECT_MODES as readonly string[]).includes(v)
 
+/** Devices with no interactions yet (last_seen null) stay at the top (newest first), then the most recently used. */
+export function sortDevices<T extends { last_seen?: unknown; created_at?: unknown }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const al = typeof a.last_seen === 'string' && a.last_seen ? a.last_seen : ''
+    const bl = typeof b.last_seen === 'string' && b.last_seen ? b.last_seen : ''
+    if (!al !== !bl) return al ? 1 : -1
+    if (al !== bl) return bl.localeCompare(al)
+    return String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
+  })
+}
+
 export const deviceRoutes: Routes = async ({ req, env, email, path }) => {
   if (path === '/devices' && req.method === 'GET') {
     const { results } = await env.DB.prepare(
       `SELECT id, name, revoked, created_at, last_seen, otlp_since, project_mode,
               ${PROVIDERS.map(p => `(SELECT MAX(t.ts) FROM token_events t WHERE t.device_id = devices.id AND t.provider = '${p}') AS seen_${p}`).join(', ')}
-       FROM devices WHERE user_email = ? ORDER BY created_at DESC`,
+       FROM devices WHERE user_email = ? ORDER BY (last_seen IS NOT NULL) ASC, last_seen DESC, created_at DESC`,
     ).bind(email).all<Record<string, unknown>>()
     // per agent: when it last sent from the device (one index entry each: device_id, provider, ts)
-    return json(results.map(row => {
+    return json(sortDevices(results.map(row => {
       const d: Record<string, unknown> = {}, seen: Record<string, string> = {}
       for (const [k, v] of Object.entries(row)) if (k.startsWith('seen_')) { if (v) seen[k.slice(5)] = String(v) } else d[k] = v
-      return { ...d, providers: Object.keys(seen), seen }
-    }))
+      return { ...d, providers: Object.keys(seen), seen } as Record<string, unknown>
+    })))
   }
 
   if (path === '/plugin-log' && req.method === 'GET') return pluginLogRead(env, email)
