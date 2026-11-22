@@ -13,6 +13,10 @@ param(
   [Parameter(Position = 3)][string]$Arg3 = ''
 )
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+function U([string]$s) { [regex]::Replace($s, '\\u(00[a-f0-9]{2}|04[a-f0-9]{2}|2[0-7][a-f0-9]{2})', { param($m) [char][int]("0x" + $m.Groups[1].Value) }) }
+function Write-Host([object]$Object = '') { Microsoft.PowerShell.Utility\Write-Host (U "$Object") }
+function Read-Host([string]$Prompt = '') { Microsoft.PowerShell.Utility\Read-Host (U $Prompt) }
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
@@ -33,8 +37,8 @@ $script:token = ''
 $script:tokenSource = ''
 
 function Mask-Token([string]$t) {
-  if (-not $t) { return 'не задано' }
-  if ($t.Length -ge 12) { return "$($t.Substring(0, 4))…$($t.Substring($t.Length - 4))" }
+  if (-not $t) { return '\u043d\u0435 \u0437\u0430\u0434\u0430\u043d\u043e' }
+  if ($t.Length -ge 12) { return "$($t.Substring(0, 4))\u2026$($t.Substring($t.Length - 4))" }
   return '***'
 }
 
@@ -109,7 +113,7 @@ function Ensure-CliInstalled {
   try {
     if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath) -and ($PSCommandPath -ne $psPath)) {
       Copy-Item -LiteralPath $PSCommandPath -Destination $psPath -Force
-    } elseif (-not (Test-Path -LiteralPath $psPath)) {
+    } elseif (-not $PSCommandPath -or -not (Test-Path -LiteralPath $psPath)) {
       Invoke-RestMethod "$raw/scripts/modtoken.ps1" -OutFile $psPath
     }
     $cmdBody = "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$psPath`" %*`r`n"
@@ -159,43 +163,43 @@ function Show-Status {
   $cCred = Get-AgentOwnCredentials 'claude'
   $xCred = Get-AgentOwnCredentials 'codex'
   $aCred = Get-AgentOwnCredentials 'antigravity'
-  Write-Host '╔════════════════════════════════════════════════════════════════╗'
-  Write-Host '║  Token Tracker CLI (modtoken) · Управління агентами та OTLP    ║'
-  Write-Host '╚════════════════════════════════════════════════════════════════╝'
-  Write-Host "  Комп'ютер: $hostName"
-  Write-Host "  Сервер:    $(if ($script:site) { $script:site } else { 'не налаштовано' })"
-  Write-Host "  Токен ПК:  $(Mask-Token $script:token)$(if ($script:tokenSource) { " (знайдено в: $($script:tokenSource))" } else { '' })"
+  Write-Host '\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557'
+  Write-Host '\u2551  Token Tracker CLI (modtoken) \u00b7 \u0423\u043f\u0440\u0430\u0432\u043b\u0456\u043d\u043d\u044f \u0430\u0433\u0435\u043d\u0442\u0430\u043c\u0438 \u0442\u0430 OTLP    \u2551'
+  Write-Host '\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d'
+  Write-Host "  \u041a\u043e\u043c\u043f'\u044e\u0442\u0435\u0440: $hostName"
+  Write-Host "  \u0421\u0435\u0440\u0432\u0435\u0440:    $(if ($script:site) { $script:site } else { '\u043d\u0435 \u043d\u0430\u043b\u0430\u0448\u0442\u043e\u0432\u0430\u043d\u043e' })"
+  Write-Host "  \u0422\u043e\u043a\u0435\u043d \u041f\u041a:  $(Mask-Token $script:token)$(if ($script:tokenSource) { " (\u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0432: $($script:tokenSource))" } else { '' })"
   Write-Host ''
-  Write-Host '  Стан агентів на цьому ПК:'
+  Write-Host '  \u0421\u0442\u0430\u043d \u0430\u0433\u0435\u043d\u0442\u0456\u0432 \u043d\u0430 \u0446\u044c\u043e\u043c\u0443 \u041f\u041a:'
 
   $cv = Get-ClaudeVersion; $xv = Get-CodexVersion; $av = Get-AgyVersion
-  if (Test-ClaudeConfigured) { Write-Host "    [✓] Claude Code   OTLP: увімкнено · Мод: v$(if ($cv) { $cv } else { '?' }) · токен: $(Mask-Token $cCred[1])" }
-  elseif (Test-ClaudeDetected) { Write-Host '    [•] Claude Code   виявлено на ПК, ще не підключено до Token Tracker' }
-  else { Write-Host '    [ ] Claude Code   не виявлено' }
+  if (Test-ClaudeConfigured) { Write-Host "    [\u2713] Claude Code   OTLP: \u0443\u0432\u0456\u043c\u043a\u043d\u0435\u043d\u043e \u00b7 \u041c\u043e\u0434: v$(if ($cv) { $cv } else { '?' }) \u00b7 \u0442\u043e\u043a\u0435\u043d: $(Mask-Token $cCred[1])" }
+  elseif (Test-ClaudeDetected) { Write-Host '    [\u2022] Claude Code   \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u043e \u043d\u0430 \u041f\u041a, \u0449\u0435 \u043d\u0435 \u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u0434\u043e Token Tracker' }
+  else { Write-Host '    [ ] Claude Code   \u043d\u0435 \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u043e' }
 
   if (Test-CodexConfigured) {
     $hf = Join-Path $codexDir 'hooks.json'
-    $hs = if ((Test-Path $hf) -and ((Get-Content -Raw -Encoding UTF8 $hf) -match 'token-tracker')) { 'hooks.json активний' } else { 'немає hooks.json' }
-    Write-Host "    [✓] Codex         OTLP: увімкнено · Хуки: v$(if ($xv) { $xv } else { '?' }) ($hs) · токен: $(Mask-Token $xCred[1])"
-  } elseif (Test-CodexDetected) { Write-Host '    [•] Codex         виявлено на ПК, ще не підключено до Token Tracker' }
-  else { Write-Host '    [ ] Codex         не виявлено' }
+    $hs = if ((Test-Path $hf) -and ((Get-Content -Raw -Encoding UTF8 $hf) -match 'token-tracker')) { 'hooks.json \u0430\u043a\u0442\u0438\u0432\u043d\u0438\u0439' } else { '\u043d\u0435\u043c\u0430\u0454 hooks.json' }
+    Write-Host "    [\u2713] Codex         OTLP: \u0443\u0432\u0456\u043c\u043a\u043d\u0435\u043d\u043e \u00b7 \u0425\u0443\u043a\u0438: v$(if ($xv) { $xv } else { '?' }) ($hs) \u00b7 \u0442\u043e\u043a\u0435\u043d: $(Mask-Token $xCred[1])"
+  } elseif (Test-CodexDetected) { Write-Host '    [\u2022] Codex         \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u043e \u043d\u0430 \u041f\u041a, \u0449\u0435 \u043d\u0435 \u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u0434\u043e Token Tracker' }
+  else { Write-Host '    [ ] Codex         \u043d\u0435 \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u043e' }
 
-  if (Test-AgyConfigured) { Write-Host "    [✓] Antigravity   statusLine: увімкнено · Плагін: v$(if ($av) { $av } else { '?' }) · токен: $(Mask-Token $aCred[1])" }
-  elseif (Test-AgyDetected) { Write-Host '    [•] Antigravity   виявлено на ПК, ще не підключено до Token Tracker' }
-  else { Write-Host '    [ ] Antigravity   не виявлено' }
+  if (Test-AgyConfigured) { Write-Host "    [\u2713] Antigravity   statusLine: \u0443\u0432\u0456\u043c\u043a\u043d\u0435\u043d\u043e \u00b7 \u041f\u043b\u0430\u0433\u0456\u043d: v$(if ($av) { $av } else { '?' }) \u00b7 \u0442\u043e\u043a\u0435\u043d: $(Mask-Token $aCred[1])" }
+  elseif (Test-AgyDetected) { Write-Host '    [\u2022] Antigravity   \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u043e \u043d\u0430 \u041f\u041a, \u0449\u0435 \u043d\u0435 \u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u0434\u043e Token Tracker' }
+  else { Write-Host '    [ ] Antigravity   \u043d\u0435 \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u043e' }
   Write-Host ''
 }
 
 function Prompt-CredentialsIfMissing {
   Discover-Credentials | Out-Null
   if ($script:site -and $script:token) { return $true }
-  Write-Host 'Токен пристрою на цьому ПК ще не знайдено.'
-  $inSite = Read-Host 'Адреса сервера (Enter = https://ait.bdev.pp.ua)'
+  Write-Host '\u0422\u043e\u043a\u0435\u043d \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u044e \u043d\u0430 \u0446\u044c\u043e\u043c\u0443 \u041f\u041a \u0449\u0435 \u043d\u0435 \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e.'
+  $inSite = Read-Host '\u0410\u0434\u0440\u0435\u0441\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430 (Enter = https://ait.bdev.pp.ua)'
   if (-not $inSite.Trim()) { $inSite = 'https://ait.bdev.pp.ua' }
-  $inTok = (Read-Host 'Вставте токен пристрою з дашборду (Пристрої → Створити токен)').Trim()
-  if (-not $inTok) { Write-Host 'Токен не введено.'; return $false }
+  $inTok = (Read-Host '\u0412\u0441\u0442\u0430\u0432\u0442\u0435 \u0442\u043e\u043a\u0435\u043d \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u044e \u0437 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0443 (\u041f\u0440\u0438\u0441\u0442\u0440\u043e\u0457 \u2192 \u0421\u0442\u0432\u043e\u0440\u0438\u0442\u0438 \u0442\u043e\u043a\u0435\u043d)').Trim()
+  if (-not $inTok) { Write-Host '\u0422\u043e\u043a\u0435\u043d \u043d\u0435 \u0432\u0432\u0435\u0434\u0435\u043d\u043e.'; return $false }
   Save-Credentials $inSite $inTok
-  Write-Host "  Токен збережено в $mtCfg"
+  Write-Host "  \u0422\u043e\u043a\u0435\u043d \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e \u0432 $mtCfg"
   return $true
 }
 
@@ -263,20 +267,20 @@ function Invoke-AgentInstaller([string]$agent) {
     'antigravity' { 'install-antigravity.ps1' }
     default       { '' }
   }
-  if (-not $scriptName) { Write-Host "Невідомий агент: $agent"; return }
+  if (-not $scriptName) { Write-Host "\u041d\u0435\u0432\u0456\u0434\u043e\u043c\u0438\u0439 \u0430\u0433\u0435\u043d\u0442: $agent"; return }
   $creds = Get-AgentCredentials $agent
   $useSite = if ($creds[0]) { $creds[0] } else { $script:site }
   $useTok = if ($creds[1]) { $creds[1] } else { $script:token }
-  if (-not $useSite -or -not $useTok) { Write-Host '  Помилка: спочатку задайте сервер і токен'; return }
+  if (-not $useSite -or -not $useTok) { Write-Host '  \u041f\u043e\u043c\u0438\u043b\u043a\u0430: \u0441\u043f\u043e\u0447\u0430\u0442\u043a\u0443 \u0437\u0430\u0434\u0430\u0439\u0442\u0435 \u0441\u0435\u0440\u0432\u0435\u0440 \u0456 \u0442\u043e\u043a\u0435\u043d'; return }
   $prevTok = $useTok
   $synced = Sync-AgentWithServer $agent $useSite $useTok
   $useTok = $synced[0]
   $syncedDev = $synced[1]
   if ($syncedDev) {
     if ($useTok -ne $prevTok) {
-      Write-Host "  [↻] Синхронізовано окремий токен для $agent → пристрій «$syncedDev» ($(Mask-Token $useTok))"
+      Write-Host "  [\u21bb] \u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0456\u0437\u043e\u0432\u0430\u043d\u043e \u043e\u043a\u0440\u0435\u043c\u0438\u0439 \u0442\u043e\u043a\u0435\u043d \u0434\u043b\u044f $agent \u2192 \u043f\u0440\u0438\u0441\u0442\u0440\u0456\u0439 \u00ab$syncedDev\u00bb ($(Mask-Token $useTok))"
     } else {
-      Write-Host "  [✓] Синхронізовано пристрій «$syncedDev» ($(Mask-Token $useTok))"
+      Write-Host "  [\u2713] \u0421\u0438\u043d\u0445\u0440\u043e\u043d\u0456\u0437\u043e\u0432\u0430\u043d\u043e \u043f\u0440\u0438\u0441\u0442\u0440\u0456\u0439 \u00ab$syncedDev\u00bb ($(Mask-Token $useTok))"
     }
   }
   $code = (Invoke-RestMethod "$raw/scripts/$scriptName").TrimStart([char]0xFEFF)
@@ -296,7 +300,7 @@ function Invoke-Install([string]$target = 'all', [string]$s = '', [string]$t = '
   if ((Test-CodexDetected)  -or (Test-CodexConfigured))  { Invoke-AgentInstaller 'codex';  $any = $true }
   if ((Test-AgyDetected)    -or (Test-AgyConfigured))    { Invoke-AgentInstaller 'antigravity'; $any = $true }
   if (-not $any) {
-    Write-Host '  Налаштовую Claude Code та Codex:'
+    Write-Host '  \u041d\u0430\u043b\u0430\u0448\u0442\u043e\u0432\u0443\u044e Claude Code \u0442\u0430 Codex:'
     Invoke-AgentInstaller 'claude'
     Invoke-AgentInstaller 'codex'
   }
@@ -307,65 +311,65 @@ function Invoke-Update {
   if (-not $script:site -or -not $script:token) {
     if (-not (Prompt-CredentialsIfMissing)) { return }
   }
-  Write-Host 'Оновлення Token Tracker CLI та всіх підключених агентів...'
+  Write-Host '\u041e\u043d\u043e\u0432\u043b\u0435\u043d\u043d\u044f Token Tracker CLI \u0442\u0430 \u0432\u0441\u0456\u0445 \u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0445 \u0430\u0433\u0435\u043d\u0442\u0456\u0432...'
   Ensure-CliInstalled
   try {
     $selfCode = (Invoke-RestMethod "$raw/scripts/modtoken.ps1").TrimStart([char]0xFEFF)
     [System.IO.File]::WriteAllText($psPath, $selfCode, $utf8NoBom)
-    Write-Host "  [✓] Команду modtoken ($cmdPath) оновлено"
+    Write-Host "  [\u2713] \u041a\u043e\u043c\u0430\u043d\u0434\u0443 modtoken ($cmdPath) \u043e\u043d\u043e\u0432\u043b\u0435\u043d\u043e"
   } catch {}
   $updated = $false
   if ((Test-ClaudeConfigured) -or (Test-ClaudeDetected)) {
     $oldV = Get-ClaudeVersion
     Invoke-AgentInstaller 'claude'
     $newV = Get-ClaudeVersion
-    Write-Host "  [✓] Claude Code: v$(if ($oldV) { $oldV } else { '—' }) → v$(if ($newV) { $newV } else { '?' })"
+    Write-Host "  [\u2713] Claude Code: v$(if ($oldV) { $oldV } else { '\u2014' }) \u2192 v$(if ($newV) { $newV } else { '?' })"
     $updated = $true
   }
   if ((Test-CodexConfigured) -or (Test-CodexDetected)) {
     $oldV = Get-CodexVersion
     Invoke-AgentInstaller 'codex'
     $newV = Get-CodexVersion
-    Write-Host "  [✓] Codex: v$(if ($oldV) { $oldV } else { '—' }) → v$(if ($newV) { $newV } else { '?' })"
+    Write-Host "  [\u2713] Codex: v$(if ($oldV) { $oldV } else { '\u2014' }) \u2192 v$(if ($newV) { $newV } else { '?' })"
     $updated = $true
   }
   if ((Test-AgyConfigured) -or (Test-AgyDetected)) {
     $oldV = Get-AgyVersion
     Invoke-AgentInstaller 'antigravity'
     $newV = Get-AgyVersion
-    Write-Host "  [✓] Antigravity: v$(if ($oldV) { $oldV } else { '—' }) → v$(if ($newV) { $newV } else { '?' })"
+    Write-Host "  [\u2713] Antigravity: v$(if ($oldV) { $oldV } else { '\u2014' }) \u2192 v$(if ($newV) { $newV } else { '?' })"
     $updated = $true
   }
-  if (-not $updated) { Write-Host '  Підключених агентів не знайдено. Запустіть: modtoken install all' }
+  if (-not $updated) { Write-Host '  \u041f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0445 \u0430\u0433\u0435\u043d\u0442\u0456\u0432 \u043d\u0435 \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e. \u0417\u0430\u043f\u0443\u0441\u0442\u0456\u0442\u044c: modtoken install all' }
 }
 
 function Invoke-Doctor {
   Show-Status
-  Write-Host '  Діагностика (doctor):'
+  Write-Host '  \u0414\u0456\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 (doctor):'
   if ($script:site -and $script:token) {
     $h = if ($env:COMPUTERNAME) { [Uri]::EscapeDataString($env:COMPUTERNAME) } else { '' }
     try {
       $resp = Invoke-RestMethod -Uri "$($script:site)/v1/config?host=$h" -Headers @{ 'x-device-token' = $script:token; 'User-Agent' = 'modToken-cli/1.0' } -TimeoutSec 8
-      Write-Host "    [✓] Зв'язок із сервером $($script:site)/v1/config: OK (project_mode = $($resp.project))"
+      Write-Host "    [\u2713] \u0417\u0432'\u044f\u0437\u043e\u043a \u0456\u0437 \u0441\u0435\u0440\u0432\u0435\u0440\u043e\u043c $($script:site)/v1/config: OK (project_mode = $($resp.project))"
     } catch {
-      Write-Host "    [✗] Помилка зв'язку з $($script:site)/v1/config: $($_.Exception.Message)"
+      Write-Host "    [\u2717] \u041f\u043e\u043c\u0438\u043b\u043a\u0430 \u0437\u0432'\u044f\u0437\u043a\u0443 \u0437 $($script:site)/v1/config: $($_.Exception.Message)"
     }
   } else {
-    Write-Host '    [!] Сервер і токен ще не налаштовані'
+    Write-Host '    [!] \u0421\u0435\u0440\u0432\u0435\u0440 \u0456 \u0442\u043e\u043a\u0435\u043d \u0449\u0435 \u043d\u0435 \u043d\u0430\u043b\u0430\u0448\u0442\u043e\u0432\u0430\u043d\u0456'
   }
   $rc = Get-RemoteVersion 'mods/token-tracker/.claude-plugin/plugin.json'
   $rx = Get-RemoteVersion 'mods/codex-tracker/.codex-plugin/plugin.json'
   $ra = Get-RemoteVersion 'mods/antigravity-tracker/plugin.json'
   $lc = Get-ClaudeVersion; $lx = Get-CodexVersion; $la = Get-AgyVersion
-  if ($lc) { Write-Host "    [•] Версія мода Claude:         локальна v$lc / остання v$(if ($rc) { $rc } else { '?' })" }
-  if ($lx) { Write-Host "    [•] Версія хуків Codex:         локальна v$lx / остання v$(if ($rx) { $rx } else { '?' })" }
-  if ($la) { Write-Host "    [•] Версія плагіна Antigravity: локальна v$la / остання v$(if ($ra) { $ra } else { '?' })" }
+  if ($lc) { Write-Host "    [\u2022] \u0412\u0435\u0440\u0441\u0456\u044f \u043c\u043e\u0434\u0430 Claude:         \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u0430 v$lc / \u043e\u0441\u0442\u0430\u043d\u043d\u044f v$(if ($rc) { $rc } else { '?' })" }
+  if ($lx) { Write-Host "    [\u2022] \u0412\u0435\u0440\u0441\u0456\u044f \u0445\u0443\u043a\u0456\u0432 Codex:         \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u0430 v$lx / \u043e\u0441\u0442\u0430\u043d\u043d\u044f v$(if ($rx) { $rx } else { '?' })" }
+  if ($la) { Write-Host "    [\u2022] \u0412\u0435\u0440\u0441\u0456\u044f \u043f\u043b\u0430\u0433\u0456\u043d\u0430 Antigravity: \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u0430 v$la / \u043e\u0441\u0442\u0430\u043d\u043d\u044f v$(if ($ra) { $ra } else { '?' })" }
 
   $xCfg = Join-Path $codexDir 'config.toml'
   if (Test-Path $xCfg) {
     $txt = Get-Content -Raw -Encoding UTF8 $xCfg
     if ($txt -match '\[plugins\.["'']token-tracker@token-tracker-local["'']\][\s\S]{0,80}?enabled\s*=\s*true') {
-      Write-Host "    [!] У $xCfg досі активний старий плагін token-tracker@token-tracker-local (запустіть: modtoken update)"
+      Write-Host "    [!] \u0423 $xCfg \u0434\u043e\u0441\u0456 \u0430\u043a\u0442\u0438\u0432\u043d\u0438\u0439 \u0441\u0442\u0430\u0440\u0438\u0439 \u043f\u043b\u0430\u0433\u0456\u043d token-tracker@token-tracker-local (\u0437\u0430\u043f\u0443\u0441\u0442\u0456\u0442\u044c: modtoken update)"
     }
   }
   foreach ($ef in @(
@@ -375,7 +379,7 @@ function Invoke-Doctor {
   )) {
     if (Test-Path $ef) {
       $last = (Get-Content -Encoding UTF8 $ef | Select-Object -Last 1)
-      Write-Host "    [!] Остання помилка в ${ef}: $last"
+      Write-Host "    [!] \u041e\u0441\u0442\u0430\u043d\u043d\u044f \u043f\u043e\u043c\u0438\u043b\u043a\u0430 \u0432 ${ef}: $last"
     }
   }
   Write-Host ''
@@ -385,14 +389,14 @@ function Show-Menu {
   Ensure-CliInstalled
   while ($true) {
     Show-Status
-    Write-Host '  Оберіть дію:'
-    Write-Host '    1) Оновити все (плагіни, хуки, OTLP, синхронізація токенів і modtoken)'
-    Write-Host '    2) Підключити / налаштувати всі виявлені агенти на цьому ПК'
-    Write-Host '    3) Підключити окремий агент (Claude Code / Codex / Antigravity)'
-    Write-Host '    4) Діагностика (doctor: перевірка сервера, версій, хуків і помилок)'
-    Write-Host '    5) Змінити сервер або токен пристрою'
-    Write-Host '    0) Вихід'
-    $rawChoice = Read-Host "`n  Ваш вибір [1-5, 0]"
+    Write-Host '  \u041e\u0431\u0435\u0440\u0456\u0442\u044c \u0434\u0456\u044e:'
+    Write-Host '    1) \u041e\u043d\u043e\u0432\u0438\u0442\u0438 \u0432\u0441\u0435 (\u043f\u043b\u0430\u0433\u0456\u043d\u0438, \u0445\u0443\u043a\u0438, OTLP, \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0456\u0437\u0430\u0446\u0456\u044f \u0442\u043e\u043a\u0435\u043d\u0456\u0432 \u0456 modtoken)'
+    Write-Host '    2) \u041f\u0456\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0438 / \u043d\u0430\u043b\u0430\u0448\u0442\u0443\u0432\u0430\u0442\u0438 \u0432\u0441\u0456 \u0432\u0438\u044f\u0432\u043b\u0435\u043d\u0456 \u0430\u0433\u0435\u043d\u0442\u0438 \u043d\u0430 \u0446\u044c\u043e\u043c\u0443 \u041f\u041a'
+    Write-Host '    3) \u041f\u0456\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0438 \u043e\u043a\u0440\u0435\u043c\u0438\u0439 \u0430\u0433\u0435\u043d\u0442 (Claude Code / Codex / Antigravity)'
+    Write-Host '    4) \u0414\u0456\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 (doctor: \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u043a\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430, \u0432\u0435\u0440\u0441\u0456\u0439, \u0445\u0443\u043a\u0456\u0432 \u0456 \u043f\u043e\u043c\u0438\u043b\u043e\u043a)'
+    Write-Host '    5) \u0417\u043c\u0456\u043d\u0438\u0442\u0438 \u0441\u0435\u0440\u0432\u0435\u0440 \u0430\u0431\u043e \u0442\u043e\u043a\u0435\u043d \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u044e'
+    Write-Host '    0) \u0412\u0438\u0445\u0456\u0434'
+    $rawChoice = Read-Host "`n  \u0412\u0430\u0448 \u0432\u0438\u0431\u0456\u0440 [1-5, 0]"
     if ($null -eq $rawChoice) { return }
     $ch = $rawChoice.Trim()
     Write-Host ''
@@ -400,7 +404,7 @@ function Show-Menu {
       '1' { Invoke-Update; Write-Host '' }
       '2' { Invoke-Install 'all'; Write-Host '' }
       '3' {
-        $ach = (Read-Host '  Який агент підключити? (1 = Claude Code, 2 = Codex, 3 = Antigravity)').Trim()
+        $ach = (Read-Host '  \u042f\u043a\u0438\u0439 \u0430\u0433\u0435\u043d\u0442 \u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u0438? (1 = Claude Code, 2 = Codex, 3 = Antigravity)').Trim()
         switch ($ach) {
           '1' { Invoke-Install 'claude' }
           'claude' { Invoke-Install 'claude' }
@@ -408,7 +412,7 @@ function Show-Menu {
           'codex' { Invoke-Install 'codex' }
           '3' { Invoke-Install 'antigravity' }
           'antigravity' { Invoke-Install 'antigravity' }
-          default { Write-Host '  Невірний вибір.' }
+          default { Write-Host '  \u041d\u0435\u0432\u0456\u0440\u043d\u0438\u0439 \u0432\u0438\u0431\u0456\u0440.' }
         }
         Write-Host ''
       }
@@ -423,7 +427,7 @@ function Show-Menu {
       'q'    { return }
       'exit' { return }
       ''     { }
-      default { Write-Host '  Невірний вибір.'; Write-Host '' }
+      default { Write-Host '  \u041d\u0435\u0432\u0456\u0440\u043d\u0438\u0439 \u0432\u0438\u0431\u0456\u0440.'; Write-Host '' }
     }
   }
 }
@@ -438,13 +442,13 @@ if ($Command -match '^https?://') {
     'doctor'  { Invoke-Doctor }
     'install' { Invoke-Install $(if ($Arg1) { $Arg1 } else { 'all' }) $Arg2 $Arg3 }
     'token'   {
-      if (-not $Arg1 -or -not $Arg2) { Write-Host 'Використання: modtoken token https://<сайт> <токен>'; exit 1 }
+      if (-not $Arg1 -or -not $Arg2) { Write-Host '\u0412\u0438\u043a\u043e\u0440\u0438\u0441\u0442\u0430\u043d\u043d\u044f: modtoken token https://<\u0441\u0430\u0439\u0442> <\u0442\u043e\u043a\u0435\u043d>'; exit 1 }
       Save-Credentials $Arg1 $Arg2
       Ensure-CliInstalled
-      Write-Host "Токен збережено в $mtCfg"
+      Write-Host "\u0422\u043e\u043a\u0435\u043d \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e \u0432 $mtCfg"
     }
     default {
-      Write-Host 'Використання: modtoken [status|update|doctor|install [all|claude|codex|antigravity]|token <сайт> <токен>]'
+      Write-Host '\u0412\u0438\u043a\u043e\u0440\u0438\u0441\u0442\u0430\u043d\u043d\u044f: modtoken [status|update|doctor|install [all|claude|codex|antigravity]|token <\u0441\u0430\u0439\u0442> <\u0442\u043e\u043a\u0435\u043d>]'
       exit 1
     }
   }

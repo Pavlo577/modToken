@@ -125,11 +125,13 @@ test('setup: install.sh sets CLAUDE_CODE_PLUGIN_DIRS when claude CLI is missing'
   assert.equal(settings.env.OTEL_EXPORTER_OTLP_LOGS_HEADERS, 'x-device-token=ctok')
 })
 
-test('setup: PowerShell installers have no UTF-8 BOM and install.ps1 writes BOM-free UTF-8', () => {
+test('setup: PowerShell installers have no UTF-8 BOM, are pure 7-bit ASCII (Windows PowerShell 5.1 safe), and write BOM-free UTF-8', () => {
   for (const name of ['install.ps1', 'install-codex.ps1', 'install-antigravity.ps1', 'modtoken.ps1']) {
     const buf = readFileSync(new URL('../scripts/' + name, import.meta.url))
     assert.equal(buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf, false, `${name} must not start with UTF-8 BOM`)
     assert.ok(buf.subarray(0, 2).toString('utf8') === '# ', `${name} starts with comment`)
+    const nonAscii = buf.findIndex(b => b >= 0x80)
+    assert.equal(nonAscii, -1, `${name} must be pure 7-bit ASCII so Windows PowerShell 5.1 never misparses UTF-8 bytes as Windows-1252 quotes`)
   }
   const claudePs = readFileSync(new URL('../scripts/install.ps1', import.meta.url), 'utf8')
   assert.equal(/Set-Content\s+-Encoding\s+utf8\b/i.test(claudePs), false)

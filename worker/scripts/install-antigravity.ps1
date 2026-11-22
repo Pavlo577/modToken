@@ -5,6 +5,10 @@
 # into %USERPROFILE%\.gemini\antigravity-cli\settings.json.
 param([Parameter(Mandatory = $true)][string]$Origin, [Parameter(Mandatory = $true)][string]$Token)
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+function U([string]$s) { [regex]::Replace($s, '\\u(00[a-f0-9]{2}|04[a-f0-9]{2}|2[0-7][a-f0-9]{2})', { param($m) [char][int]("0x" + $m.Groups[1].Value) }) }
+function Write-Host([object]$Object = '') { Microsoft.PowerShell.Utility\Write-Host (U "$Object") }
+function Read-Host([string]$Prompt = '') { Microsoft.PowerShell.Utility\Read-Host (U $Prompt) }
 $Origin = $Origin.TrimEnd('/')
 $cliDir = if ($env:ANTIGRAVITY_CLI_DIR) { $env:ANTIGRAVITY_CLI_DIR } else { Join-Path $HOME '.gemini\antigravity-cli' }
 $cfgDir = if ($env:GEMINI_CONFIG_DIR) { $env:GEMINI_CONFIG_DIR } else { Join-Path $HOME '.gemini\config' }
@@ -13,7 +17,7 @@ $plugin = Join-Path $cfgDir 'plugins\token-tracker'
 $settingsPath = Join-Path $cliDir 'settings.json'
 $raw = if ($env:TT_RAW) { $env:TT_RAW } else { 'https://raw.githubusercontent.com/Pavlo577/modToken/main/worker' }
 
-Write-Host "Token Tracker для Antigravity CLI: $cliDir"
+Write-Host "Token Tracker \u0434\u043b\u044f Antigravity CLI: $cliDir"
 New-Item -ItemType Directory -Force (Join-Path $plugin 'hooks'), $dataDir, $cliDir | Out-Null
 
 foreach ($f in 'plugin.json', 'hooks.json', 'hooks/statusline.py', 'hooks/activity.py', 'hooks/statusline.ps1', 'hooks/activity.ps1') {
@@ -62,8 +66,8 @@ $cfgObj = @{ site = $Origin; token = $Token }
 if ($chain) { $cfgObj.chain_command = $chain }
 [System.IO.File]::WriteAllText($cfgPath, ($cfgObj | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding $false))
 
-Write-Host "  Плагін встановлено в $plugin"
-Write-Host "  statusLine підключено в $settingsPath"
+Write-Host "  \u041f\u043b\u0430\u0433\u0456\u043d \u0432\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u043e \u0432 $plugin"
+Write-Host "  statusLine \u043f\u0456\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u043e \u0432 $settingsPath"
 try {
   $mt = Join-Path $HOME '.modtoken'; New-Item -ItemType Directory -Force $mt | Out-Null
   [System.IO.File]::WriteAllText((Join-Path $mt 'config.json'), (@{ site = $Origin; token = $Token } | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
@@ -74,4 +78,4 @@ try {
   if (($env:PATH -split ';') -notcontains $mt) { $env:PATH = "$mt;$env:PATH" }
 } catch {}
 if ($env:COMPUTERNAME) { try { Invoke-RestMethod -Uri "$Origin/v1/config?agent=antigravity&host=$([Uri]::EscapeDataString($env:COMPUTERNAME))" -Headers @{ 'x-device-token' = $Token; 'User-Agent' = 'modToken-antigravity/1.0' } -TimeoutSec 3 | Out-Null } catch {} }
-Write-Host "Готово. Перезапусти Antigravity CLI (agy); дані з'являться на дашборді після першої відповіді (консольна програма керування й оновлення: modtoken)."
+Write-Host "\u0413\u043e\u0442\u043e\u0432\u043e. \u041f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u0442\u0438 Antigravity CLI (agy); \u0434\u0430\u043d\u0456 \u0437'\u044f\u0432\u043b\u044f\u0442\u044c\u0441\u044f \u043d\u0430 \u0434\u0430\u0448\u0431\u043e\u0440\u0434\u0456 \u043f\u0456\u0441\u043b\u044f \u043f\u0435\u0440\u0448\u043e\u0457 \u0432\u0456\u0434\u043f\u043e\u0432\u0456\u0434\u0456 (\u043a\u043e\u043d\u0441\u043e\u043b\u044c\u043d\u0430 \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u0430 \u043a\u0435\u0440\u0443\u0432\u0430\u043d\u043d\u044f \u0439 \u043e\u043d\u043e\u0432\u043b\u0435\u043d\u043d\u044f: modtoken)."
