@@ -83,6 +83,8 @@ test('otlp: the Claude app (service claude-code-desktop) is Claude Code too; the
   assert.equal(calls.length, 1); assert.equal(calls[0].provider, 'claude'); assert.equal(calls[0].input_tokens, 86013)
   assert.equal(JSON.stringify(calls).includes('SECRET'), false)
   assert.equal(parseOtlpLogs(payload([record()], 'claude-codex-fake')).calls.length, 1, 'any claude-code* name')
+  assert.equal(parseOtlpLogs(payload([record()], 'cowork')).calls.length, 1, 'Claude Cowork')
+  assert.equal(parseOtlpLogs(payload([record()], 'claude-cowork')).calls.length, 1, 'claude-cowork*')
   assert.equal(parseOtlpLogs(payload([record()], 'codex')).calls.length, 0)
 })
 
@@ -192,6 +194,8 @@ test('otlp: Codex events without tokens, other SSE kinds and records without a c
   ], 'codex_cli_rs'))
   assert.equal(r.calls.length, 1)
   assert.equal(r.ignored, 4)
+  assert.equal(r.events.some(e => e.name === 'codex.sse_event' && e.attrs.includes('.delta')), false, 'streaming deltas dropped from EVENTS')
+  assert.equal(r.events.some(e => e.name === 'codex.sse_event' && e.attrs.includes('response.completed')), true)
   const text = JSON.stringify(r)
   for (const bad of ['me@example.com', 'acct-SECRET', 'SECRET-FILE', 'SECRET OUTPUT', 'SECRET ERROR', 'SECRET-SRV', 'SECRET.example']) assert.equal(text.includes(bad), false, bad)
   const tool = r.events.find(e => e.name === 'codex.tool_result')

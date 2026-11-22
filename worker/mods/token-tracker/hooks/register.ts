@@ -13,7 +13,7 @@ import type { HistoryTurn } from './history.ts'
 //   A log over 4 MiB (what $.fs.read takes) is first shrunk on the device by node, python or PowerShell to those fields.
 // The site and the device token are the device's own OTLP settings (the logs endpoint's origin, the x-device-token header);
 // TRACKER_ORIGIN / TRACKER_TOKEN override them. Tokens are never sent: OTLP counts them.
-type Limit = { kind: string; percentUsed: number; resetsAt?: string }
+type Limit = { kind: string; percentUsed: number; resetsAt?: string; observedAt?: string }
 type Turn = {
   id: string; session: string; ts: string; wall_ms: number; think_ms: number | null; outcome: string
   context_pct: number | null; context_tokens: number | null; context_window: number | null
@@ -33,7 +33,7 @@ async function target($: EngineInterface): Promise<Target | undefined> {
 async function post($: EngineInterface, t: Target, path: string, body: unknown): Promise<boolean> {
   const r = await $.http.fetch(`${t.origin}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-device-token': t.token },
+    headers: { 'content-type': 'application/json', 'x-device-token': t.token, 'user-agent': 'modToken-claude/' + MOD_VERSION },
     body: JSON.stringify(body),
   }).catch(() => undefined)
   return !!r?.ok
@@ -42,7 +42,7 @@ async function post($: EngineInterface, t: Target, path: string, body: unknown):
 const iso = async ($: EngineInterface): Promise<string> => new Date(await $.clock.now()).toISOString()
 
 /** The mod's version, as in ../.claude-plugin/plugin.json: the dashboard's plugin log shows which one a device runs. */
-const MOD_VERSION = '1.5.0'
+const MOD_VERSION = '1.5.1'
 type PluginEvent = { kind: 'limits' | 'import' | 'error'; n?: number; total?: number; error?: string; stage?: string }
 /** The mod's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message. */
 const report = ($: EngineInterface, t: Target, events: PluginEvent[]): Promise<boolean> =>
@@ -84,14 +84,16 @@ let queue: Turn[] = [] // turns not accepted yet; resent with the next one
 
 async function sendLimits($: EngineInterface): Promise<void> {
   const { rateLimits } = await $.session.usage()
-  const limits: Limit[] = rateLimits.map(r => ({ kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt }))
-  if (!limits.length) return
-  $.ui.status(limits.map(r => `${r.kind === 'five_hour' ? '5h' : r.kind === 'seven_day' ? '7d' : r.kind} ${r.percentUsed}%`).join(' · '))
-  const key = JSON.stringify(limits)
+  const raw = rateLimits.map(r => ({ kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt }))
+  if (!raw.length) return
+  $.ui.status(raw.map(r => `${r.kind === 'five_hour' ? '5h' : r.kind === 'seven_day' ? '7d' : r.kind} ${r.percentUsed}%`).join(' · '))
+  const key = JSON.stringify(raw)
   if (key === lastSentLimits || !target_) return
+  const now = await $.clock.now()
+  const obsIso = new Date(now).toISOString()
+  const limits: Limit[] = raw.map(r => ({ ...r, observedAt: obsIso }))
   if (await post($, target_, '/v1/limits', { limits })) {
     lastSentLimits = key
-    const now = await $.clock.now()
     if (now - lastLimitsReport > 3_600_000) { lastLimitsReport = now; await report($, target_, [{ kind: 'limits', n: limits.length }]) } // at most once an hour
   }
 }
@@ -193,7 +195,8 @@ function startImport($: EngineInterface, t: Target, files: { path: string; size:
     acc.clear()
     for (let i = 0; i < turns.length; i += MAX_HISTORY_TURNS) {
       const r = await $.http.fetch(`${t.origin}/v1/import`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-device-token': t.token }, body: JSON.stringify({ turns: turns.slice(i, i + MAX_HISTORY_TURNS) }),
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-device-token': t.token, 'user-agent': 'modToken-claude/' + MOD_VERSION },
+        body: JSON.stringify({ mode: 'reconcile', turns: turns.slice(i, i + MAX_HISTORY_TURNS) }),
       }).catch(() => undefined)
       if (!r?.ok) { total.failed += Math.min(MAX_HISTORY_TURNS, turns.length - i); continue }
       try {
@@ -271,7 +274,7 @@ export const register: Register = on => {
       lastTurnEnd = 0
       let mode = target_ ? 'config_failed' : 'no_target'
       if (target_) {
-        const c = await $.http.fetch(`${target_.origin}/v1/config`, { headers: { 'x-device-token': target_.token } }).catch(() => undefined)
+        const c = await $.http.fetch(`${target_.origin}/v1/config`, { headers: { 'x-device-token': target_.token, 'user-agent': 'modToken-claude/' + MOD_VERSION } }).catch(() => undefined)
         if (c?.ok) try { mode = String((JSON.parse(c.text) as { project?: unknown }).project ?? 'off') } catch { /* config_failed */ }
       }
       const p = await project($, mode)

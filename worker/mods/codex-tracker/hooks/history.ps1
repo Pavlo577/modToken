@@ -83,7 +83,7 @@ try {
   $added = 0
   for ($i = 0; $i -lt $rows.Count; $i += 500) {
     $part = $rows.GetRange($i, [math]::Min(500, $rows.Count - $i))
-    $body = @{ provider = 'codex'; turns = @($part) } | ConvertTo-Json -Depth 4 -Compress
+    $body = @{ provider = 'codex'; mode = 'reconcile'; turns = @($part) } | ConvertTo-Json -Depth 4 -Compress
     $r = Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/import') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' } -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 60
     if ($r.added) { $added += [int]$r.added }
   }

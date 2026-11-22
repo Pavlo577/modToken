@@ -1,10 +1,10 @@
 // Scheduled maintenance (hourly Cloudflare Cron Trigger):
-// 1. Prunes expired `otlp_calls` (>14 days) and `events` (>90 days) off the hot ingest path.
+// 1. Prunes expired `otlp_calls` (>45 days) and `events` (>90 days) off the hot ingest path.
 // 2. Refreshes the dynamic LiteLLM model price list in `app_meta` once per ~23 hours.
 import type { Env } from './env.ts'
 import { refreshPrices } from './prices.ts'
 
-const KEEP_CALLS_DAYS = 14
+const KEEP_CALLS_DAYS = 45
 const KEEP_EVENTS_DAYS = 90
 const PRUNE_LIMIT = 2000
 const PRUNE_ROUNDS = 5

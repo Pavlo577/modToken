@@ -34,7 +34,7 @@ test('setup: the cloud variant is the minimum OTLP set plus the mod folder; the 
   assert.deepEqual(lines, [
     'CLAUDE_CODE_ENABLE_TELEMETRY=1', 'OTEL_LOGS_EXPORTER=otlp', 'OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json',
     'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://x.test/v1/logs', 'OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-device-token=tok',
-    'CLAUDE_CODE_PLUGIN_DIRS=/root/.claude/mods/token-tracker',
+    'CLAUDE_CODE_PLUGIN_DIRS=~/.claude/mods/token-tracker',
   ])
   assert.equal(cloudScript().includes('tok'), false)
   assert.ok(cloudScript().endsWith('| bash'))
@@ -49,16 +49,17 @@ test('setup: the Codex one-liners and the [otel] table: logs endpoint, JSON, the
   assert.ok(codexInstallSh('https://x.test/', 'tok').endsWith('/install-codex.sh | bash -s -- https://x.test tok'))
   assert.ok(codexInstallPs('https://x.test/', 'tok').endsWith('/install-codex.ps1))) https://x.test tok'))
   const toml = codexToml('https://x.test/', 'tok')
-  for (const part of ['[otel]', 'log_user_prompt = false', 'endpoint = "https://x.test/v1/logs"', 'protocol = "json"', '"x-device-token" = "tok"']) assert.ok(toml.includes(part), part)
+  for (const part of ['[otel]', 'log_user_prompt = false', 'log_agent_responses = false', 'log_guardian_assessments = false', 'log_sse_deltas = false', 'endpoint = "https://x.test/v1/logs"', 'protocol = "json"', '"x-device-token" = "tok"']) assert.ok(toml.includes(part), part)
 })
 
-test('setup: install-codex.sh writes its [otel] block once, replaces it on a second run, puts the plugin in place, leaves the user\'s own alone', () => {
+test('setup: install-codex.sh writes its [otel] block once, replaces it on a second run, puts the plugin and user hooks.json in place, leaves user config alone', () => {
   const home = mkdtempSync(join(tmpdir(), 'tt-codex-'))
   const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '') // the plugin from this checkout, not the network
   const run = (...args) => spawnSync('bash', [new URL('../scripts/install-codex.sh', import.meta.url).pathname, ...args], { env: { ...process.env, CODEX_HOME: home, TT_RAW: raw, PATH: '/usr/bin:/bin' }, encoding: 'utf8' })
   const config = join(home, 'config.toml')
   const user = 'model = "gpt-5.1-codex"\n\n[profiles.fast]\nmodel = "gpt-5-mini"\n'
   writeFileSync(config, user)
+  writeFileSync(join(home, 'hooks.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo my-custom-hook' }] }] } }))
   assert.equal(run('https://x.test/', 'tok1').status, 0)
   const first = readFileSync(config, 'utf8')
   assert.equal(run('https://x.test', 'tok2').status, 0)
@@ -69,7 +70,14 @@ test('setup: install-codex.sh writes its [otel] block once, replaces it on a sec
   assert.ok(!text.includes('notify'))
   assert.ok(text.startsWith(user + '\n# >>> token-tracker')) // the user's config stays as it was, the block comes after it
   assert.ok(text.includes('"x-device-token" = "tok2"') && !text.includes('tok1'))
+  assert.ok(text.includes('log_sse_deltas = false'))
   assert.ok(text.includes('endpoint = "https://x.test/v1/logs", protocol = "json"'))
+  // user-level hooks.json preserves user hooks and avoids duplicating token-tracker groups
+  const userHooks = JSON.parse(readFileSync(join(home, 'hooks.json'), 'utf8'))
+  assert.equal(userHooks.hooks.Stop.length, 2)
+  assert.equal(userHooks.hooks.Stop[0].hooks[0].command, 'echo my-custom-hook')
+  assert.equal(userHooks.hooks.Interrupt[0].hooks[0].timeout, 3)
+  assert.equal(userHooks.hooks.SessionEnd[0].hooks[0].timeout, 3)
   // the plugin and its local marketplace, ready for `codex plugin add token-tracker@token-tracker-local`
   const market = JSON.parse(readFileSync(join(home, 'token-tracker', '.agents', 'plugins', 'marketplace.json'), 'utf8'))
   assert.deepEqual(market, { name: 'token-tracker-local', plugins: [{ name: 'token-tracker', source: './plugins/token-tracker' }] })
@@ -87,6 +95,18 @@ test('setup: install-codex.sh writes its [otel] block once, replaces it on a sec
   assert.equal(readFileSync(config, 'utf8'), '[otel]\nenvironment = "prod"\n')
   assert.ok(!otel.stdout.includes('tok4'))
   assert.equal(run('https://x.test').status, 1) // no token: nothing written
+})
+
+test('setup: install.sh sets CLAUDE_CODE_PLUGIN_DIRS when claude CLI is missing', () => {
+  const cdir = mkdtempSync(join(tmpdir(), 'tt-claude-inst-'))
+  const raw = 'file://' + new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+  const res = spawnSync('bash', [new URL('../scripts/install.sh', import.meta.url).pathname, 'https://x.test', 'ctok'], {
+    env: { ...process.env, CLAUDE_CONFIG_DIR: cdir, TT_RAW: raw, PATH: '/usr/bin:/bin' }, encoding: 'utf8',
+  })
+  assert.equal(res.status, 0, res.stderr)
+  const settings = JSON.parse(readFileSync(join(cdir, 'settings.json'), 'utf8'))
+  assert.equal(settings.env.CLAUDE_CODE_PLUGIN_DIRS, join(cdir, 'mods', 'token-tracker'))
+  assert.equal(settings.env.OTEL_EXPORTER_OTLP_LOGS_HEADERS, 'x-device-token=ctok')
 })
 
 test('setup: each agent and place gets one best way first and the manual settings last; the token is where it must be', () => {

@@ -56,13 +56,39 @@ elif command -v python3 >/dev/null; then python3 -c "$MERGE_PY" "$SETTINGS" "$OR
 else echo "Немає node чи python3: додай блок із кроку 1 у $SETTINGS вручну"; fi
 echo "  OpenTelemetry налаштовано ($SETTINGS)"
 
-# 3. the plugin: the old one out, the local one in
+ADD_PLUGIN_DIR_JS='
+const fs = require("fs"); const [p, mod] = process.argv.slice(1);
+let s = {}; try { s = JSON.parse(fs.readFileSync(p, "utf8")) } catch {}
+s.env = s.env || {};
+const cur = String(s.env.CLAUDE_CODE_PLUGIN_DIRS || "").split(":").filter(Boolean);
+if (!cur.includes(mod)) cur.push(mod);
+s.env.CLAUDE_CODE_PLUGIN_DIRS = cur.join(":");
+fs.writeFileSync(p, JSON.stringify(s, null, 2));'
+ADD_PLUGIN_DIR_PY='
+import json, sys
+p, mod = sys.argv[1:3]
+try: s = json.load(open(p))
+except Exception: s = {}
+env = s.setdefault("env", {})
+cur = [x for x in str(env.get("CLAUDE_CODE_PLUGIN_DIRS", "")).split(":") if x]
+if mod not in cur: cur.append(mod)
+env["CLAUDE_CODE_PLUGIN_DIRS"] = ":".join(cur)
+json.dump(s, open(p, "w"), indent=2)'
+
+# 3. the plugin: the old one out, the local one in (fallback to CLAUDE_CODE_PLUGIN_DIRS for Desktop/IDE when claude CLI is absent)
+NEED_DIR=0
 if command -v claude >/dev/null; then
   claude plugin uninstall token-tracker@modtoken >/dev/null 2>&1 && echo "  старий мод (modtoken) видалено"
   claude plugin marketplace add "$MODS" >/dev/null 2>&1 || claude plugin marketplace update token-tracker-local >/dev/null 2>&1
   if claude plugin install token-tracker@token-tracker-local --scope user >/dev/null 2>&1 || claude plugin enable token-tracker@token-tracker-local >/dev/null 2>&1; then echo "  мод увімкнено"
-  else echo "  мод не вдалося встановити: запусти claude з --plugin-dir \"$MOD\""; fi
+  else NEED_DIR=1; echo "  мод не вдалося встановити через claude CLI — підключаю через CLAUDE_CODE_PLUGIN_DIRS"; fi
 else
-  echo "  Команди claude не знайдено: запускай claude з --plugin-dir \"$MOD\""
+  NEED_DIR=1
+  echo "  Команди claude не знайдено — підключаю мод через CLAUDE_CODE_PLUGIN_DIRS для Claude Desktop / IDE"
 fi
-echo "Готово. Перезапусти Claude Code; стару історію додасть команда /tracker-import."
+if [ "$NEED_DIR" = 1 ]; then
+  if command -v node >/dev/null; then node -e "$ADD_PLUGIN_DIR_JS" "$SETTINGS" "$MOD"
+  elif command -v python3 >/dev/null; then python3 -c "$ADD_PLUGIN_DIR_PY" "$SETTINGS" "$MOD"
+  fi
+fi
+echo "Готово. Перезапусти Claude Code (і Claude Desktop / IDE, якщо відкриті); стару історію додасть команда /tracker-import."

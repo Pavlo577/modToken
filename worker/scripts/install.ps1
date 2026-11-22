@@ -1,4 +1,4 @@
-# Token Tracker on a Windows computer, one command from the dashboard's "Add device" box (PowerShell):
+﻿# Token Tracker on a Windows computer, one command from the dashboard's "Add device" box (PowerShell):
 #   & ([scriptblock]::Create((irm <raw url of this file>))) https://<your-site> <device token>
 # Same steps as install.sh: the OTLP settings with the token into %USERPROFILE%\.claude\settings.json (env), the token-tracker mod into
 # .claude\mods\token-tracker, installed as a plugin from that folder; the collector version's Stop hook is removed. The token is never printed.
@@ -36,13 +36,23 @@ New-Item -ItemType Directory -Force $dir | Out-Null
 $s | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 $settings
 Write-Host "  OpenTelemetry налаштовано ($settings)"
 
-# 3. the plugin: the old one out, the local one in
+# 3. the plugin: the old one out, the local one in (fallback to CLAUDE_CODE_PLUGIN_DIRS for Desktop/IDE when claude CLI is absent)
+$needDir = $false
 if (Get-Command claude -ErrorAction SilentlyContinue) {
   $ErrorActionPreference = 'Continue'
   claude plugin uninstall token-tracker@modtoken *> $null
   claude plugin marketplace add $mods *> $null; if ($LASTEXITCODE) { claude plugin marketplace update token-tracker-local *> $null }
   claude plugin install token-tracker@token-tracker-local --scope user *> $null
   if ($LASTEXITCODE) { claude plugin enable token-tracker@token-tracker-local *> $null }
-  if ($LASTEXITCODE) { Write-Host "  мод не вдалося встановити: запускай claude з --plugin-dir `"$mod`"" } else { Write-Host '  мод увімкнено' }
-} else { Write-Host "  Команди claude не знайдено: запускай claude з --plugin-dir `"$mod`"" }
-Write-Host 'Готово. Перезапусти Claude Code; стару історію додасть команда /tracker-import.'
+  if ($LASTEXITCODE) { $needDir = $true; Write-Host '  мод не вдалося встановити через claude CLI — підключаю через CLAUDE_CODE_PLUGIN_DIRS' } else { Write-Host '  мод увімкнено' }
+} else { $needDir = $true; Write-Host '  Команди claude не знайдено — підключаю мод через CLAUDE_CODE_PLUGIN_DIRS для Claude Desktop / IDE' }
+if ($needDir) {
+  $cur = @()
+  if ($s.env.PSObject.Properties['CLAUDE_CODE_PLUGIN_DIRS'] -and $s.env.CLAUDE_CODE_PLUGIN_DIRS) {
+    $cur = @("$($s.env.CLAUDE_CODE_PLUGIN_DIRS)" -split ';' | Where-Object { $_ })
+  }
+  if ($cur -notcontains $mod) { $cur += $mod }
+  $s.env | Add-Member -Force -NotePropertyName CLAUDE_CODE_PLUGIN_DIRS -NotePropertyValue ($cur -join ';')
+  $s | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 $settings
+}
+Write-Host 'Готово. Перезапусти Claude Code (і Claude Desktop / IDE, якщо відкриті); стару історію додасть команда /tracker-import.'

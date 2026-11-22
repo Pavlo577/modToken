@@ -56,7 +56,7 @@
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
             "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
-            "timeout": 10
+            "timeout": 3
           }
         ]
       }
@@ -68,7 +68,7 @@
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/hooks/activity.py\"",
             "commandWindows": "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}\\hooks\\activity.ps1\"",
-            "timeout": 10
+            "timeout": 3
           }
         ]
       }

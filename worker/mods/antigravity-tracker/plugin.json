@@ -1,5 +1,5 @@
 {
   "name": "token-tracker",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Token Tracker for Antigravity CLI: session activity, turns, subscription limits, and token telemetry (numbers only)."
 }

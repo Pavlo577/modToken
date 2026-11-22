@@ -92,7 +92,7 @@ def calls(path):
 
 
 def send(site, token, turns):
-    body = json.dumps({'provider': 'codex', 'turns': turns}).encode()
+    body = json.dumps({'provider': 'codex', 'mode': 'reconcile', 'turns': turns}).encode()
     req = urllib.request.Request(site + '/v1/import', data=body, headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='POST')
     return json.loads(urllib.request.urlopen(req, timeout=60).read() or b'{}').get('added', 0)
 

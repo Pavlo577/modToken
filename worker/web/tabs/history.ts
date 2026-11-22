@@ -48,7 +48,7 @@ export function initHistory(): void {
       const device_id = $<HTMLSelectElement>('hist-device').value
       for (let i = 0; i < all.length; i += MAX_HISTORY_TURNS) {
         status.textContent = `Надсилаю: ${Math.min(i + MAX_HISTORY_TURNS, all.length)} з ${all.length}…`
-        const r = await api<ImportResult>('/import', { method: 'POST', body: JSON.stringify({ device_id, turns: all.slice(i, i + MAX_HISTORY_TURNS) }) })
+        const r = await api<ImportResult>('/import', { method: 'POST', body: JSON.stringify({ device_id, mode: 'reconcile', turns: all.slice(i, i + MAX_HISTORY_TURNS) }) })
         for (const k of Object.keys(total) as (keyof ImportResult)[]) total[k] += r[k]
       }
       status.textContent = `Готово: знайдено ${all.length} відповідей, нових ${total.added}` +

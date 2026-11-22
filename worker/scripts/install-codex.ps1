@@ -1,4 +1,4 @@
-# Token Tracker for Codex CLI on a Windows computer, one command from the dashboard's "Add device" box (PowerShell):
+﻿# Token Tracker for Codex CLI on a Windows computer, one command from the dashboard's "Add device" box (PowerShell):
 #   & ([scriptblock]::Create((irm <raw url of this file>))) https://<your-site> <device token>
 # Same as install-codex.sh: the [otel] table that exports Codex's log events to the site goes into %USERPROFILE%\.codex\config.toml
 # ($env:CODEX_HOME if set) between marker lines, replaced on every run; a config with an [otel] table of its own is left as it is.
@@ -31,6 +31,9 @@ while ($rest.Count -and -not $rest[0].Trim()) { $rest.RemoveAt(0) }
 if ($rest | Where-Object { $_ -match '^\s*\[otel(\]|\.)' }) {
   Write-Host "  У $config уже є своя секція [otel]; її не чіпаю. Додай у неї вручну:"
   Write-Host '    log_user_prompt = false'
+  Write-Host '    log_agent_responses = false'
+  Write-Host '    log_guardian_assessments = false'
+  Write-Host '    log_sse_deltas = false'
   Write-Host "    exporter = { otlp-http = { endpoint = `"$Origin/v1/logs`", protocol = `"json`", headers = { `"x-device-token`" = `"<токен>`" } } }"
   exit 1
 }
@@ -39,6 +42,7 @@ if ($rest | Where-Object { $_ -match '^\s*\[otel(\]|\.)' }) {
 $out = New-Object System.Collections.Generic.List[string]
 if ($rest.Count) { $out.AddRange($rest); $out.Add('') }
 $out.AddRange([string[]]@($begin, '[otel]', 'log_user_prompt = false',
+  'log_agent_responses = false', 'log_guardian_assessments = false', 'log_sse_deltas = false',
   "exporter = { otlp-http = { endpoint = `"$Origin/v1/logs`", protocol = `"json`", headers = { `"x-device-token`" = `"$Token`" } } }", $end))
 [System.IO.File]::WriteAllLines($config, $out, (New-Object System.Text.UTF8Encoding $false)) # TOML: UTF-8 without a BOM
 Write-Host '  OpenTelemetry налаштовано'
@@ -54,15 +58,52 @@ foreach ($f in '.codex-plugin/plugin.json', 'hooks/hooks.json', 'hooks/limits.py
 New-Item -ItemType Directory -Force (Join-Path $market '.agents\plugins') | Out-Null
 '{ "name": "token-tracker-local", "plugins": [{ "name": "token-tracker", "source": "./plugins/token-tracker" }] }' |
   Set-Content -Encoding ascii (Join-Path $market '.agents\plugins\marketplace.json')
+
+# Register user-level %USERPROFILE%\.codex\hooks.json for Codex IDE extensions while preserving custom user hooks
+if ($got) {
+  $hooksFile = Join-Path $dir 'hooks.json'
+  $doc = @{}
+  if (Test-Path $hooksFile) {
+    try {
+      $parsed = Get-Content -Raw -Encoding UTF8 $hooksFile | ConvertFrom-Json
+      if ($parsed) { foreach ($prop in $parsed.PSObject.Properties) { $doc[$prop.Name] = $prop.Value } }
+    } catch { }
+  }
+  $hooksMap = @{}
+  if ($doc.ContainsKey('hooks') -and $doc['hooks']) {
+    foreach ($prop in $doc['hooks'].PSObject.Properties) { $hooksMap[$prop.Name] = @($prop.Value) }
+  }
+  $psCmd = { param($scriptName) "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $plugin "hooks\$scriptName")`"" }
+  $ours = [ordered]@{
+    SessionStart = @(@{ hooks = @(@{ type = 'command'; command = (& $psCmd 'history.ps1'); timeout = 15 }, @{ type = 'command'; command = (& $psCmd 'activity.ps1'); timeout = 10 }) })
+    Stop = @(@{ hooks = @(@{ type = 'command'; command = (& $psCmd 'limits.ps1'); timeout = 15 }, @{ type = 'command'; command = (& $psCmd 'activity.ps1'); timeout = 10 }) })
+    UserPromptSubmit = @(@{ hooks = @(@{ type = 'command'; command = (& $psCmd 'activity.ps1'); timeout = 10 }) })
+    Interrupt = @(@{ hooks = @(@{ type = 'command'; command = (& $psCmd 'activity.ps1'); timeout = 3 }) })
+    SessionEnd = @(@{ hooks = @(@{ type = 'command'; command = (& $psCmd 'activity.ps1'); timeout = 3 }) })
+  }
+  foreach ($ev in $ours.Keys) {
+    $cur = @()
+    if ($hooksMap.ContainsKey($ev)) {
+      $cur = @($hooksMap[$ev] | Where-Object {
+        $grp = $_
+        -not ($grp.hooks -and ($grp.hooks | Where-Object { "$($_.command)" -like '*token-tracker*' -or "$($_.commandWindows)" -like '*token-tracker*' }))
+      })
+    }
+    $hooksMap[$ev] = @($cur) + @($ours[$ev])
+  }
+  $doc['hooks'] = $hooksMap
+  [System.IO.File]::WriteAllText($hooksFile, ($doc | ConvertTo-Json -Depth 12), (New-Object System.Text.UTF8Encoding $false))
+}
+
 if (-not $got) { Write-Host '  Не вдалося завантажити плагін: ліміти Codex не надсилатимуться' }
 elseif (Get-Command codex -ErrorAction SilentlyContinue) {
   $ErrorActionPreference = 'Continue'
   codex plugin marketplace add $market *> $null
   codex plugin add token-tracker@token-tracker-local *> $null
   if ($LASTEXITCODE) { Write-Host "  плагін не вдалося встановити: codex plugin marketplace add `"$market`"; codex plugin add token-tracker@token-tracker-local" }
-  else { Write-Host '  плагін лімітів встановлено (у Codex дозволь його хук, коли спитає)' }
+  else { Write-Host "  плагін і user-хуки ($dir\hooks.json) встановлено (у Codex схвали хуки: /hooks або Settings → Hooks → Review hooks)" }
 } else {
-  Write-Host "  Команди codex не знайдено. Плагін лімітів лежить у $market; встанови його:"
+  Write-Host "  Команди codex не знайдено. Плагін лежить у $market (і $dir\hooks.json для IDE); встанови його:"
   Write-Host "    codex plugin marketplace add `"$market`"; codex plugin add token-tracker@token-tracker-local"
 }
-Write-Host "Готово. Перезапусти Codex; дані з'являться на дашборді після першого запиту."
+Write-Host "Готово. Перезапусти Codex (і повторно схвали хуки в Settings → Hooks → Review hooks після оновлення); дані з'являться після першого запиту."

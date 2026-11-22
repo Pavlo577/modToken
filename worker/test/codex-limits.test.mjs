@@ -61,8 +61,8 @@ test('codex limits: the last token_count with rate_limits is sent as five_hour a
     assert.equal(s.got.length, 1)
     assert.equal(s.got[0].url, '/v1/limits'); assert.equal(s.got[0].token, TOKEN)
     assert.deepEqual(JSON.parse(s.got[0].body), { provider: 'codex', limits: [
-      { kind: 'five_hour', percentUsed: 12.5, resetsAt: '2026-10-30T01:00:00+00:00' },
-      { kind: 'seven_day', percentUsed: 41, resetsAt: '2026-11-03T10:00:00+00:00' },
+      { kind: 'five_hour', percentUsed: 12.5, observedAt: '2026-10-29T20:27:18.161Z', resetsAt: '2026-10-30T01:00:00+00:00' },
+      { kind: 'seven_day', percentUsed: 41, observedAt: '2026-10-29T20:27:18.161Z', resetsAt: '2026-11-03T10:00:00+00:00' },
     ] })
     for (const bad of ['SECRET', 'plus', 'balance']) assert.equal(s.got[0].body.includes(bad), false, bad)
     // the plugin's log: "limits sent" with how many windows, its version, nothing else
@@ -74,7 +74,7 @@ test('codex limits: older files with resets_in_seconds, other windows by name; n
   const s = await site()
   try {
     await run(codexHome(s.origin, [tokenCount({ primary: { used_percent: 7, window_minutes: 60, resets_in_seconds: 600 } })]))
-    assert.deepEqual(JSON.parse(s.got[0].body).limits, [{ kind: 'primary', percentUsed: 7, resetsAt: '2026-10-29T20:37:18.161000+00:00' }])
+    assert.deepEqual(JSON.parse(s.got[0].body).limits, [{ kind: 'primary', percentUsed: 7, observedAt: '2026-10-29T20:27:18.161Z', resetsAt: '2026-10-29T20:37:18.161000+00:00' }])
     const quiet = await run(codexHome(s.origin, [tokenCount(null)]))
     assert.equal(s.got.length, 1); assert.equal(quiet.code, 0); assert.equal(quiet.out, '')
     const nowhere = await run(mkdtempSync(join(tmpdir(), 'tt-codex-empty-')))
@@ -100,6 +100,8 @@ test('codex plugin: the manifest points at the hooks file, the Stop hook runs th
   assert.deepEqual(Object.keys(hooks).sort(), ['description', 'hooks']) // Codex reads a hooks file with deny_unknown_fields
   assert.deepEqual(Object.keys(hooks.hooks).sort(), ['Interrupt', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'])
   assert.equal(hooks.hooks.SessionStart[0].hooks[0].async, undefined) // Codex skips async hooks: the script detaches itself instead
+  assert.ok(hooks.hooks.Interrupt[0].hooks[0].timeout <= 3)
+  assert.ok(hooks.hooks.SessionEnd[0].hooks[0].timeout <= 3)
   const runs = [['Stop', 0, 'limits'], ['SessionStart', 0, 'history'], ['Stop', 1, 'activity'], ['SessionStart', 1, 'activity'],
     ['UserPromptSubmit', 0, 'activity'], ['Interrupt', 0, 'activity'], ['SessionEnd', 0, 'activity']]
   for (const [event, i, script] of runs) {
@@ -184,6 +186,7 @@ test('codex history: each new token_count is a call, the first after task_starte
     assert.equal(s.got.length, 1); assert.equal(s.got[0].url, '/v1/import'); assert.equal(s.got[0].token, TOKEN)
     const body = JSON.parse(s.got[0].body)
     assert.equal(body.provider, 'codex')
+    assert.equal(body.mode, 'reconcile')
     assert.deepEqual(body.turns.map(t => [t.id, t.ts, t.model, t.input, t.cache_read, t.output, t.first, t.bg, t.duration_ms]), [
       [`cx:${SID}:1`, '2026-10-20T10:00:03.000Z', 'gpt-5.6-sol', 2000, 9000, 120, true, false, 8000], // the turn lasts from task_started to its last call
       [`cx:${SID}:2`, '2026-10-20T10:00:09.000Z', 'gpt-5.6-sol', 1000, 11000, 300, false, false, 0],

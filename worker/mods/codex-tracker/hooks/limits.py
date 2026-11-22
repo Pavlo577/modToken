@@ -77,12 +77,20 @@ def latest_rate_limits(path):
 
 
 def readings(rl, stamp):
+    obs = ''
+    if isinstance(stamp, str) and stamp.strip():
+        try:
+            obs = datetime.fromisoformat(stamp.strip().replace('Z', '+00:00')).astimezone(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        except ValueError:
+            obs = ''
     out = []
     for name in ('primary', 'secondary'):
         w = rl.get(name)
         if not isinstance(w, dict) or not isinstance(w.get('used_percent'), (int, float)):
             continue
         reading = {'kind': KINDS.get(w.get('window_minutes'), name), 'percentUsed': round(float(w['used_percent']), 2)}
+        if obs:
+            reading['observedAt'] = obs
         if isinstance(w.get('resets_at'), (int, float)):
             reading['resetsAt'] = datetime.fromtimestamp(w['resets_at'], timezone.utc).isoformat()
         elif isinstance(w.get('resets_in_seconds'), (int, float)) and stamp:  # older Codex versions

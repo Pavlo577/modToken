@@ -206,12 +206,12 @@ def main():
         body = {'provider': 'codex', 'turns': [row]}
         if not state.get('sent'):  # a session that began before the plugin did: its start is its first turn
             body['session'] = session_body()
-        call(site, token, '/v1/activity', body)
+        call(site, token, '/v1/activity', body, timeout=2 if event == 'Interrupt' else 5)
         state['sent'] = True
         save(session, state)
     elif event == 'SessionEnd':
         reason = hook.get('reason')
-        call(site, token, '/v1/activity', {'provider': 'codex', 'session': session_body(ended_at=at, end_reason=reason if isinstance(reason, str) and WORD.match(reason) else 'other')})
+        call(site, token, '/v1/activity', {'provider': 'codex', 'session': session_body(ended_at=at, end_reason=reason if isinstance(reason, str) and WORD.match(reason) else 'other')}, timeout=2)
         try:
             os.remove(os.path.join(STATE, session + '.json'))
         except OSError:

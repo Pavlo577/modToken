@@ -126,6 +126,7 @@ try {
     $byKind = @{}
     $counts = @{}
     $rawEntries = @()
+    $obsIso = $now.ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
     foreach ($prop in $p.quota.PSObject.Properties) {
       $info = $prop.Value
       if ($null -eq $info -or $info.disabled -eq $true -or $null -eq $info.remaining_fraction) { continue }
@@ -135,7 +136,7 @@ try {
       $kind = if ($low -match 'week|7d|seven' -or $rs -gt 86400) { 'seven_day' } elseif ($low -match '5h|five|hour|session' -or ($rs -gt 0 -and $rs -le 21600)) { 'five_hour' } else { ($low -replace '[^a-z]+', '_').Trim('_') }
       if (-not $kind) { $kind = 'quota' }
       $counts[$kind] = $(if ($counts.ContainsKey($kind)) { $counts[$kind] + 1 } else { 1 })
-      $entry = @{ kind = $kind; percentUsed = $pct }
+      $entry = @{ kind = $kind; percentUsed = $pct; observedAt = $obsIso }
       if ($info.reset_time) { $entry.resetsAt = [string]$info.reset_time }
       elseif ($rs -ge 0) { $entry.resetsAt = $now.AddSeconds($rs).ToString('yyyy-MM-ddTHH:mm:00Z') }
       $rawEntries += @{ bucket = $prop.Name; entry = $entry }

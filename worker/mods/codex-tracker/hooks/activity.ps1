@@ -94,9 +94,9 @@ try {
   $token = [regex]::Match($config, '"x-device-token" = "([0-9a-f]{16,128})"')
   if (-not $site.Success -or -not $token.Success) { exit 0 }
   $siteUrl = $site.Groups[1].Value; $headers = @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' }
-  function Post($body) {
+  function Post($body, $timeout = 5) {
     $json = $body | ConvertTo-Json -Depth 5 -Compress
-    Invoke-RestMethod -Method Post -Uri ($siteUrl + '/v1/activity') -ContentType 'application/json' -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 5 | Out-Null
+    Invoke-RestMethod -Method Post -Uri ($siteUrl + '/v1/activity') -ContentType 'application/json' -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec $timeout | Out-Null
   }
 
   $file = Join-Path $stateDir "$session.json"
@@ -142,12 +142,12 @@ try {
     $state.last_end = $at; Save
     $body = @{ provider = 'codex'; turns = @($row) }
     if (-not $state.sent) { $body.session = (SessionBody $null) } # a session that began before the plugin did
-    Post $body
+    Post $body $(if ($event -eq 'Interrupt') { 2 } else { 5 })
     $state.sent = $true; Save
   }
   elseif ($event -eq 'SessionEnd') {
     $reason = if ("$($hook.reason)" -match '^[a-z_]{1,30}$') { "$($hook.reason)" } else { 'other' }
-    Post @{ provider = 'codex'; session = (SessionBody @{ ended_at = $at; end_reason = $reason }) }
+    Post @{ provider = 'codex'; session = (SessionBody @{ ended_at = $at; end_reason = $reason }) } 2
     Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
   }
 } catch {

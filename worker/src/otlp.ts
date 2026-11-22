@@ -190,7 +190,7 @@ const ADAPTERS: Record<string, ((a: Attrs, rec: LogRecord) => ModelCall | null) 
  * Antigravity CLI and its plugin send `antigravity-cli` (or any `antigravity*` service name).
  */
 const adapterFor = (service: string) =>
-  ADAPTERS[service] ?? (service.startsWith('claude-code') ? ADAPTERS['claude-code'] : service.startsWith('codex') ? ADAPTERS.codex : service.startsWith('antigravity') ? ADAPTERS['antigravity-cli'] : undefined)
+  ADAPTERS[service] ?? (service.startsWith('claude-code') || service === 'cowork' || service.startsWith('claude-cowork') ? ADAPTERS['claude-code'] : service.startsWith('codex') ? ADAPTERS.codex : service.startsWith('antigravity') ? ADAPTERS['antigravity-cli'] : undefined)
 
 export const MAX_RECORDS = 5000
 
@@ -262,6 +262,7 @@ export function safeAttrs(a: Attrs): Record<string, string | number | boolean> {
 
 function eventRowOf(service: string, a: Attrs, rec: LogRecord): EventRow | null {
   const name = NAME((text(a, 'event.name') || (typeof rec.body?.stringValue === 'string' ? rec.body.stringValue : '')).replace(/^claude_code\./, ''))
+  if (name === 'codex.sse_event' && text(a, 'event.kind').endsWith('.delta')) return null
   const ts = isoFromNanos(rec.timeUnixNano) || (Date.parse(text(a, 'event.timestamp')) ? new Date(text(a, 'event.timestamp')).toISOString() : '')
   if (!name || !ts) return null
   const session = text(a, 'session.id') || text(a, 'conversation.id') // conversation.id: Codex

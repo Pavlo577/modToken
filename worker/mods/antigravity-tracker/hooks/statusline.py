@@ -179,6 +179,7 @@ def parse_quotas(quota_obj, dt_now):
     by_kind = {}
     counts = {}
     raw_entries = []
+    obs_iso = iso_now(dt_now)
     for bucket, info in quota_obj.items():
         if not isinstance(bucket, str) or not isinstance(info, dict) or info.get('disabled') is True:
             continue
@@ -195,7 +196,7 @@ def parse_quotas(quota_obj, dt_now):
             resets_at = rt.isoformat().replace('+00:00', 'Z')
         kind = quota_kind(bucket, reset_in)
         counts[kind] = counts.get(kind, 0) + 1
-        entry = {'kind': kind, 'percentUsed': pct}
+        entry = {'kind': kind, 'percentUsed': pct, 'observedAt': obs_iso}
         if resets_at:
             entry['resetsAt'] = resets_at
         raw_entries.append((bucket, entry))

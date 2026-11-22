@@ -101,7 +101,7 @@ function renderLimitRow(l: S.LimitNow): HTMLElement {
 
 export function renderLimits(): void {
   const d = need()
-  const allRows: LimitRow[] = d.limits.filter(l => !state.device || l.device === state.device)
+  const allRows: LimitRow[] = d.limits
   const presentProviders = sortProviders([...new Set(allRows.map(l => l.provider || 'claude'))])
   const lp = limitProvider(d.limits)
   const others = [...new Set(d.limits.map(l => l.provider))].filter(p => p !== lp)
@@ -132,7 +132,7 @@ export function renderLimits(): void {
     : 'Скільки токенів і доларів API-вартості припадає на 1% тижневого ліміту'
 
   const limits = d.limits.filter(l => l.provider === lp)
-  const rows = limits.filter(l => !state.device || l.device === state.device)
+  const rows = limits
 
   // history: highest reading per local day
   const byDay = new Map<string, Record<string, number>>()

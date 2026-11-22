@@ -55,12 +55,15 @@ try {
       try { $row = $line | ConvertFrom-Json } catch { continue }
       if ($row.type -ne 'event_msg' -or $row.payload.type -ne 'token_count' -or -not $row.payload.rate_limits) { continue }
       $rl = $row.payload.rate_limits; $stamp = $row.timestamp
+      $obs = $null
+      if ($stamp) { try { $obs = ([DateTimeOffset]::Parse("$stamp")).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ') } catch { } }
       $cand = @()
       foreach ($name in 'primary', 'secondary') {
         $w = $rl.$name
         if (-not $w -or $null -eq $w.used_percent) { continue }
         $kind = switch ($w.window_minutes) { 300 { 'five_hour' } 10080 { 'seven_day' } default { $name } }
         $r = [ordered]@{ kind = $kind; percentUsed = [math]::Round([double]$w.used_percent, 2) }
+        if ($obs) { $r.observedAt = $obs }
         if ($null -ne $w.resets_at) { $r.resetsAt = [DateTimeOffset]::FromUnixTimeSeconds([long]$w.resets_at).ToString('o') }
         elseif ($null -ne $w.resets_in_seconds -and $stamp) { $r.resetsAt = ([DateTimeOffset]::Parse("$stamp")).AddSeconds([double]$w.resets_in_seconds).ToString('o') } # older Codex versions
         $cand += $r

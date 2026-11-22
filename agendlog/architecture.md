@@ -35,3 +35,16 @@
    - Періодичні `DELETE` (`otlp_calls` > 14 днів, `events` > 90 днів) винесені з гарячого шляху OTLP у погодинний Cloudflare Cron (`scheduled()` → `runMaintenance`). У `storeEvents` збережено дешевий in-memory фільтр 90 днів до запису, щоб старі події не потрапляли в `EVENTS` між запусками Cron.
 5. **Точність `devices.last_seen` і прибирання мертвого ендпоїнта:**
    - `/v1/limits` і `/v1/activity` оновлюють `devices.last_seen` через `MAX(COALESCE(last_seen, ?1), ?1)`. Видалено невикористовуваний `worker/src/admin/stats.ts`.
+
+## 2026-11-22 (P0 стабільність і мультидевайс) — Reconcile backfill, Account-wide ліміти та фікси плагінів
+
+1. **Per-`session_id` backfill (`worker/src/import.ts`, `migrations/0017_stability_indexes.sql`, `maintenance.ts`):**
+   - Додано `mode: 'reconcile'`, який замість глобального відсікання за `devices.otlp_since` перевіряє наявність `session_id` в OTLP на цьому пристрої (`events_device_session_idx`) і в інших пристроїв користувача (`events_user_provider_session_idx`). Це дозволяє автоматично дозаливати сесії, втрачені під час тимчасового офлайну або з Desktop/IDE, без дублювання при синхронізованих логах.
+   - Збільшено ретенцію `otlp_calls` до `45` днів у `maintenance.ts` і ввімкнено `mode: 'reconcile'` у веб-імпорті та плагінах Claude і Codex.
+2. **Account-wide `plan_limits` з `observedAt` (`worker/src/limits.ts`, `web/tabs/money.ts`):**
+   - Квоти підписки тепер перевіряються на рівні `(user_email, provider, kind)` через `shouldStoreLimit`: відкидаються застарілі знімки з офлайн-черг (`observedAt`), старіші вікна `resetsAt`, крос-пристрійні дублі (`|delta| < 0.05%`) та хибні падіння >3% між різними пристроями протягом 5 хв.
+   - Верхня картка й графік лімітів у `money.ts` показують спільний стан підписки незалежно від обраного фільтра пристрою.
+3. **Придушення спаму `*.delta` Codex та підтримка Claude Cowork (`worker/src/otlp.ts`, інсталятори):**
+   - У `eventRowOf` відкидаються `codex.sse_event` із `event.kind`, що закінчується на `.delta`, а `install-codex.sh`/`.ps1` + `setup.ts` прописують `log_sse_deltas = false`, `log_agent_responses = false`, `log_guardian_assessments = false`.
+   - `adapterFor` розпізнає `cowork` / `claude-cowork`.
+   - `install-codex.*` додатково мерджить user-level `$CODEX_HOME/hooks.json` (для Codex IDE); `install.*` додає `CLAUDE_CODE_PLUGIN_DIRS` fallback для Desktop/IDE, коли `claude` CLI відсутній; `CLOUD_MOD_DIR` змінено на `~/.claude/mods/token-tracker`.

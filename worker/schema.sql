@@ -37,8 +37,10 @@ CREATE TABLE IF NOT EXISTS token_events (
 CREATE INDEX IF NOT EXISTS events_user_ts_idx ON token_events (user_email, ts);
 CREATE INDEX IF NOT EXISTS events_user_provider_ts_idx ON token_events (user_email, provider, ts);
 CREATE INDEX IF NOT EXISTS events_device_provider_ts_idx ON token_events (device_id, provider, ts);
+CREATE INDEX IF NOT EXISTS events_device_session_idx ON token_events (device_id, provider, session_id);
+CREATE INDEX IF NOT EXISTS events_user_provider_session_idx ON token_events (user_email, provider, session_id);
 
--- OTLP: the model calls already counted (so a call sent twice is not added twice). Old rows are dropped after 14 days.
+-- OTLP: the model calls already counted (so a call sent twice is not added twice). Old rows are dropped after 45 days.
 CREATE TABLE IF NOT EXISTS otlp_calls (
   device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
   call_id TEXT NOT NULL,
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS plan_limits (
   provider TEXT NOT NULL DEFAULT 'claude'
 );
 CREATE INDEX IF NOT EXISTS limits_user_ts_idx ON plan_limits (user_email, ts);
+CREATE INDEX IF NOT EXISTS limits_user_provider_kind_ts_idx ON plan_limits (user_email, provider, kind, ts);
 
 -- What the token-tracker mod measures beyond the limits (POST /v1/activity); see migrations/0011_mod_activity.sql.
 CREATE TABLE IF NOT EXISTS mod_sessions (
