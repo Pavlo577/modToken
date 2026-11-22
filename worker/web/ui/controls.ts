@@ -45,6 +45,7 @@ const IO_ICON: Record<IoMode, string> = {
 export function syncControls(): void {
   press($('range'), 'r', state.range)
   press($('view'), 'v', state.view)
+  press($('limits-mode'), 'lm', state.limitMode)
   const io = $('io-mode'), hide = $('io-off')
   hide.setAttribute('aria-pressed', String(state.ioHidden))
   hide.dataset.tip = state.ioHidden ? 'Вхідні та вихідні сховані. Натисни, щоб показати' : 'Сховати вхідні та вихідні (залишити лише кеш)'
@@ -141,6 +142,7 @@ export function initControls(): void {
   // which agent to show: only when the data comes from more than one
   const providerBox = $('provider')
   providerBox.addEventListener('click', e => { const b = clicked(e); if (!b) return; state.provider = b.dataset.p ?? ''; persist(); press(providerBox, 'p', state.provider); syncControls(); render() })
+  $('limits-mode').addEventListener('click', e => { const b = clicked(e); if (!b) return; state.limitMode = b.dataset.lm === 'left' ? 'left' : 'used'; persist(); syncControls(); render() })
   actions.setProviders = names => {
     providerBox.classList.toggle('hide', names.length < 2)
     providerBox.replaceChildren(...['', ...names].map(n => el('button', { 'data-p': n, 'aria-pressed': String(n === state.provider) }, n ? providerLabel(n) : 'Усі агенти')))

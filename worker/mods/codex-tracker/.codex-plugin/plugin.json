@@ -1,6 +1,6 @@
 {
   "name": "token-tracker",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Token Tracker: the subscription's rate-limit windows, the session's activity (turn times, context fill, the repository as far as the device allows) and the token history from before OpenTelemetry, read on the device and sent as numbers (live tokens come over OpenTelemetry)",
   "hooks": "./hooks/hooks.json"
 }

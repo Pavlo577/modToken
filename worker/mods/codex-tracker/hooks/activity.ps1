@@ -93,7 +93,7 @@ try {
   $site = [regex]::Match($config, 'endpoint = "(https?://[^"]+?)/v1/logs"')
   $token = [regex]::Match($config, '"x-device-token" = "([0-9a-f]{16,128})"')
   if (-not $site.Success -or -not $token.Success) { exit 0 }
-  $siteUrl = $site.Groups[1].Value; $headers = @{ 'x-device-token' = $token.Groups[1].Value }
+  $siteUrl = $site.Groups[1].Value; $headers = @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' }
   function Post($body) {
     $json = $body | ConvertTo-Json -Depth 5 -Compress
     Invoke-RestMethod -Method Post -Uri ($siteUrl + '/v1/activity') -ContentType 'application/json' -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($json)) -TimeoutSec 5 | Out-Null

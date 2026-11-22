@@ -126,6 +126,29 @@ test('codex limits: a failed send leaves only its message in the data folder, ne
   assert.ok(log.length > 20 && !log.includes(TOKEN))
 })
 
+test('codex limits: skips empty rate_limits snapshots, sends modToken User-Agent header', async () => {
+  const seen = []
+  const server = createServer((req, res) => {
+    let body = ''
+    req.on('data', d => (body += d)).on('end', () => {
+      seen.push({ url: req.url, ua: req.headers['user-agent'], body: JSON.parse(body) })
+      res.end('{}')
+    })
+  })
+  await new Promise(r => server.listen(0, '127.0.0.1', r))
+  try {
+    const home = codexHome(`http://127.0.0.1:${server.address().port}`, [
+      tokenCount({ primary: { used_percent: 31, window_minutes: 300, resets_at: 1793322000 }, secondary: { used_percent: 83, window_minutes: 10080, resets_at: 1793700000 } }),
+      tokenCount({ primary: null, secondary: null }, '2026-10-29T20:28:00.000Z'),
+    ])
+    const r = await run(home, [], JSON.stringify({ hook_event_name: 'Stop' }))
+    assert.equal(r.code, 0); assert.equal(r.out, '')
+    assert.equal(seen.length, 2)
+    for (const req of seen) assert.equal(req.ua, 'modToken-codex/1.0')
+    assert.deepEqual(seen[0].body.limits.map(l => [l.kind, l.percentUsed]), [['five_hour', 31], ['seven_day', 83]])
+  } finally { server.close() }
+})
+
 // ---- the history import (hooks/history.py, run by the SessionStart hook)
 const HISTORY = PLUGIN + 'hooks/history.py'
 const runHistory = (home, data, args = ['--run']) => new Promise(done => {

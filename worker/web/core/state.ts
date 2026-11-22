@@ -12,6 +12,8 @@ type Metric = 'io' | 'all' // 'all' adds the cache reads
 /** Which of the two to draw: both, only input (arrow down) or only output (arrow up). */
 export type IoMode = 'both' | 'in' | 'out'
 
+export type LimitMode = 'used' | 'left'
+
 export const IO_NEXT: Record<IoMode, IoMode> = { both: 'in', in: 'out', out: 'both' }
 
 interface State {
@@ -37,6 +39,8 @@ interface State {
   compare: boolean
   /** Main chart with the cache on: 'log' = logarithmic, 'linear' = one linear scale, cache clipped at the top. */
   scale: 'log' | 'linear'
+  /** How subscription limit bars are shown: used percent or remaining percent. */
+  limitMode: LimitMode
   day: string
   /** Daily budget in dollars (API-price estimate): the overview warns when today goes over it; 0 = off. */
   budget: number
@@ -59,7 +63,7 @@ export const asTab = (v: unknown): Tab | null => (v === 'sessions' ? 'analytics'
 // the tab survives a reload: the address (#analytics) wins, then the last one used
 const startTab: Tab = asTab(location.hash.slice(1)) ?? asTab((saved as { tab?: unknown }).tab) ?? 'overview'
 
-export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, scale: 'log', day: '', spread: false, budget: 0, actMode: '', topDevice: false, steps: cleanSteps(null), ...saved, anchor: '', tab: startTab }
+export const state: State = { range: 'month', from: '', to: '', device: '', provider: '', view: 'line', metric: 'io', io: 'both', ioHidden: false, compare: false, scale: 'log', limitMode: 'used', day: '', spread: false, budget: 0, actMode: '', topDevice: false, steps: cleanSteps(null), ...saved, anchor: '', tab: startTab }
 
 state.range = OLD_RANGES[state.range] ?? state.range
 state.steps = cleanSteps(state.steps)
@@ -70,6 +74,8 @@ if (!(state.io in IO_NEXT)) state.io = 'both'
 
 if (state.metric !== 'all') state.metric = 'io' // the old 'cost' choice is gone
 
+if (state.limitMode !== 'left') state.limitMode = 'used'
+
 export const persist = (): void => {
-  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, scale: state.scale, actMode: state.actMode, topDevice: state.topDevice, spread: state.spread, budget: state.budget, steps: state.steps, tab: state.tab })) } catch { /* ignore */ }
+  try { localStorage.setItem('tt-state', JSON.stringify({ range: state.range, from: state.from, to: state.to, device: state.device, provider: state.provider, view: state.view, metric: state.metric, io: state.io, ioHidden: state.ioHidden, compare: state.compare, scale: state.scale, limitMode: state.limitMode, actMode: state.actMode, topDevice: state.topDevice, spread: state.spread, budget: state.budget, steps: state.steps, tab: state.tab })) } catch { /* ignore */ }
 }

@@ -166,10 +166,19 @@ def quota_kind(name, reset_in_seconds):
     return kind or 'quota'
 
 
+def pool_kind(bucket):
+    k = re.sub(r'[^a-z0-9]+', '_', bucket.lower()).strip('_')
+    if k and not ('a' <= k[0] <= 'z'):
+        k = 'q_' + k
+    return k[:30].strip('_') or 'quota'
+
+
 def parse_quotas(quota_obj, dt_now):
     if not isinstance(quota_obj, dict):
         return []
     by_kind = {}
+    counts = {}
+    raw_entries = []
     for bucket, info in quota_obj.items():
         if not isinstance(bucket, str) or not isinstance(info, dict) or info.get('disabled') is True:
             continue
@@ -185,13 +194,31 @@ def parse_quotas(quota_obj, dt_now):
             rt = (dt_now + timedelta(seconds=float(reset_in))).replace(second=0, microsecond=0)
             resets_at = rt.isoformat().replace('+00:00', 'Z')
         kind = quota_kind(bucket, reset_in)
+        counts[kind] = counts.get(kind, 0) + 1
+        entry = {'kind': kind, 'percentUsed': pct}
+        if resets_at:
+            entry['resetsAt'] = resets_at
+        raw_entries.append((bucket, entry))
         prev = by_kind.get(kind)
         if prev is None or pct > prev['percentUsed']:
-            entry = {'kind': kind, 'percentUsed': pct}
-            if resets_at:
-                entry['resetsAt'] = resets_at
-            by_kind[kind] = entry
-    return [by_kind[k] for k in sorted(by_kind.keys())]
+            by_kind[kind] = dict(entry)
+    out = [by_kind[k] for k in sorted(by_kind.keys())]
+    if any(c > 1 for c in counts.values()):
+        extras = {}
+        for bucket, entry in raw_entries:
+            pk = pool_kind(bucket)
+            if pk in ('five_hour', 'seven_day') or pk in by_kind:
+                continue
+            prev = extras.get(pk)
+            if prev is None or entry['percentUsed'] > prev['percentUsed']:
+                e = dict(entry)
+                e['kind'] = pk
+                extras[pk] = e
+        for pk in sorted(extras.keys()):
+            if len(out) >= 8:
+                break
+            out.append(extras[pk])
+    return out
 
 
 def otlp_log_record(session_id, prompt_id, call_id, dt_now, model_id, effort, new_input, output, cache_read, cache_write, duration_ms, cost_micros, query_source, version):

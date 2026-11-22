@@ -12,3 +12,14 @@
 - [x] **Неповний `context_tokens` у `last_context`**
   - **Симптом:** у живому пейлоаді `statusLine` поле `current_usage.input_tokens` містить лише некешований ввід (`2568`), а кешований контекст лежить у `cache_read_input_tokens` (`264960`).
   - **Виправлення:** `last_context.tokens` тепер рахує суму `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`, що відповідає `used_percentage`.
+
+## 2026-11-22
+- [x] **Фейкова оранжева смужка на `0.0%`, розбіжність «Використано / Залишилось», приховані агенти та пули квот на вкладці «Вартість і ліміти»**
+  - **Симптоми:** за нульового ліміту (`0.0%`) на початку бару малювалася вузька оранжева смужка; у режимі «Усі агенти» відображався лише один агент; Antigravity IDE / Codex показують залишок (`Remaining`), тоді як дашборд показував лише «використано» без другого значення; 3 пули Antigravity (`Gemini Models`, `Claude and GPT models`, `Gemini 4 Argon`) зливалися у 2 бакети; при порожньому `resets_at` виводилось `0 хв (02:00, 1 січ.)`.
+  - **Першопричини & Виправлення:**
+    - `.meter b` у `worker/public/admin/styles.css` мав безумовний `padding-right: 10px`, а `money.ts` завжди створював `<b>` навіть при `0%` → додано `.meter b:not(:empty)` і рендер `<b>` лише при `barPct > 0`.
+    - Додано перемикач `Використано / Залишилось` (`state.limitMode` у `worker/web/core/state.ts`, `index.html`, `controls.ts`) та показ обох значень у заголовку шкали (`money.ts`); додано мульти-агентний рендер при `Усі агенти` та включення `limits` у `load.ts` для формування перемикача агентів.
+    - `worker/src/limits.ts` і `worker/web/lib/stats.ts` підтримують цифрові назви пулів (`gemini_4_argon_weekly`), а `statusline.py`/`statusline.ps1` (`1.1.1`) передають індивідуальні пули разом зі зведеними `five_hour`/`seven_day`, коли кілька бакетів ділять вікно.
+- [x] **Codex-плагін (`win-pk-h-codex`) не оновлював ліміти (застрягло на `20 дн тому`)**
+  - **Першопричина:** у `worker/mods/codex-tracker/` (`limits.py`, `limits.ps1`, `activity.*`, `history.*`) бракувало заголовка `User-Agent` (Cloudflare блокує стандартні UA з `403 error 1010`), `limits.ps1` читав лише `-Tail 400` без shared write/delete доступу (`IO.FileStream`) до відкритої сесії на Windows, а `limits.py`/`limits.ps1` переривали сканування, якщо останній `token_count` мав `rate_limits: { primary: null }`.
+  - **Виправлення:** оновлено плагін до версії `1.4.1`: додано `User-Agent: modToken-codex/1.0`, читання останніх 512 КБ у `limits.ps1` через `IO.FileStream` з `ReadWrite | Delete`, та перевірку непорожніх вікон перед виходом зі сканування.

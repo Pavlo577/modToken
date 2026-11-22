@@ -124,6 +124,8 @@ try {
 
   if ($p.quota) {
     $byKind = @{}
+    $counts = @{}
+    $rawEntries = @()
     foreach ($prop in $p.quota.PSObject.Properties) {
       $info = $prop.Value
       if ($null -eq $info -or $info.disabled -eq $true -or $null -eq $info.remaining_fraction) { continue }
@@ -132,15 +134,37 @@ try {
       $rs = if ($null -ne $info.reset_in_seconds) { [double]$info.reset_in_seconds } else { -1 }
       $kind = if ($low -match 'week|7d|seven' -or $rs -gt 86400) { 'seven_day' } elseif ($low -match '5h|five|hour|session' -or ($rs -gt 0 -and $rs -le 21600)) { 'five_hour' } else { ($low -replace '[^a-z]+', '_').Trim('_') }
       if (-not $kind) { $kind = 'quota' }
+      $counts[$kind] = $(if ($counts.ContainsKey($kind)) { $counts[$kind] + 1 } else { 1 })
+      $entry = @{ kind = $kind; percentUsed = $pct }
+      if ($info.reset_time) { $entry.resetsAt = [string]$info.reset_time }
+      elseif ($rs -ge 0) { $entry.resetsAt = $now.AddSeconds($rs).ToString('yyyy-MM-ddTHH:mm:00Z') }
+      $rawEntries += @{ bucket = $prop.Name; entry = $entry }
       if (-not $byKind.ContainsKey($kind) -or $pct -gt $byKind[$kind].percentUsed) {
-        $entry = @{ kind = $kind; percentUsed = $pct }
-        if ($info.reset_time) { $entry.resetsAt = [string]$info.reset_time }
-        elseif ($rs -ge 0) { $entry.resetsAt = $now.AddSeconds($rs).ToString('yyyy-MM-ddTHH:mm:00Z') }
-        $byKind[$kind] = $entry
+        $byKind[$kind] = @{} + $entry
       }
     }
     if ($byKind.Count -gt 0) {
       $limits = @($byKind.Keys | Sort-Object | ForEach-Object { $byKind[$_] })
+      if (@($counts.Values | Where-Object { $_ -gt 1 }).Count -gt 0) {
+        $extras = @{}
+        foreach ($item in $rawEntries) {
+          $pk = ($item.bucket.ToLowerInvariant() -replace '[^a-z0-9]+', '_').Trim('_')
+          if ($pk -and $pk -notmatch '^[a-z]') { $pk = 'q_' + $pk }
+          if ($pk.Length -gt 30) { $pk = $pk.Substring(0, 30).Trim('_') }
+          if (-not $pk) { $pk = 'quota' }
+          if ($pk -eq 'five_hour' -or $pk -eq 'seven_day' -or $byKind.ContainsKey($pk)) { continue }
+          $e = $item.entry
+          if (-not $extras.ContainsKey($pk) -or $e.percentUsed -gt $extras[$pk].percentUsed) {
+            $copy = @{} + $e
+            $copy.kind = $pk
+            $extras[$pk] = $copy
+          }
+        }
+        foreach ($pk in ($extras.Keys | Sort-Object)) {
+          if ($limits.Count -ge 8) { break }
+          $limits += $extras[$pk]
+        }
+      }
       $qPath = Join-Path $stateDir 'quota.json'
       $qState = Load-Json $qPath
       $sig = (@($limits | ForEach-Object { "$($_.kind)|$($_.percentUsed)|$(if ($_.resetsAt) { ([string]$_.resetsAt).Substring(0, [Math]::Min(16, ([string]$_.resetsAt).Length)) } else { '' })" }) -join ';')

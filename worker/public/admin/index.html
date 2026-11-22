@@ -199,12 +199,15 @@
 
   <section id="tab-money" class="tab hide">
     <div class="card">
-      <div class="card-head"><div><h2>Ліміти підписки</h2><p class="sub" id="limits-sub">Дані з останньої відповіді API на пристроях із підпискою</p></div></div>
+      <div class="card-head">
+        <div><h2>Ліміти підписки</h2><p class="sub" id="limits-sub">Дані з останньої відповіді API на пристроях із підпискою</p></div>
+        <div class="tools"><div class="seg sm" id="limits-mode" role="group" aria-label="Показ відсотків ліміту"><button data-lm="used" aria-pressed="true">Використано</button><button data-lm="left" aria-pressed="false">Залишилось</button></div></div>
+      </div>
       <div id="limits"></div>
     </div>
     <div class="grid cols2">
-      <div class="card"><div class="card-head"><div><h2>Використання ліміту</h2><p class="sub">Найвищий відсоток за день</p></div><div class="legend"><span><i style="background:var(--out)"></i>7 днів</span><span><i style="background:var(--in)"></i>5 годин</span></div></div><div id="limits-chart"></div></div>
-      <div class="card"><div class="card-head"><div><h2>Ефективність підписки</h2><p class="sub">Скільки токенів і доларів API-вартості припадає на 1% тижневого ліміту</p></div></div><div id="efficiency"></div></div>
+      <div class="card"><div class="card-head"><div><h2>Використання ліміту</h2><p class="sub" id="limits-chart-sub">Найвищий відсоток за день</p></div><div class="legend"><span><i style="background:var(--out)"></i>7 днів</span><span><i style="background:var(--in)"></i>5 годин</span></div></div><div id="limits-chart"></div></div>
+      <div class="card"><div class="card-head"><div><h2>Ефективність підписки</h2><p class="sub" id="efficiency-sub">Скільки токенів і доларів API-вартості припадає на 1% тижневого ліміту</p></div></div><div id="efficiency"></div></div>
     </div>
     <div class="card">
       <div class="card-head"><div><h2>Оцінка вартості</h2><p class="sub" id="cost-sub"></p></div></div>

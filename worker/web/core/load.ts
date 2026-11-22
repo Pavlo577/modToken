@@ -34,7 +34,7 @@ export async function load(): Promise<void> {
     rememberDevices(names)
     if (state.device && !names.includes(state.device)) state.device = ''
     actions.setDevices(names)
-    const providers = [...new Set(buckets.map(b => b.provider || 'claude'))].sort()
+    const providers = [...new Set([...buckets.map(b => b.provider || 'claude'), ...limits.map(l => l.provider || 'claude')])].sort()
     store.providers = providers
     if (state.provider && !providers.includes(state.provider)) state.provider = ''
     actions.setProviders(providers)

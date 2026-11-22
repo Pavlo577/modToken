@@ -206,6 +206,7 @@ export interface LimitNow extends LimitRow {
 }
 
 const SPAN: Record<string, number> = { five_hour: 5 * 3_600_000, seven_day: 7 * DAY }
+const spanOf = (kind: string): number => SPAN[kind] ?? (/(^|_)(5h|five_hour|five|hour|session)(_|$)/.test(kind) ? 5 * 3_600_000 : 7 * DAY)
 const SAME_MS = 60_000 // resets_at readings this close are the same window
 const RESET_DROP = 3 // a fall of more than this many percent inside one window means it was reset by hand
 const EARLY_MS = 30 * 60_000 // a window whose successor shows up this much before its resets_at was cut short
@@ -226,7 +227,7 @@ export interface Window {
  * was first seen, and the successor starts there instead of resets_at minus the full span.
  */
 function windowsOf(rows: LimitRow[], kind: string): Window[] {
-  const span = SPAN[kind] ?? 7 * DAY
+  const span = spanOf(kind)
   const list = rows.filter(r => r.kind === kind && r.resets_at).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
   const segs: { resets: number; firstTs: number; peak: number; last: number }[] = []
   for (const r of list) {
@@ -278,7 +279,7 @@ export interface Forecast {
 export function forecast(limit: Pick<LimitNow, 'kind' | 'percent' | 'resets_at'> & { isStale?: boolean; resetAt?: number } | undefined, now = Date.now()): Forecast | null {
   if (!limit || !limit.resets_at || limit.isStale || limit.percent <= 0) return null
   const end = Date.parse(limit.resets_at)
-  const start = Math.max(end - (SPAN[limit.kind] ?? 7 * DAY), limit.resetAt ?? 0)
+  const start = Math.max(end - spanOf(limit.kind), limit.resetAt ?? 0)
   const elapsed = now - start
   if (elapsed <= 0) return null
   const fullAt = start + (elapsed * 100) / limit.percent

@@ -27,7 +27,7 @@ export function parseLimits(body: unknown): LimitReading[] | null {
     if (!l || typeof l !== 'object') continue
     const kind = str(l.kind, 30)
     const pct = typeof l.percentUsed === 'number' ? l.percentUsed : NaN
-    if (!/^[a-z_]+$/.test(kind) || !Number.isFinite(pct)) continue
+    if (!/^[a-z][a-z0-9_]*$/.test(kind) || !Number.isFinite(pct)) continue
     const resets = typeof l.resetsAt === 'string' ? new Date(l.resetsAt.slice(0, 40)) : null
     out.push({ kind, percent: Math.min(1000, Math.max(0, pct)), resets_at: resets && !Number.isNaN(resets.getTime()) ? resets.toISOString() : '' })
   }

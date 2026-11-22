@@ -167,3 +167,13 @@ test('limit reset by hand: window ends early, the next starts at the reset, fore
   const f = forecast(l, now)
   assert.equal(Math.round((f.fullAt - Date.parse('2026-10-22T12:00:00Z')) / 3_600_000), 600)
 })
+
+test('forecast recognizes 5h vs 7d windows for pool-specific limit kinds', () => {
+  const now = Date.parse('2026-11-22T12:00:00Z')
+  const f5h = forecast({ kind: 'gemini_5h', percent: 50, resets_at: '2026-11-22T15:00:00Z' }, now)
+  assert.equal(f5h.willFill, true)
+  assert.equal(f5h.fullAt, Date.parse('2026-11-22T14:00:00Z'))
+  const f7d = forecast({ kind: 'gemini_4_argon_weekly', percent: 20, resets_at: '2026-11-27T12:00:00Z' }, now)
+  assert.equal(f7d.willFill, false)
+  assert.equal(f7d.fullAt, Date.parse('2026-11-30T12:00:00Z'))
+})

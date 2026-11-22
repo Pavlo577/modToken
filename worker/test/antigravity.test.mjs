@@ -372,3 +372,28 @@ test('insights: aggregateCallEvents supports Claude, Codex, and Antigravity and 
   assert.equal(agg.latencyStats.duration.n, 2)
   assert.equal(agg.latency.find(l => l.model === 'gemini-4-neon-high')?.dur_p50, 800)
 })
+
+test('antigravity statusline: preserves individual model pools alongside five_hour and seven_day when multiple pools share a window', async () => {
+  const srv = await site()
+  try {
+    const { env } = agyEnv(srv.origin)
+    const snap = {
+      conversation_id: 'conv-multipool',
+      quota: {
+        'Gemini Models 5h': { remaining_fraction: 0.78, reset_in_seconds: 14400 },
+        'Gemini Models Weekly': { remaining_fraction: 0.86, reset_in_seconds: 560000 },
+        'Claude and GPT models 5h': { remaining_fraction: 1.0, reset_in_seconds: 18000 },
+        'Claude and GPT models Weekly': { remaining_fraction: 1.0, reset_in_seconds: 604800 },
+        'Gemini 4 Argon Weekly': { remaining_fraction: 0.9, reset_in_seconds: 604800 },
+      },
+    }
+    const r = await runPy(STATUSLINE, ['--sync'], env, JSON.stringify(snap))
+    assert.equal(r.code, 0)
+    const limReq = srv.got.find(x => x.url === '/v1/limits')
+    assert.ok(limReq)
+    const kinds = JSON.parse(limReq.body).limits
+    assert.ok(kinds.length > 2 && kinds.length <= 8)
+    assert.deepEqual(kinds.slice(0, 2).map(l => [l.kind, l.percentUsed]), [['five_hour', 22], ['seven_day', 14]])
+    assert.equal(kinds.find(l => l.kind === 'gemini_4_argon_weekly')?.percentUsed, 10)
+  } finally { srv.close() }
+})

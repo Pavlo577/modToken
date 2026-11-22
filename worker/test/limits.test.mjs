@@ -32,3 +32,14 @@ test('limits: the agent is codex only when the body says so; the mod sends none 
   assert.equal(limitsProvider({ provider: 'gemini', limits: [] }), 'claude')
   assert.equal(limitsProvider(null), 'claude')
 })
+
+test('limits: allows alphanumeric pool names starting with a letter and rejects leading digits or spaces', () => {
+  const out = parseLimits({
+    limits: [
+      { kind: 'gemini_4_argon_weekly', percentUsed: 12 },
+      { kind: '4bad', percentUsed: 50 },
+      { kind: 'Bad Kind', percentUsed: 50 },
+    ],
+  })
+  assert.deepEqual(out, [{ kind: 'gemini_4_argon_weekly', percent: 12, resets_at: '' }])
+})

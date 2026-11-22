@@ -16,7 +16,7 @@ function Send-Report($events, $timeout = 5) {
   try {
     $v = try { "$((Get-Content -Raw (Join-Path $PSScriptRoot '..\.codex-plugin\plugin.json') | ConvertFrom-Json).version)" } catch { '' }
     $body = @{ provider = 'codex'; version = $v; events = @($events) } | ConvertTo-Json -Depth 4 -Compress
-    Invoke-RestMethod -Method Post -Uri ($script:siteUrl + '/v1/plugin-log') -ContentType 'application/json' -Headers @{ 'x-device-token' = $script:tok } -Body $body -TimeoutSec $timeout | Out-Null
+    Invoke-RestMethod -Method Post -Uri ($script:siteUrl + '/v1/plugin-log') -ContentType 'application/json' -Headers @{ 'x-device-token' = $script:tok; 'User-Agent' = 'modToken-codex/1.0' } -Body $body -TimeoutSec $timeout | Out-Null
   } catch { }
 }
 try {
@@ -84,7 +84,7 @@ try {
   for ($i = 0; $i -lt $rows.Count; $i += 500) {
     $part = $rows.GetRange($i, [math]::Min(500, $rows.Count - $i))
     $body = @{ provider = 'codex'; turns = @($part) } | ConvertTo-Json -Depth 4 -Compress
-    $r = Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/import') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value } -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 60
+    $r = Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/import') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' } -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 60
     if ($r.added) { $added += [int]$r.added }
   }
   New-Item -ItemType Directory -Force $data | Out-Null

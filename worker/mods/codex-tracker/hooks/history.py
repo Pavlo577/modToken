@@ -93,7 +93,7 @@ def calls(path):
 
 def send(site, token, turns):
     body = json.dumps({'provider': 'codex', 'turns': turns}).encode()
-    req = urllib.request.Request(site + '/v1/import', data=body, headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
+    req = urllib.request.Request(site + '/v1/import', data=body, headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='POST')
     return json.loads(urllib.request.urlopen(req, timeout=60).read() or b'{}').get('added', 0)
 
 
@@ -109,7 +109,7 @@ def report(site, token, events, timeout=5):
     """The plugin's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message or a path."""
     try:
         body = json.dumps({'provider': 'codex', 'version': plugin_version(), 'events': events}).encode()
-        req = urllib.request.Request(site + '/v1/plugin-log', data=body, headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
+        req = urllib.request.Request(site + '/v1/plugin-log', data=body, headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='POST')
         urllib.request.urlopen(req, timeout=timeout).read()
     except Exception:
         pass

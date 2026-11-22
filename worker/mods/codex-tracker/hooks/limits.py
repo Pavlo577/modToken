@@ -29,7 +29,7 @@ def report(site, token, events, timeout=5):
     """The plugin's own log on the dashboard (POST /v1/plugin-log): kinds and counts, an error's type, never its message or a path."""
     try:
         body = json.dumps({'provider': 'codex', 'version': plugin_version(), 'events': events}).encode()
-        req = urllib.request.Request(site + '/v1/plugin-log', data=body, headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
+        req = urllib.request.Request(site + '/v1/plugin-log', data=body, headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='POST')
         urllib.request.urlopen(req, timeout=timeout).read()
     except Exception:
         pass
@@ -58,7 +58,7 @@ def newest_sessions(n=3):
 
 
 def latest_rate_limits(path):
-    """The rate_limits of the file's last token_count event that has them, and that line's time."""
+    """The rate_limits of the file's last token_count event that has non-empty windows, and that line's time."""
     with open(path, 'rb') as f:
         f.seek(max(0, os.path.getsize(path) - TAIL))
         lines = f.read().decode('utf-8', 'replace').splitlines()
@@ -71,7 +71,8 @@ def latest_rate_limits(path):
             continue
         p = row.get('payload') or {}
         if row.get('type') == 'event_msg' and p.get('type') == 'token_count' and isinstance(p.get('rate_limits'), dict):
-            return p['rate_limits'], row.get('timestamp')
+            if readings(p['rate_limits'], row.get('timestamp')):
+                return p['rate_limits'], row.get('timestamp')
     return None, None
 
 
@@ -113,7 +114,7 @@ def main():
             limits = readings(rl, stamp)
             if limits:
                 req = urllib.request.Request(site + '/v1/limits', data=json.dumps({'provider': 'codex', 'limits': limits}).encode(),
-                                             headers={'content-type': 'application/json', 'x-device-token': token}, method='POST')
+                                             headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='POST')
                 urllib.request.urlopen(req, timeout=5).read()
                 beat = os.path.join(DATA, 'limits-reported')
                 if not os.path.exists(beat) or datetime.now().timestamp() - os.path.getmtime(beat) > HEARTBEAT:

@@ -13,7 +13,7 @@ function Send-Report($events, $timeout = 5) {
   try {
     $v = try { "$((Get-Content -Raw (Join-Path $PSScriptRoot '..\.codex-plugin\plugin.json') | ConvertFrom-Json).version)" } catch { '' }
     $body = @{ provider = 'codex'; version = $v; events = @($events) } | ConvertTo-Json -Depth 4 -Compress
-    Invoke-RestMethod -Method Post -Uri ($script:siteUrl + '/v1/plugin-log') -ContentType 'application/json' -Headers @{ 'x-device-token' = $script:tok } -Body $body -TimeoutSec $timeout | Out-Null
+    Invoke-RestMethod -Method Post -Uri ($script:siteUrl + '/v1/plugin-log') -ContentType 'application/json' -Headers @{ 'x-device-token' = $script:tok; 'User-Agent' = 'modToken-codex/1.0' } -Body $body -TimeoutSec $timeout | Out-Null
   } catch { }
 }
 try {
@@ -39,36 +39,45 @@ try {
   if ($named) { $files = @($named) + $files }
 
   foreach ($f in $files) {
-    $lines = @(Get-Content $f.FullName -Tail 400)
-    [array]::Reverse($lines)
-    $rl = $null; $stamp = $null
-    foreach ($line in $lines) {
+    $lines = @()
+    try {
+      # Codex keeps the active session file open for writing; read tail bytes with shared write/delete access
+      $fs = New-Object IO.FileStream($f.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+      try {
+        $fs.Seek([math]::Max(0, $fs.Length - 524288), [IO.SeekOrigin]::Begin) | Out-Null
+        $lines = (New-Object IO.StreamReader($fs, [Text.Encoding]::UTF8)).ReadToEnd() -split "`n"
+      } finally { $fs.Dispose() }
+    } catch { continue }
+    $limits = @()
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+      $line = $lines[$i]
       if ($line -notlike '*"token_count"*' -or $line -notlike '*"rate_limits"*') { continue }
       try { $row = $line | ConvertFrom-Json } catch { continue }
-      if ($row.type -eq 'event_msg' -and $row.payload.type -eq 'token_count' -and $row.payload.rate_limits) { $rl = $row.payload.rate_limits; $stamp = $row.timestamp; break }
-    }
-    if (-not $rl) { continue }
-    $limits = @()
-    foreach ($name in 'primary', 'secondary') {
-      $w = $rl.$name
-      if (-not $w -or $null -eq $w.used_percent) { continue }
-      $kind = switch ($w.window_minutes) { 300 { 'five_hour' } 10080 { 'seven_day' } default { $name } }
-      $r = [ordered]@{ kind = $kind; percentUsed = [math]::Round([double]$w.used_percent, 2) }
-      if ($null -ne $w.resets_at) { $r.resetsAt = [DateTimeOffset]::FromUnixTimeSeconds([long]$w.resets_at).ToString('o') }
-      elseif ($null -ne $w.resets_in_seconds -and $stamp) { $r.resetsAt = ([DateTimeOffset]::Parse("$stamp")).AddSeconds([double]$w.resets_in_seconds).ToString('o') } # older Codex versions
-      $limits += $r
+      if ($row.type -ne 'event_msg' -or $row.payload.type -ne 'token_count' -or -not $row.payload.rate_limits) { continue }
+      $rl = $row.payload.rate_limits; $stamp = $row.timestamp
+      $cand = @()
+      foreach ($name in 'primary', 'secondary') {
+        $w = $rl.$name
+        if (-not $w -or $null -eq $w.used_percent) { continue }
+        $kind = switch ($w.window_minutes) { 300 { 'five_hour' } 10080 { 'seven_day' } default { $name } }
+        $r = [ordered]@{ kind = $kind; percentUsed = [math]::Round([double]$w.used_percent, 2) }
+        if ($null -ne $w.resets_at) { $r.resetsAt = [DateTimeOffset]::FromUnixTimeSeconds([long]$w.resets_at).ToString('o') }
+        elseif ($null -ne $w.resets_in_seconds -and $stamp) { $r.resetsAt = ([DateTimeOffset]::Parse("$stamp")).AddSeconds([double]$w.resets_in_seconds).ToString('o') } # older Codex versions
+        $cand += $r
+      }
+      if ($cand.Count -gt 0) { $limits = $cand; break }
     }
     if ($limits.Count) {
       $body = @{ provider = 'codex'; limits = $limits } | ConvertTo-Json -Depth 4 -Compress
-      Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/limits') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value } -Body $body -TimeoutSec 5 | Out-Null
+      Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/limits') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' } -Body $body -TimeoutSec 5 | Out-Null
       $beat = Join-Path $data 'limits-reported' # the dashboard's log hears "limits sent" at most once an hour
       if (-not (Test-Path $beat) -or ((Get-Date) - (Get-Item $beat).LastWriteTime).TotalSeconds -gt 3600) {
         New-Item -ItemType Directory -Force $data | Out-Null
         Set-Content -Encoding ascii $beat ''
         Send-Report @(@{ kind = 'limits'; n = $limits.Count })
       }
+      break
     }
-    break
   }
 } catch {
   $type = $_.Exception.GetType().Name
