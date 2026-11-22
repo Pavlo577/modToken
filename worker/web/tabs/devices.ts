@@ -38,6 +38,7 @@ const icon = (paths: string[], size = 15): SVGElement =>
     ...paths.map(d => svg('path', { d })))
 
 const ICON_EDIT = ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z']
+const ICON_MERGE = ['M8 3H5a2 2 0 0 0-2 2v3', 'M21 8V5a2 2 0 0 0-2-2h-3', 'M3 16v3a2 2 0 0 0 2 2h3', 'M16 21h3a2 2 0 0 0 2-2v-3', 'm7 7 5 5 5-5', 'M12 12v7']
 const ICON_KEY = ['m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4', 'm21 2-9.6 9.6', 'M7.5 12a4.5 4.5 0 1 0 4.5 4.5 4.5 4.5 0 0 0-4.5-4.5Z']
 const ICON_REVOKE = ['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z', 'm4.93 4.93 14.14 14.14']
 const ICON_TRASH = ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', 'M10 11v6', 'M14 11v6']
@@ -127,7 +128,7 @@ function deviceAgents(d: DeviceRow, log: PluginEntry[]): Agent[] {
   return [pick.agent]
 }
 
-function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): HTMLElement {
+function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = [], allDevices: DeviceRow[] = []): HTMLElement {
   const added = d.created_at.slice(0, 10)
   const seen = d.seen?.[sectionAgent] ?? d.last_seen
   const pick = guessSetup(d.name, [sectionAgent], savedSetups()[d.name], { agent: sectionAgent, place: defaultPlace() })
@@ -137,23 +138,44 @@ function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): 
   const otherAgents = d.providers.filter(p => p !== sectionAgent)
 
   const doRename = async () => {
-    const raw = prompt('Нова назва пристрою:', d.name)
+    const raw = prompt('Нова назва пристрою (залиш порожнім, щоб скинути на автоназву з ПК):', d.name)
     if (raw === null) return
     const next = raw.trim()
-    if (!next || next === d.name) return
+    if (next === d.name) return
     try {
-      await api('/devices/' + d.id, { method: 'PATCH', body: JSON.stringify({ name: next }) })
-      renameSavedSetup(d.name, next)
+      const body = next ? { name: next } : { auto_name: true, agent: sectionAgent, place: pick.place }
+      const r = await api<{ name?: string }>('/devices/' + d.id, { method: 'PATCH', body: JSON.stringify(body) })
+      if (r.name) renameSavedSetup(d.name, r.name)
       void loadDevices()
       void load()
     } catch (err) { alert('Не вдалося перейменувати: ' + (err as Error).message) }
   }
 
+  const doMerge = async () => {
+    const candidates = allDevices.filter(x => x.id !== d.id)
+    if (!candidates.length) return
+    const menu = candidates.map((x, i) => `${i + 1}) ${x.name}${x.revoked ? ' (відкликано)' : ''}`).join('\n')
+    const raw = prompt(`Об'єднати інший пристрій у «${d.name}» (його токени, ліміти й сесії перейдуть сюди, а дубль видалиться).\nВведи номер або назву пристрою:\n${menu}`)
+    if (!raw) return
+    const clean = raw.trim()
+    const idx = Number(clean)
+    const src = Number.isInteger(idx) && idx >= 1 && idx <= candidates.length
+      ? candidates[idx - 1]
+      : candidates.find(x => x.name.toLowerCase() === clean.toLowerCase())
+    if (!src) { alert('Пристрій не знайдено.'); return }
+    if (!confirm(`Перенести всі дані з «${src.name}» у «${d.name}» і видалити дубль «${src.name}»?`)) return
+    try {
+      await api('/devices/merge', { method: 'POST', body: JSON.stringify({ target_id: d.id, source_id: src.id }) })
+      void loadDevices()
+      void load()
+    } catch (err) { alert('Не вдалося об\'єднати: ' + (err as Error).message) }
+  }
+
   return el('div', { class: 'dev' + (d.revoked ? ' revoked' : '') },
     el('div', { class: 'dev-main' },
       el('div', { class: 'dev-title-row' },
-        el('b', { class: 'dev-name', title: 'Натисни, щоб перейменувати пристрій', onclick: doRename }, d.name),
-        el('button', { type: 'button', class: 'icon-btn ghost', 'data-tip': 'Перейменувати пристрій', 'aria-label': 'Перейменувати ' + d.name, onclick: doRename }, icon(ICON_EDIT, 13)),
+        el('b', { class: 'dev-name', title: 'Натисни, щоб перейменувати (або очисти для автоназви)', onclick: doRename }, d.name),
+        el('button', { type: 'button', class: 'icon-btn ghost', 'data-tip': 'Перейменувати (порожнє = автоназва)', 'aria-label': 'Перейменувати ' + d.name, onclick: doRename }, icon(ICON_EDIT, 13)),
         el('span', { class: 'dev-place', title: 'Середовище пристрою' }, PLACE_LABEL[pick.place]),
         d.revoked ? el('span', { class: 'tag', style: 'margin-left:0' }, 'відкликано') : '',
         ...otherAgents.sort().map(p => el('span', { class: 'ptag', style: `border-color:${providerColor(p)};color:${providerColor(p)}`, title: 'Цей токен також надсилав дані від іншого агента' }, '+ ' + providerLabel(p)))),
@@ -162,6 +184,7 @@ function deviceRow(d: DeviceRow, sectionAgent: Agent, log: PluginEntry[] = []): 
     el('div', { class: 'dev-actions' },
       ...(d.revoked ? [] : [
         projectSelect(d),
+        ...(allDevices.length > 1 ? [el('button', { type: 'button', class: 'icon-btn', 'data-tip': "Об'єднати з іншим пристроєм", 'aria-label': "Об'єднати у " + d.name, onclick: doMerge }, icon(ICON_MERGE))] : []),
         el('button', { type: 'button', class: 'icon-btn', 'data-tip': 'Новий токен і команди встановлення', 'aria-label': 'Новий токен для ' + d.name, onclick: async () => {
           if (!confirm(`Новий токен для «${d.name}»? Пристрій і його дані лишаються, але старий токен перестане діяти: на цьому пристрої треба буде ще раз виконати команду встановлення.`)) return
           try {
@@ -208,12 +231,12 @@ export async function loadDevices(): Promise<DeviceRow[]> {
           el('span', { class: 'dev-group-count' }, `· ${countWord(activeDevs.length)}${revokedDevs.length ? ` (+${revokedDevs.length} відкл.)` : ''}`)),
         el('button', { type: 'button', class: 'dev-group-add', 'data-tip': `Додати пристрій для ${label}`, onclick: () => pickAgentForAdd(a) }, icon(ICON_PLUS, 14), `Додати`)),
       ...(activeDevs.length
-        ? activeDevs.map(d => deviceRow(d, a, log))
+        ? activeDevs.map(d => deviceRow(d, a, log, list))
         : [el('div', { class: 'dev-group-empty' }, `Для ${label} немає активних пристроїв.`)]),
       ...(revokedDevs.length
         ? [el('details', { class: 'revoked-fold' },
             el('summary', {}, `Відкликані пристрої (${revokedDevs.length})`),
-            ...revokedDevs.map(d => deviceRow(d, a, log)))]
+            ...revokedDevs.map(d => deviceRow(d, a, log, list)))]
         : []))
   })
   $('dev-list').replaceChildren(...groups)

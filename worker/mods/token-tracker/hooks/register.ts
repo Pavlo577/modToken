@@ -31,9 +31,10 @@ async function target($: EngineInterface): Promise<Target | undefined> {
 }
 
 async function post($: EngineInterface, t: Target, path: string, body: unknown): Promise<boolean> {
+  const host = ((await $.env.get('COMPUTERNAME')) ?? (await $.env.get('HOSTNAME')) ?? '').split('.')[0].slice(0, 32)
   const r = await $.http.fetch(`${t.origin}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-device-token': t.token, 'user-agent': 'modToken-claude/' + MOD_VERSION },
+    headers: { 'content-type': 'application/json', 'x-device-token': t.token, 'user-agent': 'modToken-claude/' + MOD_VERSION, ...(host ? { 'x-device-host': host } : {}) },
     body: JSON.stringify(body),
   }).catch(() => undefined)
   return !!r?.ok

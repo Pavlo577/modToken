@@ -4,7 +4,7 @@
 // context_window?, perm_asks, perm_denied, perm_wait_ms }]. The project (a repository's owner/name, or `h:` and 12 hex characters) is kept only as
 // far as the device's project_mode allows: off keeps none, hash keeps a hash only, name keeps either. Anything else in the body is ignored.
 import type { Env } from './env.ts'
-import { hostDeviceName, isAutoDeviceName } from './devices.ts'
+import { maybeAutoNameDevice } from './devices.ts'
 import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { json, text } from './util.ts'
@@ -85,12 +85,7 @@ export async function modConfig(req: Request, env: Env): Promise<Response> {
   const dev = await authDevice(req, env)
   if (!dev) return text('unauthorized', 401)
   const url = new URL(req.url)
-  const host = url.searchParams.get('host')
-  if (host && isAutoDeviceName(dev.name)) {
-    const { results } = await env.DB.prepare('SELECT name FROM devices WHERE user_email = ? AND id != ?').bind(dev.user_email, dev.id).all<{ name: string }>()
-    const next = hostDeviceName(dev.name, url.searchParams.get('agent'), host, results.map(r => r.name))
-    if (next) await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(next, dev.id).run()
-  }
+  await maybeAutoNameDevice(env, dev, url.searchParams.get('agent'), url.searchParams.get('host') ?? req.headers.get('x-device-host'))
   return json({ project: await deviceMode(env, dev.id) })
 }
 
@@ -105,6 +100,7 @@ export async function activityIngest(req: Request, env: Env): Promise<Response> 
   const mode = await deviceMode(env, dev.id)
   const parsed = parseActivity(raw, mode)
   if (!parsed) return text('bad request', 400)
+  await maybeAutoNameDevice(env, dev, activityProvider(raw), req.headers.get('x-device-host'))
   await recordDropped(env, dev.id, 'activity', raw)
   const provider = activityProvider(raw)
   const stmts: D1PreparedStatement[] = []

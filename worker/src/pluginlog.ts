@@ -3,6 +3,7 @@
 // an error's TYPE (URLError, PermissionError ... never its message, which may hold a path) and a stage word; anything else is dropped.
 // Kept in the events database as plugin.<kind> events (90 days), so no table of its own; GET /api/admin/plugin-log reads them back.
 import type { Env } from './env.ts'
+import { maybeAutoNameDevice } from './devices.ts'
 import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { json, text } from './util.ts'
@@ -47,6 +48,7 @@ export async function pluginLogIngest(req: Request, env: Env): Promise<Response>
   try { body = JSON.parse(raw) } catch { return text('bad request', 400) }
   const log = parsePluginLog(body)
   if (!log) return text('bad request: { provider, version, events: [...] }', 400)
+  await maybeAutoNameDevice(env, dev, log.provider, req.headers.get('x-device-host'))
   await recordDropped(env, dev.id, 'plugin_log', body)
   if (env.EVENTS && log.events.length) {
     const now = new Date().toISOString()

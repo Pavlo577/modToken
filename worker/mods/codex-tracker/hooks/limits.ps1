@@ -72,7 +72,9 @@ try {
     }
     if ($limits.Count) {
       $body = @{ provider = 'codex'; limits = $limits } | ConvertTo-Json -Depth 4 -Compress
-      Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/limits') -ContentType 'application/json' -Headers @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' } -Body $body -TimeoutSec 5 | Out-Null
+      $hdr = @{ 'x-device-token' = $token.Groups[1].Value; 'User-Agent' = 'modToken-codex/1.0' }
+      if ($env:COMPUTERNAME) { $hdr['x-device-host'] = $env:COMPUTERNAME }
+      Invoke-RestMethod -Method Post -Uri ($site.Groups[1].Value + '/v1/limits') -ContentType 'application/json' -Headers $hdr -Body $body -TimeoutSec 5 | Out-Null
       $beat = Join-Path $data 'limits-reported' # the dashboard's log hears "limits sent" at most once an hour
       if (-not (Test-Path $beat) -or ((Get-Date) - (Get-Item $beat).LastWriteTime).TotalSeconds -gt 3600) {
         New-Item -ItemType Directory -Force $data | Out-Null

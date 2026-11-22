@@ -7,7 +7,7 @@
 # The site and the device token come from the [otel] block install-codex.sh wrote; nothing is printed (a Stop hook's output would be
 # read by Codex); a failure only leaves its message (never the token or the data) in last-error.txt in the plugin's data folder
 # ($PLUGIN_DATA, else ~/.codex/token-tracker).
-import json, os, re, sys, urllib.request
+import json, os, re, socket, sys, urllib.request
 from datetime import datetime, timedelta, timezone
 
 HOME = os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
@@ -121,8 +121,9 @@ def main():
         if rl:
             limits = readings(rl, stamp)
             if limits:
+                host = (socket.gethostname() or '').split('.')[0][:32]
                 req = urllib.request.Request(site + '/v1/limits', data=json.dumps({'provider': 'codex', 'limits': limits}).encode(),
-                                             headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0'}, method='POST')
+                                             headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-codex/1.0', **({'x-device-host': host} if host else {})}, method='POST')
                 urllib.request.urlopen(req, timeout=5).read()
                 beat = os.path.join(DATA, 'limits-reported')
                 if not os.path.exists(beat) or datetime.now().timestamp() - os.path.getmtime(beat) > HEARTBEAT:

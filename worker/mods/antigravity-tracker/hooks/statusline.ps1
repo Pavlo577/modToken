@@ -49,7 +49,9 @@ function Normalize-Model($raw) {
 
 function Post-Json($site, $tok, $path, $body) {
   $json = $body | ConvertTo-Json -Depth 14 -Compress
-  Invoke-RestMethod -Uri ($site + $path) -Method Post -ContentType 'application/json' -Headers @{ 'x-device-token' = $tok; 'user-agent' = 'modToken-antigravity/1.0' } -Body $json -TimeoutSec 5 | Out-Null
+  $hdr = @{ 'x-device-token' = $tok; 'user-agent' = 'modToken-antigravity/1.0' }
+  if ($env:COMPUTERNAME) { $hdr['x-device-host'] = $env:COMPUTERNAME }
+  Invoke-RestMethod -Uri ($site + $path) -Method Post -ContentType 'application/json' -Headers $hdr -Body $json -TimeoutSec 5 | Out-Null
 }
 
 function Plugin-Version {

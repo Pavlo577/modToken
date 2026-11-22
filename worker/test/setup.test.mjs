@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { antigravityInstallPs, antigravityInstallSh, cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
-import { autoDeviceName, hostDeviceName, isAutoDeviceName } from '../src/devices.ts'
+import { autoConsolidateDevices, autoDeviceName, hostDeviceName, isAutoDeviceName } from '../src/devices.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -183,6 +183,67 @@ test('setup: autoDeviceName and hostDeviceName build unique names and never over
   assert.equal(hostDeviceName('claude-windows-2', 'claude', 'DESKTOP-IOOOI', ['claude-DESKTOP-IOOOI']), 'claude-DESKTOP-IOOOI-2')
   assert.equal(hostDeviceName('my-custom-pc', 'claude', 'DESKTOP-IOOOI', []), null)
   assert.equal(hostDeviceName('claude-linux', 'claude', 'localhost', []), null)
+})
+
+test('setup: autoConsolidateDevices merges legacy duplicates (linux-lekh-h + home-le -> linux-le-h, win-pk-h codex -> win-pk-h-codex) and resets names to auto-placeholders', async () => {
+  const rows = [
+    { id: 'd-linux-active', name: 'linux-le-h', last_seen: '2026-11-22T17:07:00.000Z', otlp_since: '2026-10-29T10:00:00.000Z' },
+    { id: 'd-linux-dup1', name: 'linux-lekh-h', last_seen: null, otlp_since: null },
+    { id: 'd-linux-dup2', name: 'home-le', last_seen: null, otlp_since: null },
+    { id: 'd-codex-active', name: 'win-pk-h-codex', last_seen: '2026-11-22T15:16:00.000Z', otlp_since: '2026-10-30T10:00:00.000Z' },
+    { id: 'd-codex-old', name: 'win-pk-h codex', last_seen: '2026-10-29T21:43:00.000Z', otlp_since: '2026-10-29T20:00:00.000Z' },
+    { id: 'd-win-claude', name: 'win-pk-h', last_seen: '2026-11-22T14:34:00.000Z', otlp_since: null },
+    { id: 'd-cloud', name: 'cloud-cc', last_seen: '2026-11-22T15:43:00.000Z', otlp_since: null },
+    { id: 'd-win-agy', name: 'win-agy', last_seen: null, otlp_since: null },
+    { id: 'd-lin-agy', name: 'agy-lekh', last_seen: '2026-11-22T18:08:00.000Z', otlp_since: null },
+  ]
+  const deleted = new Set()
+  const renamed = new Map()
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          sql,
+          args: [],
+          bind(...args) { this.args = args; return this },
+          async all() {
+            if (this.sql.includes('WHERE user_email = ? AND id IN (?, ?)')) {
+              const [, a, b] = this.args
+              return { results: rows.filter(r => !deleted.has(r.id) && (r.id === a || r.id === b)) }
+            }
+            return { results: [] }
+          },
+          async run() {
+            if (this.sql.startsWith('UPDATE devices SET name = ?')) {
+              const [nextName, id] = this.args
+              renamed.set(id, nextName)
+              const r = rows.find(x => x.id === id)
+              if (r) r.name = nextName
+            }
+            return { meta: { changes: 1 } }
+          },
+        }
+      },
+      async batch(stmts) {
+        for (const s of stmts) {
+          if (s.sql.startsWith('DELETE FROM devices WHERE id = ?')) deleted.add(s.args[0])
+        }
+        return []
+      },
+    },
+  }
+  const changed = await autoConsolidateDevices(env, 'u@example.com', rows.map(r => ({ id: r.id, name: r.name })))
+  assert.equal(changed, true)
+  assert.deepEqual([...deleted].sort(), ['d-codex-old', 'd-linux-dup1', 'd-linux-dup2'])
+  assert.equal(renamed.get('d-linux-active'), 'claude-linux')
+  assert.equal(renamed.get('d-win-claude'), 'claude-windows')
+  assert.equal(renamed.get('d-cloud'), 'claude-cloud')
+  assert.equal(renamed.get('d-codex-active'), 'codex-windows')
+  assert.equal(renamed.get('d-win-agy'), 'antigravity-windows')
+  assert.equal(renamed.get('d-lin-agy'), 'antigravity-linux')
+  // Second run is a 0-change no-op
+  const activeRows = rows.filter(r => !deleted.has(r.id)).map(r => ({ id: r.id, name: r.name }))
+  assert.equal(await autoConsolidateDevices(env, 'u@example.com', activeRows), false)
 })
 
 test('setup: modtoken.sh auto-discovers existing token on PC, updates all detected agents, runs doctor, and never prints full token', () => {

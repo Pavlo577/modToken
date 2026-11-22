@@ -7,7 +7,7 @@
 #   on turn end (agent_state=idle or --flush), >=10 buffered records, or >=flush_seconds (default 15s); keeps items on offline errors.
 # - Network delivery runs in a detached child process (--deliver) so statusLine returns immediately (<30ms) and never stalls the TUI.
 # Pass --sync for synchronous flush in tests, or --flush to trigger a background flush of the queue. Always exits 0.
-import contextlib, json, os, re, subprocess, sys, tempfile, time, urllib.request
+import contextlib, json, os, re, socket, subprocess, sys, tempfile, time, urllib.request
 from datetime import datetime, timedelta, timezone
 
 try:
@@ -103,10 +103,11 @@ def load_config():
 
 
 def post(site, token, path, body, timeout=5):
+    host = (socket.gethostname() or '').split('.')[0][:32]
     req = urllib.request.Request(
         site + path,
         data=json.dumps(body).encode('utf-8'),
-        headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-antigravity/1.0'},
+        headers={'content-type': 'application/json', 'x-device-token': token, 'user-agent': 'modToken-antigravity/1.0', **({'x-device-host': host} if host else {})},
         method='POST',
     )
     urllib.request.urlopen(req, timeout=timeout).read()

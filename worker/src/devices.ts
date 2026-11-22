@@ -48,6 +48,131 @@ export function hostDeviceName(
   return uniqueName(`${prefix}-${host}`, existingNames)
 }
 
+/**
+ * If `dev.name` is still an auto-generated `<agent>-<place>` placeholder and the request supplies a valid machine hostname
+ * (via `?host=` or `x-device-host`), upgrades `devices.name` in D1 to `<agent>-<hostname>`. No-op (0 queries) once named.
+ */
+export async function maybeAutoNameDevice(
+  env: Env,
+  dev: { id: string; user_email: string; name: string },
+  agent: string | null | undefined,
+  rawHost: string | null | undefined,
+): Promise<void> {
+  if (!rawHost || !isAutoDeviceName(dev.name)) return
+  const { results } = await env.DB.prepare('SELECT name FROM devices WHERE user_email = ? AND id != ?').bind(dev.user_email, dev.id).all<{ name: string }>()
+  const next = hostDeviceName(dev.name, agent, rawHost, results.map(r => r.name))
+  if (next && next !== dev.name) {
+    await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(next, dev.id).run()
+    dev.name = next
+  }
+}
+
+/**
+ * Merges `sourceId` into `targetId` for `email`: transfers all turns, calls, seen fields, limits, mod sessions/turns, and events
+ * to `targetId` (ignoring duplicates), recomputes `hourly_buckets` and `last_seen`/`otlp_since`, and deletes `sourceId`.
+ */
+export async function mergeDevices(env: Env, email: string, targetId: string, sourceId: string): Promise<boolean> {
+  if (!targetId || !sourceId || targetId === sourceId) return false
+  const { results } = await env.DB.prepare('SELECT id, last_seen, otlp_since FROM devices WHERE user_email = ? AND id IN (?, ?)')
+    .bind(email, targetId, sourceId).all<{ id: string; last_seen: string | null; otlp_since: string | null }>()
+  const target = results.find(r => r.id === targetId)
+  const source = results.find(r => r.id === sourceId)
+  if (!target || !source) return false
+
+  const lastSeen = [target.last_seen, source.last_seen].filter((x): x is string => Boolean(x)).sort().pop() ?? null
+  const otlpSince = [target.otlp_since, source.otlp_since].filter((x): x is string => Boolean(x)).sort()[0] ?? null
+
+  await env.DB.batch([
+    env.DB.prepare('UPDATE OR IGNORE token_events SET device_id = ? WHERE device_id = ?').bind(targetId, sourceId),
+    env.DB.prepare('DELETE FROM token_events WHERE device_id = ?').bind(sourceId),
+    env.DB.prepare('UPDATE OR IGNORE otlp_calls SET device_id = ? WHERE device_id = ?').bind(targetId, sourceId),
+    env.DB.prepare('DELETE FROM otlp_calls WHERE device_id = ?').bind(sourceId),
+    env.DB.prepare('UPDATE OR IGNORE otlp_seen SET device_id = ? WHERE device_id = ?').bind(targetId, sourceId),
+    env.DB.prepare('DELETE FROM otlp_seen WHERE device_id = ?').bind(sourceId),
+    env.DB.prepare('UPDATE plan_limits SET device_id = ? WHERE user_email = ? AND device_id = ?').bind(targetId, email, sourceId),
+    env.DB.prepare('UPDATE OR IGNORE mod_turns SET device_id = ? WHERE device_id = ?').bind(targetId, sourceId),
+    env.DB.prepare('DELETE FROM mod_turns WHERE device_id = ?').bind(sourceId),
+    env.DB.prepare('UPDATE OR IGNORE mod_sessions SET device_id = ? WHERE device_id = ?').bind(targetId, sourceId),
+    env.DB.prepare('DELETE FROM mod_sessions WHERE device_id = ?').bind(sourceId),
+    env.DB.prepare('UPDATE devices SET last_seen = ?, otlp_since = ? WHERE id = ? AND user_email = ?').bind(lastSeen, otlpSince, targetId, email),
+    env.DB.prepare('DELETE FROM devices WHERE id = ? AND user_email = ?').bind(sourceId, email),
+  ])
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM hourly_buckets WHERE device_id IN (?, ?)').bind(targetId, sourceId),
+    env.DB.prepare(
+      `INSERT OR REPLACE INTO hourly_buckets
+         (user_email, device_id, h, model, provider, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, duration_ms, turns, bg_output, cost_micros, sub)
+       SELECT user_email, device_id, substr(ts, 1, 13), model, provider,
+              SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), SUM(duration_ms),
+              SUM(CASE WHEN kind = 'main' THEN 1 ELSE 0 END),
+              SUM(CASE WHEN kind = 'bg' THEN output_tokens ELSE 0 END),
+              CASE WHEN MIN(cost_micros) > 0 THEN SUM(cost_micros) ELSE 0 END,
+              SUM(is_subagent)
+       FROM token_events WHERE device_id = ?
+       GROUP BY user_email, device_id, substr(ts, 1, 13), model, provider`,
+    ).bind(targetId),
+  ]).catch(() => undefined)
+
+  if (env.EVENTS) {
+    await env.EVENTS.batch([
+      env.EVENTS.prepare('UPDATE OR IGNORE events SET device_id = ? WHERE user_email = ? AND device_id = ?').bind(targetId, email, sourceId),
+      env.EVENTS.prepare('DELETE FROM events WHERE user_email = ? AND device_id = ?').bind(email, sourceId),
+    ]).catch(() => undefined)
+  }
+  return true
+}
+
+const LEGACY_MERGES: readonly { target: string; fallbackTargets: readonly string[]; sources: readonly string[] }[] = [
+  { target: 'linux-le-h', fallbackTargets: ['claude-linux'], sources: ['linux-lekh-h', 'home-le'] },
+  { target: 'win-pk-h-codex', fallbackTargets: ['codex-windows'], sources: ['win-pk-h codex'] },
+]
+
+const LEGACY_AUTO_RESET: Readonly<Record<string, { agent: (typeof PROVIDERS)[number]; place: (typeof PLACES)[number] }>> = {
+  'linux-le-h': { agent: 'claude', place: 'linux' },
+  'win-pk-h': { agent: 'claude', place: 'windows' },
+  'cloud-cc': { agent: 'claude', place: 'cloud' },
+  'win-pk-h-codex': { agent: 'codex', place: 'windows' },
+  'win-agy': { agent: 'antigravity', place: 'windows' },
+  'agy-lekh': { agent: 'antigravity', place: 'linux' },
+}
+
+/**
+ * Idempotent one-time consolidation of the legacy duplicate devices and reset of manual legacy names to auto-placeholders
+ * (`<agent>-<place>`) so each sits in its right agent group and auto-updates to `<agent>-<hostname>` on next connection.
+ */
+export async function autoConsolidateDevices(env: Env, email: string, rows: { id: string; name: string }[]): Promise<boolean> {
+  const byName = new Map(rows.map(r => [r.name, r]))
+  let changed = false
+
+  for (const m of LEGACY_MERGES) {
+    const target = byName.get(m.target) ?? m.fallbackTargets.map(t => byName.get(t)).find(Boolean)
+    if (!target) continue
+    for (const sName of m.sources) {
+      const src = byName.get(sName)
+      if (src && src.id !== target.id) {
+        if (await mergeDevices(env, email, target.id, src.id)) {
+          byName.delete(sName)
+          changed = true
+        }
+      }
+    }
+  }
+
+  const currentNames = [...byName.values()].map(r => r.name)
+  for (const [oldName, spec] of Object.entries(LEGACY_AUTO_RESET)) {
+    const dev = byName.get(oldName)
+    if (!dev) continue
+    const others = currentNames.filter(n => n !== oldName)
+    const nextName = autoDeviceName(spec.agent, spec.place, others)
+    await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ? AND user_email = ?').bind(nextName, dev.id, email).run()
+    const idx = currentNames.indexOf(oldName)
+    if (idx !== -1) currentNames[idx] = nextName
+    changed = true
+  }
+  return changed
+}
+
 /** A new device for `email` with a fresh random token; the token is returned once and only its hash is stored. */
 export async function createDevice(env: Env, email: string, name: string, projectMode = 'off'): Promise<string> {
   const token = randomHex(32)

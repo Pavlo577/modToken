@@ -3,6 +3,7 @@
 // Body: { provider?, limits: [{ kind, percentUsed, resetsAt? }] }. Only the agent, the window's name, a percent and a time are read; anything else is ignored.
 // A reading equal to the device's last one for that window is not stored again.
 import type { Env } from './env.ts'
+import { maybeAutoNameDevice } from './devices.ts'
 import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { str, text } from './util.ts'
@@ -71,6 +72,7 @@ export async function limitsIngest(req: Request, env: Env): Promise<Response> {
   if (!limits) return text('bad request: { limits: [...] }', 400)
   await recordDropped(env, dev.id, 'limits', parsed)
   const provider = limitsProvider(parsed)
+  await maybeAutoNameDevice(env, dev, provider, req.headers.get('x-device-host'))
   const now = new Date().toISOString()
   const stmts = []
   const seen = new Map<string, StoredLimitRow>()
