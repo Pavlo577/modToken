@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { antigravityInstallPs, antigravityInstallSh, cloudEnv, cloudScript, codexInstallPs, codexInstallSh, codexToml, guessSetup, setupPlan, pcInstallPs, pcInstallSh, settingsJson, setupEnv, shellEnv } from '../web/lib/setup.ts'
-import { autoConsolidateDevices, autoDeviceName, hostDeviceName, isAutoDeviceName } from '../src/devices.ts'
+import { autoConsolidateDevices, autoDeviceName, hostDeviceName, isAutoDeviceName, syncAgentDevice } from '../src/devices.ts'
 
 test('setup: the logs endpoint, the JSON protocol and the token header', () => {
   const env = setupEnv('https://track.example.test/', 'tok123')
@@ -299,4 +299,64 @@ test('setup: modtoken.sh auto-discovers existing token on PC, updates all detect
   assert.equal(doc.status, 0, doc.stderr)
   assert.equal(doc.stdout.includes(secretToken), false)
   assert.ok(doc.stdout.includes('Діагностика (doctor):'))
+})
+
+test('setup: syncAgentDevice keeps matching agent token, syncs existing sibling device token, and creates missing agent device', async () => {
+  const rows = [
+    { id: 'd-claude-win', name: 'claude-KOTUS', project_mode: 'name', revoked: 0 },
+    { id: 'd-agy-win', name: 'antigravity-windows', project_mode: 'name', revoked: 0 },
+  ]
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              async all() {
+                return { results: rows.map(r => ({ ...r })) }
+              },
+              async first() {
+                if (sql.includes('UPDATE devices SET token_hash = ?')) {
+                  const id = args[1]
+                  const row = rows.find(r => r.id === id)
+                  return row ? { name: row.name } : null
+                }
+                return null
+              },
+              async run() {
+                if (sql.startsWith('UPDATE devices SET name = ?')) {
+                  const [nextName, id] = args
+                  const row = rows.find(r => r.id === id)
+                  if (row) row.name = nextName
+                } else if (sql.startsWith('INSERT INTO devices')) {
+                  const [id, , name, , , project_mode] = args
+                  rows.push({ id, name, project_mode, revoked: 0 })
+                }
+                return { meta: { changes: 1 } }
+              },
+            }
+          },
+        }
+      },
+    },
+  }
+
+  // 1. Same agent (claude-KOTUS syncing agent=claude): keeps existing token (no token rotation) and propagates KOTUS to antigravity-windows
+  const r1 = await syncAgentDevice(env, { id: 'd-claude-win', user_email: 'u@example.com', name: 'claude-KOTUS' }, 'claude', 'KOTUS', 'windows')
+  assert.equal(r1.device, 'claude-KOTUS')
+  assert.equal(r1.token, undefined)
+  assert.equal(rows.find(r => r.id === 'd-agy-win').name, 'antigravity-KOTUS')
+
+  // 2. Sibling agent with existing device in D1 (claude-KOTUS syncing agent=antigravity): issues synced token for antigravity-KOTUS
+  const r2 = await syncAgentDevice(env, { id: 'd-claude-win', user_email: 'u@example.com', name: 'claude-KOTUS' }, 'antigravity', 'KOTUS', 'windows')
+  assert.equal(r2.device, 'antigravity-KOTUS')
+  assert.equal(typeof r2.token, 'string')
+  assert.equal(r2.token.length, 64)
+
+  // 3. Sibling agent without existing device on that OS/host (claude-KOTUS syncing agent=codex on KOTUS): creates codex-KOTUS and returns token
+  const r3 = await syncAgentDevice(env, { id: 'd-claude-win', user_email: 'u@example.com', name: 'claude-KOTUS' }, 'codex', 'KOTUS', 'windows')
+  assert.equal(r3.device, 'codex-KOTUS')
+  assert.equal(typeof r3.token, 'string')
+  assert.equal(r3.token.length, 64)
+  assert.ok(rows.some(r => r.name === 'codex-KOTUS'))
 })

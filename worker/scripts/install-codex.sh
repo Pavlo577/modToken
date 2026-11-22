@@ -122,7 +122,9 @@ else
   echo "  Немає python3/node, щоб оновити $DIR/hooks.json; скрипти збережено в $PLUGIN/hooks"
 fi
 case "$RAW" in file://*) ;; *)
-  (mkdir -p "$HOME/.modtoken" "$HOME/.local/bin" && umask 077 && printf '{\n  "site": "%s",\n  "token": "%s"\n}\n' "$ORIGIN" "$TOKEN" > "$HOME/.modtoken/config.json" && curl -fsSL --max-time 15 "$RAW/scripts/modtoken.sh" -o "$HOME/.local/bin/modtoken" && chmod +x "$HOME/.local/bin/modtoken") </dev/null >/dev/null 2>&1 &
+  if [ "${TT_FROM_MODTOKEN:-0}" != "1" ]; then
+    (mkdir -p "$HOME/.modtoken" "$HOME/.local/bin" && umask 077 && printf '{\n  "site": "%s",\n  "token": "%s"\n}\n' "$ORIGIN" "$TOKEN" > "$HOME/.modtoken/config.json" && curl -fsSL --max-time 15 "$RAW/scripts/modtoken.sh" -o "$HOME/.local/bin/modtoken" && chmod +x "$HOME/.local/bin/modtoken") </dev/null >/dev/null 2>&1 &
+  fi
   (HOST_NAME=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo ""); [ -n "$HOST_NAME" ] && curl -fsSL --connect-timeout 2 --max-time 3 -H "x-device-token: $TOKEN" -H "user-agent: modToken-codex/1.0" "$ORIGIN/v1/config?agent=codex&host=$HOST_NAME" </dev/null >/dev/null 2>&1) &
 ;; esac
 echo "Готово. Перезапусти Codex і схвали хуки (/hooks або Settings → Hooks → Review hooks); дані з'являться після першого запиту (управління й оновлення всіх агентів: modtoken)."

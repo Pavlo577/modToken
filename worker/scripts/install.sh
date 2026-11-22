@@ -92,7 +92,9 @@ if [ "$NEED_DIR" = 1 ]; then
   fi
 fi
 case "$RAW" in file://*) ;; *)
-  (mkdir -p "$HOME/.modtoken" "$HOME/.local/bin" && umask 077 && printf '{\n  "site": "%s",\n  "token": "%s"\n}\n' "$ORIGIN" "$TOKEN" > "$HOME/.modtoken/config.json" && curl -fsSL --max-time 15 "$RAW/scripts/modtoken.sh" -o "$HOME/.local/bin/modtoken" && chmod +x "$HOME/.local/bin/modtoken") </dev/null >/dev/null 2>&1 &
+  if [ "${TT_FROM_MODTOKEN:-0}" != "1" ]; then
+    (mkdir -p "$HOME/.modtoken" "$HOME/.local/bin" && umask 077 && printf '{\n  "site": "%s",\n  "token": "%s"\n}\n' "$ORIGIN" "$TOKEN" > "$HOME/.modtoken/config.json" && curl -fsSL --max-time 15 "$RAW/scripts/modtoken.sh" -o "$HOME/.local/bin/modtoken" && chmod +x "$HOME/.local/bin/modtoken") </dev/null >/dev/null 2>&1 &
+  fi
   (HOST_NAME=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo ""); [ -n "$HOST_NAME" ] && curl -fsSL --connect-timeout 2 --max-time 3 -H "x-device-token: $TOKEN" -H "user-agent: modToken-claude/1.0" "$ORIGIN/v1/config?agent=claude&host=$HOST_NAME" </dev/null >/dev/null 2>&1) &
 ;; esac
 echo "Готово. Перезапусти Claude Code (і Claude Desktop / IDE, якщо відкриті); стару історію додасть команда /tracker-import (управління й оновлення всіх агентів: modtoken)."

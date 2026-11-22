@@ -85,7 +85,8 @@ export async function maybeAutoNameDevice(
 
   const { results } = await env.DB.prepare('SELECT id, name FROM devices WHERE user_email = ?').bind(dev.user_email).all<{ id: string; name: string }>()
   const taken = results.map(r => r.name)
-  const next = hostDeviceName(dev.name, agent, rawHost, taken.filter(n => n !== dev.name))
+  const ownAgent = /^(claude|codex|antigravity)-/i.exec(dev.name.trim())?.[1]?.toLowerCase() ?? agent
+  const next = hostDeviceName(dev.name, ownAgent, rawHost, taken.filter(n => n !== dev.name))
   if (next && next !== dev.name) {
     await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(next, dev.id).run()
     const idx = taken.indexOf(dev.name)
@@ -103,6 +104,75 @@ export async function maybeAutoNameDevice(
       if (idx !== -1) taken[idx] = sibNext
     }
   }
+}
+
+/**
+ * Ensures `targetAgent` (`claude`, `codex`, or `antigravity`) on `rawHost` has its own dedicated device and token for `dev.user_email`.
+ * - If the authenticated `dev` already belongs to `targetAgent` (e.g. `claude-brolafkodev` for `claude`), keeps its existing token.
+ * - If `dev` belongs to another agent (e.g. `claude-KOTUS` while syncing `antigravity` or `codex`), finds the user's existing
+ *   `${targetAgent}-${host}` or `${targetAgent}-${place}` device (or creates `${targetAgent}-${host}` if none exists) and returns a
+ *   synced token for it so `modtoken update` can configure every agent on the PC automatically.
+ */
+export async function syncAgentDevice(
+  env: Env,
+  dev: { id: string; user_email: string; name: string },
+  targetAgent: string | null | undefined,
+  rawHost: string | null | undefined,
+  rawOs?: string | null,
+): Promise<{ device: string; token?: string; project?: string }> {
+  await maybeAutoNameDevice(env, dev, targetAgent, rawHost)
+  if (!targetAgent || !(PROVIDERS as readonly string[]).includes(targetAgent)) {
+    return { device: dev.name }
+  }
+  if (dev.name.trim().toLowerCase().startsWith(`${targetAgent}-`)) {
+    return { device: dev.name }
+  }
+
+  const cleanHost = rawHost ? rawHost.trim().split('.')[0]?.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) ?? '' : ''
+  const place: 'windows' | 'linux' =
+    rawOs === 'windows'
+      ? 'windows'
+      : rawOs === 'linux'
+        ? 'linux'
+        : cleanHost && /[A-Z]{2,}/.test(cleanHost)
+          ? 'windows'
+          : 'linux'
+
+  const { results } = await env.DB.prepare(
+    'SELECT id, name, project_mode FROM devices WHERE user_email = ? AND revoked = 0 ORDER BY (last_seen IS NOT NULL) ASC, last_seen DESC, created_at DESC',
+  ).bind(dev.user_email).all<{ id: string; name: string; project_mode: string }>()
+
+  const taken = results.map(r => r.name)
+  const exactPrefix = cleanHost ? `${targetAgent}-${cleanHost}`.toLowerCase() : ''
+  const placeRe = new RegExp(`^${targetAgent}-${place}(-\\d+)?$`, 'i')
+  const targetDev =
+    (exactPrefix ? results.find(r => r.id !== dev.id && r.name.trim().toLowerCase() === exactPrefix) : undefined) ??
+    results.find(r => r.id !== dev.id && placeRe.test(r.name.trim()))
+
+  if (targetDev) {
+    let finalName = targetDev.name
+    if (cleanHost && isAutoDeviceName(targetDev.name)) {
+      const renamed = hostDeviceName(targetDev.name, targetAgent, cleanHost, taken.filter(n => n !== targetDev.name))
+      if (renamed && renamed !== targetDev.name) {
+        await env.DB.prepare('UPDATE devices SET name = ? WHERE id = ?').bind(renamed, targetDev.id).run()
+        finalName = renamed
+      }
+    }
+    const issued = await newDeviceToken(env, dev.user_email, targetDev.id)
+    return {
+      device: issued?.name ?? finalName,
+      ...(issued?.token ? { token: issued.token } : {}),
+      project: targetDev.project_mode,
+    }
+  }
+
+  const callerRow = results.find(r => r.id === dev.id)
+  const mode = callerRow?.project_mode ?? 'name'
+  const newName =
+    (cleanHost && hostDeviceName(`${targetAgent}-${place}`, targetAgent, cleanHost, taken)) ||
+    autoDeviceName(targetAgent as (typeof PROVIDERS)[number], place, taken)
+  const token = await createDevice(env, dev.user_email, newName, mode)
+  return { device: newName, token, project: mode }
 }
 
 /**

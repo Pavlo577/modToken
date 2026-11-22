@@ -156,28 +156,31 @@ function Get-RemoteVersion([string]$rel) {
 function Show-Status {
   Discover-Credentials | Out-Null
   $hostName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'windows-pc' }
+  $cCred = Get-AgentOwnCredentials 'claude'
+  $xCred = Get-AgentOwnCredentials 'codex'
+  $aCred = Get-AgentOwnCredentials 'antigravity'
   Write-Host '╔════════════════════════════════════════════════════════════════╗'
   Write-Host '║  Token Tracker CLI (modtoken) · Управління агентами та OTLP    ║'
   Write-Host '╚════════════════════════════════════════════════════════════════╝'
   Write-Host "  Комп'ютер: $hostName"
   Write-Host "  Сервер:    $(if ($script:site) { $script:site } else { 'не налаштовано' })"
-  Write-Host "  Токен:     $(Mask-Token $script:token)$(if ($script:tokenSource) { " (знайдено в: $($script:tokenSource))" } else { '' })"
+  Write-Host "  Токен ПК:  $(Mask-Token $script:token)$(if ($script:tokenSource) { " (знайдено в: $($script:tokenSource))" } else { '' })"
   Write-Host ''
   Write-Host '  Стан агентів на цьому ПК:'
 
   $cv = Get-ClaudeVersion; $xv = Get-CodexVersion; $av = Get-AgyVersion
-  if (Test-ClaudeConfigured) { Write-Host "    [✓] Claude Code   OTLP: увімкнено · Мод: v$(if ($cv) { $cv } else { '?' })" }
+  if (Test-ClaudeConfigured) { Write-Host "    [✓] Claude Code   OTLP: увімкнено · Мод: v$(if ($cv) { $cv } else { '?' }) · токен: $(Mask-Token $cCred[1])" }
   elseif (Test-ClaudeDetected) { Write-Host '    [•] Claude Code   виявлено на ПК, ще не підключено до Token Tracker' }
   else { Write-Host '    [ ] Claude Code   не виявлено' }
 
   if (Test-CodexConfigured) {
     $hf = Join-Path $codexDir 'hooks.json'
     $hs = if ((Test-Path $hf) -and ((Get-Content -Raw -Encoding UTF8 $hf) -match 'token-tracker')) { 'hooks.json активний' } else { 'немає hooks.json' }
-    Write-Host "    [✓] Codex         OTLP: увімкнено · Хуки: v$(if ($xv) { $xv } else { '?' }) ($hs)"
+    Write-Host "    [✓] Codex         OTLP: увімкнено · Хуки: v$(if ($xv) { $xv } else { '?' }) ($hs) · токен: $(Mask-Token $xCred[1])"
   } elseif (Test-CodexDetected) { Write-Host '    [•] Codex         виявлено на ПК, ще не підключено до Token Tracker' }
   else { Write-Host '    [ ] Codex         не виявлено' }
 
-  if (Test-AgyConfigured) { Write-Host "    [✓] Antigravity   statusLine: увімкнено · Плагін: v$(if ($av) { $av } else { '?' })" }
+  if (Test-AgyConfigured) { Write-Host "    [✓] Antigravity   statusLine: увімкнено · Плагін: v$(if ($av) { $av } else { '?' }) · токен: $(Mask-Token $aCred[1])" }
   elseif (Test-AgyDetected) { Write-Host '    [•] Antigravity   виявлено на ПК, ще не підключено до Token Tracker' }
   else { Write-Host '    [ ] Antigravity   не виявлено' }
   Write-Host ''
@@ -196,7 +199,7 @@ function Prompt-CredentialsIfMissing {
   return $true
 }
 
-function Get-AgentCredentials([string]$agent) {
+function Get-AgentOwnCredentials([string]$agent) {
   if ($agent -eq 'claude') {
     $cSet = Join-Path $claudeDir 'settings.json'
     if (Test-Path -LiteralPath $cSet) {
@@ -223,7 +226,34 @@ function Get-AgentCredentials([string]$agent) {
       if ($s -and $t) { return @($s.TrimEnd('/'), $t) }
     }
   }
+  return @('', '')
+}
+
+function Get-AgentCredentials([string]$agent) {
+  $own = Get-AgentOwnCredentials $agent
+  if ($own[0] -and $own[1]) { return $own }
   return @($script:site, $script:token)
+}
+
+function Sync-AgentWithServer([string]$agent, [string]$useSite, [string]$useTok) {
+  $h = if ($env:COMPUTERNAME) { [Uri]::EscapeDataString($env:COMPUTERNAME) } else { '' }
+  $url = "$useSite/v1/config?sync=1&agent=$agent&host=$h&os=windows"
+  $resp = $null
+  try {
+    $resp = Invoke-RestMethod -Uri $url -Headers @{ 'x-device-token' = $useTok; 'User-Agent' = 'modToken-cli/1.0' } -TimeoutSec 6
+  } catch {
+    if ($script:token -and ($script:token -ne $useTok)) {
+      try {
+        $resp = Invoke-RestMethod -Uri $url -Headers @{ 'x-device-token' = $script:token; 'User-Agent' = 'modToken-cli/1.0' } -TimeoutSec 6
+      } catch {}
+    }
+  }
+  if ($resp) {
+    $tok = if ($resp.PSObject.Properties['token'] -and $resp.token) { "$($resp.token)" } else { $useTok }
+    $dev = if ($resp.PSObject.Properties['device'] -and $resp.device) { "$($resp.device)" } else { '' }
+    return @($tok, $dev)
+  }
+  return @($useTok, '')
 }
 
 function Invoke-AgentInstaller([string]$agent) {
@@ -238,6 +268,17 @@ function Invoke-AgentInstaller([string]$agent) {
   $useSite = if ($creds[0]) { $creds[0] } else { $script:site }
   $useTok = if ($creds[1]) { $creds[1] } else { $script:token }
   if (-not $useSite -or -not $useTok) { Write-Host '  Помилка: спочатку задайте сервер і токен'; return }
+  $prevTok = $useTok
+  $synced = Sync-AgentWithServer $agent $useSite $useTok
+  $useTok = $synced[0]
+  $syncedDev = $synced[1]
+  if ($syncedDev) {
+    if ($useTok -ne $prevTok) {
+      Write-Host "  [↻] Синхронізовано окремий токен для $agent → пристрій «$syncedDev» ($(Mask-Token $useTok))"
+    } else {
+      Write-Host "  [✓] Синхронізовано пристрій «$syncedDev» ($(Mask-Token $useTok))"
+    }
+  }
   $code = (Invoke-RestMethod "$raw/scripts/$scriptName").TrimStart([char]0xFEFF)
   & ([scriptblock]::Create($code)) $useSite $useTok
 }
@@ -345,17 +386,19 @@ function Show-Menu {
   while ($true) {
     Show-Status
     Write-Host '  Оберіть дію:'
-    Write-Host '    1) Оновити все (плагіни, хуки, OTLP та команду modtoken)'
+    Write-Host '    1) Оновити все (плагіни, хуки, OTLP, синхронізація токенів і modtoken)'
     Write-Host '    2) Підключити / налаштувати всі виявлені агенти на цьому ПК'
     Write-Host '    3) Підключити окремий агент (Claude Code / Codex / Antigravity)'
     Write-Host '    4) Діагностика (doctor: перевірка сервера, версій, хуків і помилок)'
     Write-Host '    5) Змінити сервер або токен пристрою'
     Write-Host '    0) Вихід'
-    $ch = (Read-Host "`n  Ваш вибір [1-5, 0]").Trim()
+    $rawChoice = Read-Host "`n  Ваш вибір [1-5, 0]"
+    if ($null -eq $rawChoice) { return }
+    $ch = $rawChoice.Trim()
     Write-Host ''
     switch ($ch) {
-      '1' { Invoke-Update; return }
-      '2' { Invoke-Install 'all'; return }
+      '1' { Invoke-Update; Write-Host '' }
+      '2' { Invoke-Install 'all'; Write-Host '' }
       '3' {
         $ach = (Read-Host '  Який агент підключити? (1 = Claude Code, 2 = Codex, 3 = Antigravity)').Trim()
         switch ($ach) {
@@ -367,17 +410,20 @@ function Show-Menu {
           'antigravity' { Invoke-Install 'antigravity' }
           default { Write-Host '  Невірний вибір.' }
         }
-        return
+        Write-Host ''
       }
-      '4' { Invoke-Doctor; return }
+      '4' { Invoke-Doctor; Write-Host '' }
       '5' {
         $script:site = ''; $script:token = ''
         Remove-Item -LiteralPath $mtCfg -Force -ErrorAction SilentlyContinue
         Prompt-CredentialsIfMissing | Out-Null
+        Write-Host ''
       }
-      '0' { return }
-      ''  { return }
-      default { Write-Host '  Невірний вибір.' }
+      '0'    { return }
+      'q'    { return }
+      'exit' { return }
+      ''     { }
+      default { Write-Host '  Невірний вибір.'; Write-Host '' }
     }
   }
 }

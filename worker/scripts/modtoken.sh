@@ -158,21 +158,30 @@ remote_version() {
 
 print_status() {
   discover_credentials >/dev/null 2>&1 || true
-  local host
+  local host c_tok="" x_tok="" a_tok=""
   host=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "linux-pc")
+  read -r _ c_tok <<EOF
+$(agent_own_credentials claude)
+EOF
+  read -r _ x_tok <<EOF
+$(agent_own_credentials codex)
+EOF
+  read -r _ a_tok <<EOF
+$(agent_own_credentials antigravity)
+EOF
   echo "╔════════════════════════════════════════════════════════════════╗"
   echo "║  Token Tracker CLI (modtoken) · Управління агентами та OTLP    ║"
   echo "╚════════════════════════════════════════════════════════════════╝"
   echo "  Комп'ютер: $host"
   echo "  Сервер:    ${SITE:-не налаштовано}"
-  echo "  Токен:     $(mask_token "$TOKEN")${TOKEN_SOURCE:+ (знайдено в: $TOKEN_SOURCE)}"
+  echo "  Токен ПК:  $(mask_token "$TOKEN")${TOKEN_SOURCE:+ (знайдено в: $TOKEN_SOURCE)}"
   echo ""
   echo "  Стан агентів на цьому ПК:"
 
   local cv xv av
   cv=$(claude_version); xv=$(codex_version); av=$(agy_version)
   if claude_configured; then
-    echo "    [✓] Claude Code   OTLP: увімкнено · Мод: v${cv:-?}"
+    echo "    [✓] Claude Code   OTLP: увімкнено · Мод: v${cv:-?} · токен: $(mask_token "$c_tok")"
   elif claude_detected; then
     echo "    [•] Claude Code   виявлено на ПК, ще не підключено до Token Tracker"
   else
@@ -182,7 +191,7 @@ print_status() {
   if codex_configured; then
     local h_state="немає hooks.json"
     [ -f "$CODEX_DIR/hooks.json" ] && grep -q 'token-tracker' "$CODEX_DIR/hooks.json" 2>/dev/null && h_state="hooks.json активний"
-    echo "    [✓] Codex         OTLP: увімкнено · Хуки: v${xv:-?} ($h_state)"
+    echo "    [✓] Codex         OTLP: увімкнено · Хуки: v${xv:-?} ($h_state) · токен: $(mask_token "$x_tok")"
   elif codex_detected; then
     echo "    [•] Codex         виявлено на ПК, ще не підключено до Token Tracker"
   else
@@ -190,7 +199,7 @@ print_status() {
   fi
 
   if agy_configured; then
-    echo "    [✓] Antigravity   statusLine: увімкнено · Плагін: v${av:-?}"
+    echo "    [✓] Antigravity   statusLine: увімкнено · Плагін: v${av:-?} · токен: $(mask_token "$a_tok")"
   elif agy_detected; then
     echo "    [•] Antigravity   виявлено на ПК, ще не підключено до Token Tracker"
   else
@@ -199,7 +208,25 @@ print_status() {
   echo ""
 }
 
-agent_credentials() {
+read_tty() {
+  local __var="$1" __val=""
+  if [ -t 0 ]; then
+    read -r __val || return 1
+  elif case "${0##*/}" in bash|sh|dash|zsh|-*) true ;; *) false ;; esac && [ -r /dev/tty ]; then
+    read -r __val </dev/tty || return 1
+  else
+    if ! read -r __val; then
+      if [ -r /dev/tty ]; then
+        read -r __val </dev/tty || return 1
+      else
+        return 1
+      fi
+    fi
+  fi
+  printf -v "$__var" '%s' "$__val"
+}
+
+agent_own_credentials() {
   local agent="$1" s="" t=""
   case "$agent" in
     claude)
@@ -226,13 +253,41 @@ agent_credentials() {
   esac
   if [ -n "$s" ] && [ -n "$t" ]; then
     printf '%s %s\n' "${s%/}" "$t"
+  fi
+}
+
+agent_credentials() {
+  local agent="$1" own=""
+  own=$(agent_own_credentials "$agent")
+  if [ -n "$own" ]; then
+    printf '%s\n' "$own"
   else
     printf '%s %s\n' "$SITE" "$TOKEN"
   fi
 }
 
+sync_agent_with_server() {
+  local agent="$1" use_site="$2" use_tok="$3" host resp code synced_tok="" synced_dev=""
+  host=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "")
+  resp=$(mktemp)
+  code=$(curl -s -o "$resp" -w '%{http_code}' --connect-timeout 3 --max-time 6 \
+    -H "x-device-token: $use_tok" -H "user-agent: modToken-cli/1.0" \
+    "$use_site/v1/config?sync=1&agent=$agent&host=$host&os=linux" 2>/dev/null || echo "000")
+  if [ "$code" = "401" ] && [ -n "$TOKEN" ] && [ "$TOKEN" != "$use_tok" ]; then
+    code=$(curl -s -o "$resp" -w '%{http_code}' --connect-timeout 3 --max-time 6 \
+      -H "x-device-token: $TOKEN" -H "user-agent: modToken-cli/1.0" \
+      "$use_site/v1/config?sync=1&agent=$agent&host=$host&os=linux" 2>/dev/null || echo "000")
+  fi
+  if [ "$code" = "200" ]; then
+    synced_tok=$(json_get "$resp" "d.get('token', '')")
+    synced_dev=$(json_get "$resp" "d.get('device', '')")
+  fi
+  rm -f "$resp"
+  printf '%s|%s\n' "${synced_tok:-$use_tok}" "$synced_dev"
+}
+
 run_agent_installer() {
-  local agent="$1" script_name="" use_site="" use_tok=""
+  local agent="$1" script_name="" use_site="" use_tok="" sync_out="" synced_dev="" prev_tok=""
   case "$agent" in
     claude)      script_name="install.sh" ;;
     codex)       script_name="install-codex.sh" ;;
@@ -246,10 +301,21 @@ EOF
     echo "  Помилка: спочатку задайте сервер і токен (modtoken token <сайт> <токен>)"
     return 1
   fi
+  prev_tok="$use_tok"
+  sync_out=$(sync_agent_with_server "$agent" "$use_site" "$use_tok")
+  use_tok="${sync_out%%|*}"
+  synced_dev="${sync_out#*|}"
+  if [ -n "$synced_dev" ]; then
+    if [ "$use_tok" != "$prev_tok" ]; then
+      echo "  [↻] Синхронізовано окремий токен для $agent → пристрій «$synced_dev» ($(mask_token "$use_tok"))"
+    else
+      echo "  [✓] Синхронізовано пристрій «$synced_dev» ($(mask_token "$use_tok"))"
+    fi
+  fi
   local tmp
   tmp=$(mktemp)
   if curl -fsSL --max-time 30 "$RAW/scripts/$script_name" -o "$tmp"; then
-    TT_RAW="$RAW" bash "$tmp" "$use_site" "$use_tok"
+    TT_FROM_MODTOKEN=1 TT_RAW="$RAW" bash "$tmp" "$use_site" "$use_tok" </dev/null
     rm -f "$tmp"
   else
     rm -f "$tmp"
@@ -264,10 +330,10 @@ prompt_credentials_if_missing() {
   echo "Токен пристрою на цьому ПК ще не знайдено."
   printf "Адреса сервера [https://ait.bdev.pp.ua]: "
   local in_site="" in_tok=""
-  read -r in_site || true
+  read_tty in_site || true
   in_site="${in_site:-https://ait.bdev.pp.ua}"
   printf "Вставте токен пристрою з дашборду (Пристрої → Створити токен): "
-  read -r in_tok || true
+  read_tty in_tok || true
   in_tok=$(printf '%s' "$in_tok" | tr -d '[:space:]')
   if [ -z "$in_tok" ]; then
     echo "Токен не введено."
@@ -406,7 +472,7 @@ interactive_menu() {
   while true; do
     print_status
     echo "  Оберіть дію:"
-    echo "    1) Оновити все (плагіни, хуки, OTLP та команду modtoken)"
+    echo "    1) Оновити все (плагіни, хуки, OTLP, синхронізація токенів і modtoken)"
     echo "    2) Підключити / налаштувати всі виявлені агенти на цьому ПК"
     echo "    3) Підключити окремий агент (Claude Code / Codex / Antigravity)"
     echo "    4) Діагностика (doctor: перевірка сервера, версій, хуків і помилок)"
@@ -414,31 +480,33 @@ interactive_menu() {
     echo "    0) Вихід"
     printf "\n  Ваш вибір [1-5, 0]: "
     local ch=""
-    read -r ch || break
+    read_tty ch || break
     echo ""
     case "$ch" in
-      1) cmd_update; break ;;
-      2) cmd_install all; break ;;
+      1) cmd_update; echo "" ;;
+      2) cmd_install all; echo "" ;;
       3)
         printf "  Який агент підключити? (1 = Claude Code, 2 = Codex, 3 = Antigravity): "
         local ach=""
-        read -r ach || break
+        read_tty ach || break
         case "$ach" in
           1|claude)      cmd_install claude ;;
           2|codex)       cmd_install codex ;;
           3|antigravity) cmd_install antigravity ;;
           *) echo "  Невірний вибір." ;;
         esac
-        break
+        echo ""
         ;;
-      4) cmd_doctor; break ;;
+      4) cmd_doctor; echo "" ;;
       5)
         SITE=""; TOKEN=""
         rm -f "$MT_CFG"
         prompt_credentials_if_missing || true
+        echo ""
         ;;
-      0|q|exit|"") break ;;
-      *) echo "  Невірний вибір." ;;
+      0|q|exit) break ;;
+      "") ;;
+      *) echo "  Невірний вибір."; echo "" ;;
     esac
   done
 }

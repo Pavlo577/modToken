@@ -4,7 +4,7 @@
 // context_window?, perm_asks, perm_denied, perm_wait_ms }]. The project (a repository's owner/name, or `h:` and 12 hex characters) is kept only as
 // far as the device's project_mode allows: off keeps none, hash keeps a hash only, name keeps either. Anything else in the body is ignored.
 import type { Env } from './env.ts'
-import { maybeAutoNameDevice } from './devices.ts'
+import { maybeAutoNameDevice, syncAgentDevice } from './devices.ts'
 import { recordDropped } from './dropped.ts'
 import { authDevice } from './otlp-ingest.ts'
 import { json, text } from './util.ts'
@@ -85,8 +85,17 @@ export async function modConfig(req: Request, env: Env): Promise<Response> {
   const dev = await authDevice(req, env)
   if (!dev) return text('unauthorized', 401)
   const url = new URL(req.url)
-  await maybeAutoNameDevice(env, dev, url.searchParams.get('agent'), url.searchParams.get('host') ?? req.headers.get('x-device-host'))
-  return json({ project: await deviceMode(env, dev.id) })
+  const agent = url.searchParams.get('agent')
+  const host = url.searchParams.get('host') ?? req.headers.get('x-device-host')
+  if (url.searchParams.get('sync') === '1') {
+    const synced = await syncAgentDevice(env, dev, agent, host, url.searchParams.get('os'))
+    const project = (PROJECT_MODES as readonly string[]).includes(synced.project ?? '')
+      ? (synced.project as ProjectMode)
+      : await deviceMode(env, dev.id)
+    return json({ project, device: synced.device, ...(synced.token ? { token: synced.token } : {}) })
+  }
+  await maybeAutoNameDevice(env, dev, agent, host)
+  return json({ project: await deviceMode(env, dev.id), device: dev.name })
 }
 
 /** POST /v1/activity */
