@@ -62,3 +62,24 @@ test('exact prices cover the model and its dated copies only; other entries are 
   assert.equal(priceFor('gpt-5.60', p), null)
   assert.equal(priceFor('claude-sonnet-5-5-20260101', p).match, 'claude-sonnet-5')
 })
+
+test('convert handles Gemini (non-exact) and versioned Anthropic models while keeping dated/media exclusions', () => {
+  const multi = {
+    'gemini/gemini-4-neon': m(3, 15, 0.15, { litellm_provider: 'gemini' }),
+    'gemini/gemini-3.5-flash-lite': m(0.3, 2.5, 0.03, { litellm_provider: 'gemini' }),
+    'gemini/gemini-2.5-pro-preview-tts': m(1, 20, 0.1, { litellm_provider: 'gemini' }),
+    'gemini/gemini-robotics-er-2-preview': m(1, 5, 0.1, { litellm_provider: 'gemini' }),
+    'claude-sonnet-4-6': m(3, 15, 0.3, { litellm_provider: 'anthropic', cache_creation_input_token_cost: 3.75 / 1e6 }),
+    'claude-haiku-4-5': m(1, 5, 0.1, { litellm_provider: 'anthropic' }),
+    'claude-haiku-4-5-20251001': m(1, 5, 0.1, { litellm_provider: 'anthropic' }),
+    'claude-x': m(1, 2, 0.1, { litellm_provider: 'anthropic' }),
+  }
+  const g = convert(multi)
+  assert.deepEqual(g.map(x => x.match), ['claude-haiku-4-5', 'claude-sonnet-4-6', 'gemini-3.5-flash-lite', 'gemini-4-neon'])
+  assert.equal(g.find(x => x.match === 'gemini-4-neon').exact, undefined)
+  assert.equal(g.find(x => x.match === 'claude-sonnet-4-6').cache_write, 3.75)
+  const p = { updated: '', source: '', note: '', models: g }
+  assert.equal(priceFor('gemini-4-neon-high', p)?.match, 'gemini-4-neon')
+  assert.equal(priceFor('gemini-3.5-flash-lite-low', p)?.match, 'gemini-3.5-flash-lite')
+  assert.equal(priceFor('claude-sonnet-4-6-20260501', p)?.match, 'claude-sonnet-4-6')
+})

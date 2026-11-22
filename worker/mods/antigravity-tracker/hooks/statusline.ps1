@@ -1,13 +1,14 @@
 # Token Tracker statusLine bridge for Antigravity CLI on Windows (PowerShell).
-# Same contract as statusline.py: reads only numeric token/cost/quota fields from stdin JSON, sends OTLP deltas to POST /v1/logs
-# and quota snapshots to POST /v1/limits (provider "antigravity"), and saves context fill locally for activity.ps1.
-param([switch]$Sync, [string]$Deliver)
+# Normalizes model names, buffers OTLP logRecords & quota snapshots locally in queue.json (up to 500 records),
+# and flushes in batches on idle / >=10 records / >=flush_seconds / -Sync / -Flush; keeps items on offline failure.
+param([switch]$Sync, [switch]$Flush, [switch]$Deliver)
 $ErrorActionPreference = 'Stop'
 
 $cliDir = if ($env:ANTIGRAVITY_CLI_DIR) { $env:ANTIGRAVITY_CLI_DIR } else { Join-Path $HOME '.gemini\antigravity-cli' }
 $data = if ($env:ANTIGRAVITY_TRACKER_DIR) { $env:ANTIGRAVITY_TRACKER_DIR } else { Join-Path $cliDir 'token-tracker' }
 $stateDir = Join-Path $data 'state'
 $actDir = Join-Path $data 'activity'
+$queuePath = Join-Path $data 'queue.json'
 
 function Load-Json($p) {
   if (-not (Test-Path $p)) { return @{} }
@@ -20,8 +21,8 @@ function Load-Json($p) {
 
 function Save-Json($p, $obj) {
   New-Item -ItemType Directory -Force (Split-Path $p) | Out-Null
-  $tmp = "$p.tmp.$PID"
-  [System.IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Depth 10 -Compress), (New-Object System.Text.UTF8Encoding $false))
+  $tmp = "$p.tmp.$PID.$([Guid]::NewGuid().ToString('N').Substring(0,6))"
+  [System.IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Depth 12 -Compress), (New-Object System.Text.UTF8Encoding $false))
   Move-Item -Force $tmp $p
 }
 
@@ -30,12 +31,24 @@ function Load-Config {
   $site = if ($cfg.site) { ([string]$cfg.site).TrimEnd('/') } else { '' }
   $tok = if ($cfg.token) { [string]$cfg.token } else { '' }
   $chain = if ($cfg.chain_command) { [string]$cfg.chain_command } else { '' }
-  if (-not ($site -match '^https?://') -or -not $tok) { return @($null, $null, $chain) }
-  return @($site, $tok, $chain)
+  $flushSec = if ($null -ne $cfg.flush_seconds -and [double]$cfg.flush_seconds -ge 0) { [double]$cfg.flush_seconds } else { 15.0 }
+  if (-not ($site -match '^https?://') -or -not $tok) { return @($null, $null, $chain, $flushSec) }
+  return @($site, $tok, $chain, $flushSec)
+}
+
+function Normalize-Model($raw) {
+  $s = if ($raw) { ([string]$raw).Trim() } else { '' }
+  if (-not $s) { return 'unknown' }
+  if ($s.Length -gt 100) { $s = $s.Substring(0, 100) }
+  if ($s -match '^[a-z0-9._-]+$') { return $s }
+  $slug = ($s.ToLowerInvariant() -replace '[()]+', '' -replace '[\s/]+', '-' -replace '-+', '-').Trim('-')
+  if ($slug.StartsWith('claude-')) { $slug = [regex]::Replace($slug, '(\d)\.(\d)', '$1-$2') }
+  if (-not $slug) { return 'unknown' }
+  return $slug
 }
 
 function Post-Json($site, $tok, $path, $body) {
-  $json = $body | ConvertTo-Json -Depth 12 -Compress
+  $json = $body | ConvertTo-Json -Depth 14 -Compress
   Invoke-RestMethod -Uri ($site + $path) -Method Post -ContentType 'application/json' -Headers @{ 'x-device-token' = $tok; 'user-agent' = 'modToken-antigravity/1.0' } -Body $json -TimeoutSec 5 | Out-Null
 }
 
@@ -47,35 +60,67 @@ function Plugin-Version {
   return ''
 }
 
-function Deliver-Job($jobPath) {
-  $job = Load-Json $jobPath
-  Remove-Item -Force -ErrorAction SilentlyContinue $jobPath
-  $site, $tok, $_ = Load-Config
-  if (-not $site) { return }
-  if ($job.otlp) {
-    try { Post-Json $site $tok '/v1/logs' $job.otlp } catch {}
+function Record-Id($rec) {
+  foreach ($a in @($rec.attributes)) {
+    if ($a.key -eq 'request_id' -and $a.value.stringValue) { return [string]$a.value.stringValue }
   }
-  if ($job.limits) {
+  return ''
+}
+
+function Deliver-Queue {
+  $site, $tok, $_, $_ = Load-Config
+  if (-not $site) { return }
+  $q = Load-Json $queuePath
+  $recs = @($q.records | Where-Object { $null -ne $_ })
+  $lims = if ($q.limits) { @($q.limits) } else { $null }
+  if ($recs.Count -eq 0 -and (-not $lims -or $lims.Count -eq 0)) { return }
+
+  $sentIds = @{}
+  $limOk = $false
+  if ($recs.Count -gt 0) {
+    $otlp = @{ resourceLogs = @(@{ resource = @{ attributes = @(@{ key = 'service.name'; value = @{ stringValue = 'antigravity-cli' } }) }; scopeLogs = @(@{ logRecords = $recs }) }) }
     try {
-      Post-Json $site $tok '/v1/limits' @{ provider = 'antigravity'; limits = @($job.limits) }
+      Post-Json $site $tok '/v1/logs' $otlp
+      foreach ($r in $recs) { $id = Record-Id $r; if ($id) { $sentIds[$id] = $true } }
+    } catch {}
+  }
+  if ($lims -and $lims.Count -gt 0) {
+    try {
+      Post-Json $site $tok '/v1/limits' @{ provider = 'antigravity'; limits = $lims }
+      $limOk = $true
       $beat = Join-Path $data 'limits-reported'
       if (-not (Test-Path $beat) -or ((Get-Date) - (Get-Item $beat).LastWriteTime).TotalSeconds -gt 3600) {
         New-Item -ItemType Directory -Force $data | Out-Null
         Set-Content -Path $beat -Value ''
-        try { Post-Json $site $tok '/v1/plugin-log' @{ provider = 'antigravity'; version = (Plugin-Version); events = @(@{ kind = 'limits'; n = @($job.limits).Count }) } } catch {}
+        try { Post-Json $site $tok '/v1/plugin-log' @{ provider = 'antigravity'; version = (Plugin-Version); events = @(@{ kind = 'limits'; n = $lims.Count }) } } catch {}
       }
     } catch {}
+  }
+  if ($sentIds.Count -gt 0 -or $limOk) {
+    $cur = Load-Json $queuePath
+    $curRecs = @($cur.records | Where-Object { $null -ne $_ -and -not $sentIds.ContainsKey((Record-Id $_)) })
+    $curLims = if ($limOk) { $null } else { $cur.limits }
+    $lastMs = if ($curRecs.Count -eq 0 -and (-not $curLims)) { 0 } else { [int64]($cur.last_flush_ms) }
+    Save-Json $queuePath @{ records = $curRecs; limits = $curLims; last_flush_ms = $lastMs }
   }
 }
 
 try {
-  if ($Deliver) { Deliver-Job $Deliver; exit 0 }
+  if ($Deliver) { Deliver-Queue; exit 0 }
+  $site, $tok, $chain, $flushSec = Load-Config
+  if (-not $site) { exit 0 }
+  if ($Flush -and [Console]::IsInputRedirected -eq $false) {
+    if ($Sync) { Deliver-Queue } else { Start-Process -WindowStyle Hidden -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Deliver') | Out-Null }
+    exit 0
+  }
   $raw = [Console]::In.ReadToEnd()
-  $site, $tok, $chain = Load-Config
-  if (-not $site -or -not $raw.Trim()) { exit 0 }
+  if (-not $raw.Trim()) { exit 0 }
   $p = $raw | ConvertFrom-Json
   $now = [DateTimeOffset]::UtcNow
-  $job = @{}
+  $nowMs = $now.ToUnixTimeMilliseconds()
+  $newLimits = $null
+  $newRecord = $null
+  $agentState = if ($p.agent_state) { ([string]$p.agent_state).Trim().ToLowerInvariant() } else { '' }
 
   if ($p.quota) {
     $byKind = @{}
@@ -101,7 +146,7 @@ try {
       $sig = (@($limits | ForEach-Object { "$($_.kind)|$($_.percentUsed)|$(if ($_.resetsAt) { ([string]$_.resetsAt).Substring(0, [Math]::Min(16, ([string]$_.resetsAt).Length)) } else { '' })" }) -join ';')
       if ($qState.sig -ne $sig) {
         Save-Json $qPath @{ sig = $sig; ts = $now.ToString('yyyy-MM-ddTHH:mm:ss.fffZ') }
-        $job.limits = $limits
+        $newLimits = $limits
       }
     }
   }
@@ -143,9 +188,8 @@ try {
       $seq++
       $act = Load-Json (Join-Path $actDir "$sid.json")
       $promptId = if ($act.turn -and $act.turn.id) { [string]$act.turn.id } else { "$($sid.Substring(0, [Math]::Min(36, $sid.Length)))-t$seq" }
-      $nowMs = $now.ToUnixTimeMilliseconds()
       $dur = if ($lastCallMs -gt 0 -and ($nowMs - $lastCallMs) -gt 0 -and ($nowMs - $lastCallMs) -le 600000) { $nowMs - $lastCallMs } else { 0 }
-      $modelId = if ($p.model -and $p.model.id) { [string]$p.model.id } elseif ($p.model -and $p.model.display_name) { [string]$p.model.display_name } else { 'unknown' }
+      $modelId = Normalize-Model $(if ($p.model -and $p.model.id) { $p.model.id } elseif ($p.model -and $p.model.display_name) { $p.model.display_name } else { 'unknown' })
       $attrs = @(
         @{ key = 'event.name'; value = @{ stringValue = 'antigravity.api_request' } }
         @{ key = 'session.id'; value = @{ stringValue = $sid } }
@@ -162,7 +206,7 @@ try {
       if ($costMicros -gt 0) { $attrs += @{ key = 'cost_usd_micros'; value = @{ intValue = [string]$costMicros } } }
       if ($p.model -and $p.model.effort) { $attrs += @{ key = 'effort'; value = @{ stringValue = [string]$p.model.effort } } }
       $ns = [string]($nowMs * 1000000)
-      $job.otlp = @{ resourceLogs = @(@{ resource = @{ attributes = @(@{ key = 'service.name'; value = @{ stringValue = 'antigravity-cli' } }) }; scopeLogs = @(@{ logRecords = @(@{ timeUnixNano = $ns; attributes = $attrs }) }) }) }
+      $newRecord = @{ timeUnixNano = $ns; attributes = $attrs }
       $lastCuSig = $cuSig; $lastCallMs = $nowMs
     }
 
@@ -175,12 +219,21 @@ try {
     Save-Json $stPath @{ seq = $seq; total_input = $totalIn; total_output = $totalOut; cost_usd = $costTotal; subagent_usd = $costSub; last_cu_sig = $lastCuSig; last_call_ms = $lastCallMs; last_context = $ctxObj }
   }
 
-  if ($job.Count -gt 0) {
-    New-Item -ItemType Directory -Force $stateDir | Out-Null
-    $jobPath = Join-Path $stateDir ".job-$PID-$([Guid]::NewGuid().ToString('N').Substring(0,8)).json"
-    Save-Json $jobPath $job
-    if ($Sync) { Deliver-Job $jobPath }
-    else { Start-Process -WindowStyle Hidden -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Deliver', $jobPath) | Out-Null }
-  }
+  $q = Load-Json $queuePath
+  $recs = @($q.records | Where-Object { $null -ne $_ })
+  if ($newRecord) { $recs += $newRecord }
+  if ($recs.Count -gt 500) { $recs = $recs[($recs.Count - 500)..($recs.Count - 1)] }
+  $qLims = if ($newLimits) { $newLimits } elseif ($q.limits) { @($q.limits) } else { $null }
+  $lastFlush = if ($q.last_flush_ms) { [int64]$q.last_flush_ms } else { 0 }
+  $hasWork = ($recs.Count -gt 0) -or ($qLims -and $qLims.Count -gt 0)
+  if ($hasWork -and $lastFlush -eq 0) { $lastFlush = $nowMs }
+  Save-Json $queuePath @{ records = $recs; limits = $qLims; last_flush_ms = $lastFlush }
+
+  $elapsed = if ($lastFlush -gt 0) { $nowMs - $lastFlush } else { 0 }
+  $shouldFlush = $hasWork -and ($Sync -or $Flush -or $agentState -eq 'idle' -or ($qLims -and $agentState -ne 'working' -and $recs.Count -eq 0) -or $recs.Count -ge 10 -or $elapsed -ge [int64]($flushSec * 1000))
+  if (-not $shouldFlush) { exit 0 }
+
+  if ($Sync) { Deliver-Queue }
+  else { Start-Process -WindowStyle Hidden -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Deliver') | Out-Null }
 } catch {}
 exit 0

@@ -38,6 +38,7 @@ export async function deleteDevice(env: Env, email: string, id: string): Promise
     env.DB.prepare('DELETE FROM mod_sessions WHERE device_id = ?').bind(id),
     env.DB.prepare('DELETE FROM devices WHERE id = ? AND user_email = ?').bind(id, email),
   ])
+  await env.DB.prepare('DELETE FROM hourly_buckets WHERE device_id = ?').bind(id).run().catch(() => undefined)
   if (env.EVENTS) await env.EVENTS.prepare('DELETE FROM events WHERE user_email = ? AND device_id = ?').bind(email, id).run().catch(() => undefined)
   return true
 }

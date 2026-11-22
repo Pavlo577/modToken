@@ -2,6 +2,8 @@
 // or `Authorization: Bearer <token>` (what most OTLP exporters are set up with). Calls become turn rows by ADDING to the row of the turn
 // (unlike /api/ingest, where a resent turn keeps the maximum); a call that was counted before changes nothing.
 import type { Env } from './env.ts'
+import { hourOf, refreshHourlyBuckets } from './buckets.ts'
+import type { BucketTarget } from './buckets.ts'
 import { MAX_RECORDS, codexCallMs, codexOwnSession, parseOtlpLogs } from './otlp.ts'
 import type { EventRow, ModelCall } from './otlp.ts'
 import { liveCall, pushLive } from './live.ts'
@@ -9,10 +11,9 @@ import type { LiveCall } from './live.ts'
 import { sha256, text } from './util.ts'
 
 const MAX_BODY_BYTES = 4_000_000
-const CHUNK = 100 // calls per D1 batch (two statements each)
-const KEEP_EVENTS_DAYS = 90 // how long the events database keeps an event
+const CHUNK = 100 // calls per D1 batch (three statements each)
 const EVENT_CHUNK = 50
-const KEEP_CALLS_DAYS = 14 // how long a counted call is remembered (an exporter retries within minutes)
+const KEEP_EVENTS_DAYS = 90
 const CODEX_CALL_WINDOW = 3 * 60_000 // how far back a Codex call's request is looked for: calls take seconds; a longer one gets no duration
 
 /** The device behind the token in `x-device-token` or `Authorization: Bearer`, if it is not revoked. */
@@ -47,13 +48,13 @@ async function readBody(req: Request): Promise<string | null> {
 const OK = () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
 
 /**
- * The statements that count one call. With live updates on, the first one asks whether the call's turn row is there already (one read
- * through the (device_id, turn_id) unique index): a call that creates it starts a turn on the open dashboards.
+ * The statements that count one call. The first statement checks whether the call's turn row is already present (via the (device_id, turn_id)
+ * unique index) so we know both whether it opens a new live turn and whether its hour changed for incremental `hourly_buckets` refresh.
  */
 function callStatements(env: Env, email: string, deviceId: string, c: ModelCall, now: string) {
   const turnId = `otlp:${c.provider}:${c.session_id}:${c.turn_key}`.slice(0, 200)
   return [
-    ...(env.LIVE ? [env.DB.prepare('SELECT 1 AS hit FROM token_events WHERE device_id = ? AND turn_id = ?').bind(deviceId, turnId)] : []),
+    env.DB.prepare('SELECT ts FROM token_events WHERE device_id = ? AND turn_id = ?').bind(deviceId, turnId),
     env.DB.prepare('INSERT OR IGNORE INTO otlp_calls (device_id, call_id, seen_at) VALUES (?, ?, ?)').bind(deviceId, c.call_id, now),
     // Only when the line above really added the call (changes() = 1): the row of the turn grows by this call's numbers.
     env.DB.prepare(
@@ -80,14 +81,14 @@ function callStatements(env: Env, email: string, deviceId: string, c: ModelCall,
 /** Every record of the request into the events database (own database: it may fail or be absent without touching the counting). */
 async function storeEvents(env: Env, dev: { id: string; user_email: string }, events: EventRow[]): Promise<void> {
   if (!env.EVENTS || !events.length) return
+  const cutoff = new Date(Date.now() - KEEP_EVENTS_DAYS * 86_400_000).toISOString()
+  const fresh = events.filter(e => e.ts >= cutoff)
+  if (!fresh.length) return
   try {
     const sql = 'INSERT OR IGNORE INTO events (device_id, user_email, dedupe, ts, name, service, session_id, prompt_id, surface, attrs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    for (let i = 0; i < events.length; i += EVENT_CHUNK) {
-      await env.EVENTS.batch(events.slice(i, i + EVENT_CHUNK).map(e => env.EVENTS!.prepare(sql).bind(dev.id, dev.user_email, e.dedupe, e.ts, e.name, e.service, e.session_id, e.prompt_id, e.surface, e.attrs)))
+    for (let i = 0; i < fresh.length; i += EVENT_CHUNK) {
+      await env.EVENTS.batch(fresh.slice(i, i + EVENT_CHUNK).map(e => env.EVENTS!.prepare(sql).bind(dev.id, dev.user_email, e.dedupe, e.ts, e.name, e.service, e.session_id, e.prompt_id, e.surface, e.attrs)))
     }
-    const cutoff = new Date(Date.now() - KEEP_EVENTS_DAYS * 86_400_000).toISOString()
-    // per user, so the (user_email, ts) index answers it: without user_email it read the whole table on every request
-    await env.EVENTS.prepare('DELETE FROM events WHERE id IN (SELECT id FROM events WHERE user_email = ?1 AND ts < ?2 LIMIT 500)').bind(dev.user_email, cutoff).run()
   } catch (e) {
     console.error('events database: ' + (e instanceof Error ? e.message : 'failed')) // never the data
   }
@@ -144,15 +145,23 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
   await storeEvents(env, dev, parsed.events) // first: the Codex context below reads this request's events too
   await codexContext(env, dev.user_email, dev.id, parsed.calls)
   const live: LiveCall[] = []
+  const touched: BucketTarget[] = []
   for (let i = 0; i < parsed.calls.length; i += CHUNK) {
     const part = parsed.calls.slice(i, i + CHUNK)
     const results = await env.DB.batch(part.flatMap(c => callStatements(env, dev.user_email, dev.id, c, now)))
-    // live: only calls counted now (a resent one changed nothing); a turn is new when its row was not there before
-    if (env.LIVE) part.forEach((c, k) => {
-      const [exists, counted] = [results[k * 3], results[k * 3 + 1]]
-      if (counted.meta.changes) live.push(liveCall(c, dev.name, c.kind === 'main' && !exists.results.length))
+    // live & hourly_buckets: only calls counted now (a resent one changed nothing); a turn is new when its row was not there before
+    part.forEach((c, k) => {
+      const exists = results[k * 3] as { results: { ts: string }[] }
+      const counted = results[k * 3 + 1]
+      if (!counted.meta.changes) return
+      const newH = hourOf(c.ts)
+      touched.push({ deviceId: dev.id, provider: c.provider, h: newH })
+      const prevTs = exists.results[0]?.ts
+      if (prevTs && hourOf(prevTs) !== newH) touched.push({ deviceId: dev.id, provider: c.provider, h: hourOf(prevTs) })
+      if (env.LIVE) live.push(liveCall(c, dev.name, c.kind === 'main' && !exists.results.length))
     })
   }
+  await refreshHourlyBuckets(env, touched)
   await pushLive(env, dev.user_email, live)
   // the key names accumulate (a later request with fewer fields must not forget a field seen before): merged with what is stored, one small read per request
   const stored = parsed.seen.length
@@ -166,12 +175,10 @@ export async function otlpLogs(req: Request, env: Env): Promise<Response> {
        ON CONFLICT (device_id, service, event) DO UPDATE SET n = n + excluded.n, keys = excluded.keys, lens = excluded.lens, sample = excluded.sample, last_seen = excluded.last_seen`,
     ).bind(dev.id, x.service, x.event, x.keys, x.lens, env.DEBUG_OTLP === '1' || env.DEBUG_OTLP === 'raw' ? x.sample : '', x.n, now).run()
   }
-  const cutoff = new Date(Date.now() - KEEP_CALLS_DAYS * 86_400_000).toISOString()
   const since = parsed.calls.reduce<string | null>((m, c) => (m === null || c.ts < m ? c.ts : m), null) // earliest call of this request
   await env.DB.batch([
     env.DB.prepare('UPDATE devices SET otlp_since = MIN(COALESCE(otlp_since, ?1), ?1) WHERE id = ?2 AND ?1 IS NOT NULL').bind(since, dev.id),
-    env.DB.prepare('DELETE FROM otlp_calls WHERE rowid IN (SELECT rowid FROM otlp_calls WHERE seen_at < ? LIMIT 200)').bind(cutoff),
-    env.DB.prepare('UPDATE devices SET last_seen = ? WHERE id = ?').bind(now, dev.id),
+    env.DB.prepare('UPDATE devices SET last_seen = MAX(COALESCE(last_seen, ?1), ?1) WHERE id = ?2').bind(now, dev.id),
   ])
   return OK()
 }

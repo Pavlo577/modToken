@@ -115,6 +115,9 @@ export async function activityIngest(req: Request, env: Env): Promise<Response> 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(dev.id, dev.user_email, t.session, t.id, t.ts, t.wall_ms, t.think_ms, t.outcome, t.context_pct, t.context_tokens, t.context_window, t.perm_asks, t.perm_denied, t.perm_wait_ms, provider))
   }
-  if (stmts.length) await env.DB.batch(stmts)
+  if (stmts.length) {
+    stmts.push(env.DB.prepare('UPDATE devices SET last_seen = MAX(COALESCE(last_seen, ?1), ?1) WHERE id = ?2').bind(new Date().toISOString(), dev.id))
+    await env.DB.batch(stmts)
+  }
   return json({ turns: parsed.turns.length, session: !!s })
 }

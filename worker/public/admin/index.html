@@ -144,7 +144,7 @@
     </div>
     <div id="ins-off" class="card hide"><div class="empty">База подій не підключена: дашборд показує лише токени.</div></div>
     <div id="ins-body">
-      <div class="card"><div class="card-head"><div><h2>Куди йдуть гроші</h2><p class="sub">Оцінка вартості за джерелом запиту: твої повідомлення проти фонової роботи Claude</p></div></div><div class="rows" id="ins-source"></div><p class="note" id="ins-source-note"></p></div>
+      <div class="card"><div class="card-head"><div><h2>Куди йдуть гроші</h2><p class="sub">Оцінка вартості за джерелом запиту: твої повідомлення, субагенти та фонова робота</p></div></div><div class="rows" id="ins-source"></div><p class="note" id="ins-source-note"></p></div>
       <div class="card">
         <div class="card-head"><div><h2>Витрати за днями</h2><p class="sub">Оцінка вартості за джерелом запиту</p></div><div class="legend" id="ins-day-legend"></div></div>
         <div id="ins-day-chart"></div>
@@ -170,12 +170,12 @@
       </div>
       <div class="card hide" id="codex-review"><div class="card-head"><div><h2>Автоперевірка Codex</h2><p class="sub">Codex перевіряє дії окремою моделлю (codex-auto-review): скільки токенів і грошей це забирає і хто вирішує, чи можна виконати дію</p></div></div><div id="codex-review-sum" class="lat-summary"></div><div class="rows" id="codex-review-rows" style="margin-top:12px"></div></div>
       <div class="grid cols2">
-        <div class="card"><div class="card-head"><div><h2>Субагенти</h2><p class="sub">Допоміжні агенти, яких запускає Claude, за типами</p></div></div><div class="scroll" id="ins-subagents"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Субагенти</h2><p class="sub">Допоміжні агенти, яких запускають агенти, за типами</p></div></div><div class="scroll" id="ins-subagents"></div></div>
         <div class="card"><div class="card-head"><div><h2>Стиснення контексту</h2><p class="sub">Коли розмова стискається, і скільки токенів це зберігає</p></div></div><div class="scroll" id="ins-compaction"></div></div>
       </div>
       <div class="grid cols2">
         <div class="card"><div class="card-head"><div><h2>Помилки API</h2><p class="sub">Збої запитів і вичерпані повтори</p></div></div><div class="scroll" id="ins-errors"></div></div>
-        <div class="card"><div class="card-head"><div><h2>Ти і Claude</h2><p class="sub">Повідомлень за днями й команди</p></div></div><div id="ins-prompts"></div><div class="scroll" id="ins-commands" style="margin-top:12px"></div></div>
+        <div class="card"><div class="card-head"><div><h2>Твої повідомлення</h2><p class="sub">Повідомлення за днями й команди</p></div></div><div id="ins-prompts"></div><div class="scroll" id="ins-commands" style="margin-top:12px"></div></div>
       </div>
       <details class="more" id="ins-more">
         <summary>Додатково: скіли, поверхні, хуки, MCP-сервери й відмови моделі</summary>

@@ -107,3 +107,30 @@ CREATE TABLE IF NOT EXISTS mod_turns (
   PRIMARY KEY (device_id, turn_id)
 );
 CREATE INDEX IF NOT EXISTS mod_turns_user_idx ON mod_turns (user_email, ts);
+
+-- Pre-aggregated hourly UTC buckets (maintained incrementally on OTLP ingest and history import so /api/admin/buckets stays O(hours) instead of scanning token_events).
+CREATE TABLE IF NOT EXISTS hourly_buckets (
+  user_email TEXT NOT NULL,
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  h TEXT NOT NULL,
+  model TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'claude',
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  bg_output INTEGER NOT NULL DEFAULT 0,
+  cost_micros INTEGER NOT NULL DEFAULT 0,
+  sub INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (device_id, h, model, provider)
+);
+CREATE INDEX IF NOT EXISTS hourly_buckets_user_h_idx ON hourly_buckets (user_email, h);
+
+-- Small key-value store for Worker metadata such as auto-refreshed model pricing (prices).
+CREATE TABLE IF NOT EXISTS app_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

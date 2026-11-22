@@ -4,6 +4,7 @@
   "compatibility_date": "2025-01-01",
   "build": { "command": "bun run build", "watch_dir": "web" },
   "assets": { "directory": "./public", "binding": "ASSETS" },
+  "triggers": { "crons": ["0 * * * *"] },
   // the dashboard's live updates (src/live.ts): one Durable Object per user, SQLite-backed (the free plan's kind)
   "durable_objects": { "bindings": [{ "name": "LIVE", "class_name": "Live" }] },
   "migrations": [{ "tag": "live-v1", "new_sqlite_classes": ["Live"] }],

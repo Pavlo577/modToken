@@ -6,6 +6,7 @@ import { otlpIgnored, otlpLogs } from './otlp-ingest.ts'
 import { activityIngest, modConfig } from './activity.ts'
 import { deviceImport } from './import.ts'
 import { limitsIngest } from './limits.ts'
+import { runMaintenance } from './maintenance.ts'
 import { pluginLogIngest } from './pluginlog.ts'
 import { text } from './util.ts'
 
@@ -29,5 +30,8 @@ export default {
     if (url.pathname === '/' && (req.method === 'GET' || req.method === 'HEAD')) return new Response(null, { status: 302, headers: { location: '/admin/' } })
     if (url.pathname.startsWith('/api/')) return text('not found', 404)
     return env.ASSETS.fetch(req)
+  },
+  async scheduled(_ctrl: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runMaintenance(env))
   },
 } satisfies ExportedHandler<Env>

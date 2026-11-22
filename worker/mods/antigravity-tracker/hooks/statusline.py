@@ -2,20 +2,28 @@
 # Token Tracker statusLine bridge for Antigravity CLI (`agy`):
 # Reads ONLY numeric token, cost, model, and subscription quota fields from Antigravity's documented statusLine JSON payload
 # (never email, conversation_title, cwd, workspace, or transcript_path).
-# - Token & cost deltas -> OTLP/HTTP JSON (POST /v1/logs, service.name "antigravity-cli", event "antigravity.api_request")
-# - Subscription quota buckets -> POST /v1/limits (provider "antigravity")
-# - Latest context window fill -> saved locally for hooks/activity.py (Stop hook)
-# Network delivery runs in a detached child process (--deliver) so statusLine returns immediately (<30ms) and never stalls the TUI.
-# Pass --sync for synchronous delivery in tests. Always exits 0.
-import json, os, re, subprocess, sys, tempfile, time, urllib.request
+# - Normalizes model display names ("Gemini 4 Neon (High)" -> "gemini-4-neon-high") for pricing lookup.
+# - Buffers OTLP logRecords & quota snapshots locally in `queue.json` (PC-side cache, up to 500 records) and flushes in batches
+#   on turn end (agent_state=idle or --flush), >=10 buffered records, or >=flush_seconds (default 15s); keeps items on offline errors.
+# - Network delivery runs in a detached child process (--deliver) so statusLine returns immediately (<30ms) and never stalls the TUI.
+# Pass --sync for synchronous flush in tests, or --flush to trigger a background flush of the queue. Always exits 0.
+import contextlib, json, os, re, subprocess, sys, tempfile, time, urllib.request
 from datetime import datetime, timedelta, timezone
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 CLI_DIR = os.environ.get('ANTIGRAVITY_CLI_DIR') or os.path.join(os.path.expanduser('~'), '.gemini', 'antigravity-cli')
 DATA = os.environ.get('ANTIGRAVITY_TRACKER_DIR') or os.path.join(CLI_DIR, 'token-tracker')
 STATE_DIR = os.path.join(DATA, 'state')
 ACT_DIR = os.path.join(DATA, 'activity')
+QUEUE_PATH = os.path.join(DATA, 'queue.json')
 ID = re.compile(r'^[\w-]{1,80}$')
 HEARTBEAT = 3600  # at most one "limits" heartbeat per hour in /v1/plugin-log
+DEFAULT_FLUSH_SECONDS = 15
+MAX_QUEUE_RECORDS = 500
 
 
 def now_utc():
@@ -58,15 +66,40 @@ def save_json(path, obj):
             pass
 
 
+@contextlib.contextmanager
+def file_lock(name, blocking=True):
+    os.makedirs(DATA, exist_ok=True)
+    path = os.path.join(DATA, name)
+    f = open(path, 'a+', encoding='utf-8')
+    locked = False
+    try:
+        if fcntl is not None:
+            flags = fcntl.LOCK_EX if blocking else (fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(f.fileno(), flags)
+            locked = True
+        yield True
+    except BlockingIOError:
+        yield False
+    finally:
+        if locked and fcntl is not None:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        f.close()
+
+
 def load_config():
     cfg = load_json(os.path.join(DATA, 'config.json'))
     site = cfg.get('site') if isinstance(cfg.get('site'), str) else ''
     token = cfg.get('token') if isinstance(cfg.get('token'), str) else ''
     chain = cfg.get('chain_command') if isinstance(cfg.get('chain_command'), str) else ''
+    fs = cfg.get('flush_seconds')
+    flush_sec = float(fs) if isinstance(fs, (int, float)) and not isinstance(fs, bool) and fs >= 0 else DEFAULT_FLUSH_SECONDS
     site = site.rstrip('/')
     if not site.startswith(('http://', 'https://')) or not token:
-        return None, None, chain
-    return site, token, chain
+        return None, None, chain, flush_sec
+    return site, token, chain, flush_sec
 
 
 def post(site, token, path, body, timeout=5):
@@ -109,6 +142,20 @@ def clean_str(v, limit=120):
     return v.strip()[:limit] if isinstance(v, str) else ''
 
 
+def normalize_model(raw):
+    s = clean_str(raw, 100)
+    if not s:
+        return 'unknown'
+    if re.match(r'^[a-z0-9._-]+$', s):
+        return s
+    slug = re.sub(r'[()]+', '', s.lower())
+    slug = re.sub(r'[\s/]+', '-', slug)
+    slug = re.sub(r'-+', '-', slug).strip('-')
+    if slug.startswith('claude-'):
+        slug = re.sub(r'(\d)\.(\d)', r'\1-\2', slug)
+    return slug or 'unknown'
+
+
 def quota_kind(name, reset_in_seconds):
     low = name.lower()
     if any(k in low for k in ('week', '7d', 'seven')) or (isinstance(reset_in_seconds, (int, float)) and reset_in_seconds > 86400):
@@ -147,7 +194,7 @@ def parse_quotas(quota_obj, dt_now):
     return [by_kind[k] for k in sorted(by_kind.keys())]
 
 
-def otlp_record(session_id, prompt_id, call_id, dt_now, model_id, effort, new_input, output, cache_read, cache_write, duration_ms, cost_micros, query_source, version):
+def otlp_log_record(session_id, prompt_id, call_id, dt_now, model_id, effort, new_input, output, cache_read, cache_write, duration_ms, cost_micros, query_source, version):
     attrs = [
         {'key': 'event.name', 'value': {'stringValue': 'antigravity.api_request'}},
         {'key': 'session.id', 'value': {'stringValue': session_id}},
@@ -168,12 +215,16 @@ def otlp_record(session_id, prompt_id, call_id, dt_now, model_id, effort, new_in
     if version:
         attrs.append({'key': 'service.version', 'value': {'stringValue': version}})
     ns = str(int(dt_now.timestamp() * 1_000_000_000))
-    return {
-        'resourceLogs': [{
-            'resource': {'attributes': [{'key': 'service.name', 'value': {'stringValue': 'antigravity-cli'}}]},
-            'scopeLogs': [{'logRecords': [{'timeUnixNano': ns, 'attributes': attrs}]}],
-        }],
-    }
+    return {'timeUnixNano': ns, 'attributes': attrs}
+
+
+def record_request_id(rec):
+    for a in rec.get('attributes') or []:
+        if isinstance(a, dict) and a.get('key') == 'request_id':
+            v = a.get('value')
+            if isinstance(v, dict) and isinstance(v.get('stringValue'), str):
+                return v['stringValue']
+    return ''
 
 
 def tidy_states():
@@ -187,32 +238,92 @@ def tidy_states():
         pass
 
 
-def deliver(job_path):
-    try:
-        job = load_json(job_path)
-    finally:
-        try:
-            os.unlink(job_path)
-        except OSError:
-            pass
-    site, token, _ = load_config()
+def enqueue_work(record, limits, agent_state, flush_sec, force_flush):
+    now_ms = int(time.time() * 1000)
+    with file_lock('queue.lock', blocking=True):
+        q = load_json(QUEUE_PATH)
+        records = q.get('records') if isinstance(q.get('records'), list) else []
+        q_limits = q.get('limits') if isinstance(q.get('limits'), list) else None
+        last_flush_ms = non_neg_int(q.get('last_flush_ms'))
+
+        if record is not None:
+            records.append(record)
+            if len(records) > MAX_QUEUE_RECORDS:
+                records = records[-MAX_QUEUE_RECORDS:]
+        if limits:
+            q_limits = limits
+
+        has_work = bool(records) or bool(q_limits)
+        if has_work and not last_flush_ms:
+            last_flush_ms = now_ms
+
+        save_json(QUEUE_PATH, {'records': records, 'limits': q_limits, 'last_flush_ms': last_flush_ms})
+
+        elapsed_ms = now_ms - last_flush_ms if last_flush_ms else 0
+        return has_work and (
+            force_flush
+            or agent_state == 'idle'
+            or (bool(q_limits) and agent_state != 'working' and not records)
+            or len(records) >= 10
+            or elapsed_ms >= int(flush_sec * 1000)
+        )
+
+
+def deliver_queue():
+    site, token, _, _ = load_config()
     if not site or not token:
         return
-    if 'otlp' in job:
-        try:
-            post(site, token, '/v1/logs', job['otlp'], timeout=5)
-        except Exception as e:
-            record_error(site, token, 'statusline', e)
-    if 'limits' in job:
-        try:
-            post(site, token, '/v1/limits', {'provider': 'antigravity', 'limits': job['limits']}, timeout=5)
-            beat = os.path.join(DATA, 'limits-reported')
-            if not os.path.exists(beat) or time.time() - os.path.getmtime(beat) > HEARTBEAT:
-                os.makedirs(DATA, exist_ok=True)
-                open(beat, 'w').close()
-                report_log(site, token, [{'kind': 'limits', 'n': len(job['limits'])}])
-        except Exception as e:
-            record_error(site, token, 'limits', e)
+    with file_lock('deliver.lock', blocking=False) as acquired:
+        if not acquired:
+            return
+        with file_lock('queue.lock', blocking=True):
+            q = load_json(QUEUE_PATH)
+            records = q.get('records') if isinstance(q.get('records'), list) else []
+            limits = q.get('limits') if isinstance(q.get('limits'), list) else None
+        if not records and not limits:
+            return
+
+        sent_ids = set()
+        limits_sent = False
+        if records:
+            otlp_body = {
+                'resourceLogs': [{
+                    'resource': {'attributes': [{'key': 'service.name', 'value': {'stringValue': 'antigravity-cli'}}]},
+                    'scopeLogs': [{'logRecords': records}],
+                }],
+            }
+            try:
+                post(site, token, '/v1/logs', otlp_body, timeout=5)
+                sent_ids = {record_request_id(r) for r in records if record_request_id(r)}
+            except Exception as e:
+                record_error(site, token, 'statusline', e)
+
+        if limits:
+            try:
+                post(site, token, '/v1/limits', {'provider': 'antigravity', 'limits': limits}, timeout=5)
+                limits_sent = True
+                beat = os.path.join(DATA, 'limits-reported')
+                if not os.path.exists(beat) or time.time() - os.path.getmtime(beat) > HEARTBEAT:
+                    os.makedirs(DATA, exist_ok=True)
+                    open(beat, 'w').close()
+                    report_log(site, token, [{'kind': 'limits', 'n': len(limits)}])
+            except Exception as e:
+                record_error(site, token, 'limits', e)
+
+        if sent_ids or limits_sent:
+            with file_lock('queue.lock', blocking=True):
+                cur = load_json(QUEUE_PATH)
+                cur_recs = cur.get('records') if isinstance(cur.get('records'), list) else []
+                if sent_ids:
+                    cur_recs = [r for r in cur_recs if record_request_id(r) not in sent_ids]
+                cur_lim = cur.get('limits') if isinstance(cur.get('limits'), list) else None
+                if limits_sent and cur_lim == limits:
+                    cur_lim = None
+                save_json(QUEUE_PATH, {
+                    'records': cur_recs,
+                    'limits': cur_lim,
+                    'last_flush_ms': 0 if not cur_recs and not cur_lim else non_neg_int(cur.get('last_flush_ms')),
+                })
 
 
 def run_chain(chain_cmd, raw_stdin):
@@ -228,18 +339,35 @@ def run_chain(chain_cmd, raw_stdin):
 
 
 def main():
-    if len(sys.argv) >= 3 and sys.argv[1] == '--deliver':
-        deliver(sys.argv[2])
+    if '--deliver' in sys.argv[1:]:
+        deliver_queue()
         return
 
     sync = '--sync' in sys.argv[1:]
-    raw_stdin = sys.stdin.read(2 * 1024 * 1024) if sys.stdin and not sys.stdin.isatty() else ''
-    site, token, chain_cmd = load_config()
-    if chain_cmd:
+    flush = '--flush' in sys.argv[1:]
+    if flush and (not sys.stdin or sys.stdin.isatty()):
+        raw_stdin = ''
+    else:
+        raw_stdin = sys.stdin.read(2 * 1024 * 1024) if sys.stdin and not sys.stdin.isatty() else ''
+
+    site, token, chain_cmd, flush_sec = load_config()
+    if chain_cmd and raw_stdin:
         run_chain(chain_cmd, raw_stdin)
-    if not site or not token or not raw_stdin.strip():
+    if not site or not token:
         return
 
+    if flush and not raw_stdin.strip():
+        if sync:
+            deliver_queue()
+        else:
+            subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), '--deliver'],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+        return
+
+    if not raw_stdin.strip():
+        return
     try:
         payload = json.loads(raw_stdin)
     except ValueError:
@@ -248,7 +376,9 @@ def main():
         return
 
     dt_now = now_utc()
-    job = {}
+    new_limits = None
+    new_record = None
+    agent_state = clean_str(payload.get('agent_state'), 30).lower()
 
     # 1. Quota / subscription limits (independent of conversation_id)
     limits = parse_quotas(payload.get('quota'), dt_now)
@@ -258,7 +388,7 @@ def main():
         sig = json.dumps([[x['kind'], x['percentUsed'], x.get('resetsAt', '')[:16]] for x in limits])
         if q_state.get('sig') != sig:
             save_json(q_path, {'sig': sig, 'ts': iso_now(dt_now)})
-            job['limits'] = limits
+            new_limits = limits
 
     # 2. Session tokens, cost, and context window
     session_id = payload.get('conversation_id') or payload.get('session_id')
@@ -299,7 +429,6 @@ def main():
         prev_cost = non_neg_float(st.get('cost_usd'))
         prev_sub = non_neg_float(st.get('subagent_usd'))
 
-        # Handle session reset if totals ever drop
         if total_in < prev_in or total_out < prev_out:
             prev_in, prev_out, prev_cost, prev_sub = 0, 0, 0.0, 0.0
 
@@ -314,10 +443,7 @@ def main():
                 cache_read = non_neg_int(cu.get('cache_read_input_tokens'))
                 cache_write = non_neg_int(cu.get('cache_creation_input_tokens'))
 
-            if cache_read + cache_write <= delta_in_total:
-                new_input = delta_in_total - cache_read - cache_write
-            else:
-                new_input = delta_in_total
+            new_input = delta_in_total - cache_read - cache_write if cache_read + cache_write <= delta_in_total else delta_in_total
 
             delta_cost_usd = max(0.0, cost_total - prev_cost)
             delta_sub_usd = max(0.0, cost_sub - prev_sub)
@@ -342,7 +468,7 @@ def main():
                 except ValueError:
                     pass
 
-            model_id = clean_str(model.get('id') or model.get('display_name') or 'unknown', 100)
+            model_id = normalize_model(model.get('id') or model.get('display_name') or 'unknown')
             effort = clean_str(model.get('effort'), 30)
             version = clean_str(payload.get('version'), 30)
             call_id = f'{session_id}:sl:{seq}'
@@ -356,26 +482,22 @@ def main():
                 'last_cu_sig': cu_sig,
                 'last_call_ms': now_ms,
             })
-            job['otlp'] = otlp_record(
+            new_record = otlp_log_record(
                 session_id, prompt_id, call_id, dt_now, model_id, effort,
                 new_input, delta_out, cache_read, cache_write, duration_ms, cost_micros, query_source, version,
             )
 
         save_json(st_path, st)
 
-    if not job:
+    should_flush = enqueue_work(new_record, new_limits, agent_state, flush_sec, sync or flush)
+    if not should_flush:
         return
 
-    os.makedirs(STATE_DIR, exist_ok=True)
-    fd, job_path = tempfile.mkstemp(dir=STATE_DIR, prefix='.job-', suffix='.json')
-    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-        json.dump(job, f)
-
     if sync:
-        deliver(job_path)
+        deliver_queue()
     else:
         subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), '--deliver', job_path],
+            [sys.executable, os.path.abspath(__file__), '--deliver'],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

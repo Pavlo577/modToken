@@ -2,6 +2,7 @@
 // mod) or from Codex's session files (the Codex plugin's hooks/history.py / .ps1). Shared by POST /api/admin/import (the dashboard, signed in)
 // and POST /v1/import (the mod or the plugin, with the device token). Only numbers arrive.
 import type { Env } from './env.ts'
+import { hourOf, refreshHourlyBuckets } from './buckets.ts'
 import { ID_SHAPE, MAX_HISTORY_TURNS, MODEL_SHAPE } from './history.ts'
 import type { HistoryTurn } from './history.ts'
 import { recordDropped } from './dropped.ts'
@@ -61,6 +62,7 @@ export async function importTurns(env: Env, email: string, dev: { id: string; ot
   for (let i = 0; i < rows.length; i += CHUNK) {
     await env.DB.batch(rows.slice(i, i + CHUNK).map(r => sql.bind(email, dev.id, r.session, 'log:' + r.id, r.ts, r.model, r.input, r.output, r.cache_read, r.cache_creation, r.duration_ms, r.sub ? 1 : 0, provider, r.sub ? 'sub' : r.bg ? 'bg' : r.first ? 'main' : 'step')))
   }
+  await refreshHourlyBuckets(env, rows.map(r => ({ deviceId: dev.id, provider, h: hourOf(r.ts) })))
   return { added: (await count()) - before, received: rows.length, skipped_live: skippedLive, invalid }
 }
 

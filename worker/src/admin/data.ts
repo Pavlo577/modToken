@@ -1,4 +1,5 @@
 // Admin routes that hand the page its raw numbers: hourly buckets, single turns, sessions and limit readings.
+import { hourOf, nextHourIso } from '../buckets.ts'
 import { json } from '../util.ts'
 import type { Routes } from './context.ts'
 
@@ -20,10 +21,21 @@ export const dataRoutes: Routes = async ({ req, env, url, email, path }) => {
                   CASE WHEN MIN(e.cost_micros) > 0 THEN SUM(e.cost_micros) ELSE 0 END AS cost_micros`
     const all = <T>(sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args).all<T>().then(r => r.results)
     if (path === '/buckets') {
-      return json(await all(
-        `SELECT substr(e.ts, 1, 13) AS h, d.name AS device, e.model AS model, ${sums}, SUM(e.is_subagent) AS sub, e.provider AS provider
-         FROM token_events e JOIN devices d ON d.id = e.device_id
-         WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? GROUP BY h, e.device_id, e.model, e.provider LIMIT 60000`, email, a, b))
+      const hFrom = hourOf(a)
+      const hTo = b.slice(13) === ':00:00.000Z' ? hourOf(b) : hourOf(nextHourIso(hourOf(b)))
+      try {
+        return json(await all(
+          `SELECT b.h, d.name AS device, b.model, b.input_tokens AS input, b.output_tokens AS output, b.cache_read_tokens AS cache_read,
+                  b.cache_creation_tokens AS cache_creation, b.duration_ms, b.turns, b.bg_output, b.cost_micros, b.sub, b.provider
+           FROM hourly_buckets b JOIN devices d ON d.id = b.device_id
+           WHERE b.user_email = ? AND b.h >= ? AND b.h < ? LIMIT 60000`, email, hFrom, hTo))
+      } catch {
+        // Fallback if hourly_buckets does not exist yet before migration 0016
+        return json(await all(
+          `SELECT substr(e.ts, 1, 13) AS h, d.name AS device, e.model AS model, ${sums}, SUM(e.is_subagent) AS sub, e.provider AS provider
+           FROM token_events e JOIN devices d ON d.id = e.device_id
+           WHERE e.user_email = ? AND e.ts >= ? AND e.ts < ? GROUP BY h, e.device_id, e.model, e.provider LIMIT 60000`, email, a, b))
+      }
     }
     if (path === '/turns') {
       return json(await all(

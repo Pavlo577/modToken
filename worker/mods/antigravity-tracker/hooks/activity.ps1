@@ -115,6 +115,11 @@ try {
       if (-not $st.sent) { $body.session = @{ id = $sid; started_at = $started; project = $st.project; project_note = $st.project_note } }
       Save-Json $stPath @{ started_at = $started; project = $st.project; project_note = $st.project_note; sent = $true; turn_seq = if ($st.turn_seq) { [int]$st.turn_seq } else { 0 }; last_end = $at }
       Call-Api $site $tok '/v1/activity' $body | Out-Null
+      $q = Load-Json (Join-Path $data 'queue.json')
+      if (($q.records -and @($q.records).Count -gt 0) -or $q.limits) {
+        $sl = Join-Path $PSScriptRoot 'statusline.ps1'
+        if (Test-Path $sl) { Start-Process -WindowStyle Hidden -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sl, '-Flush') | Out-Null }
+      }
     }
   }
 } catch {}

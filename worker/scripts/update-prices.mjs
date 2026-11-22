@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { convert, merge, suspicious } from './prices-lib.mjs'
 
 const URL_LIST = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
-const SOURCE = 'https://github.com/BerriAI/litellm (OpenAI)'
+const SOURCE = 'https://github.com/BerriAI/litellm (OpenAI, Gemini, Anthropic)'
 const target = fileURLToPath(new URL('../public/admin/prices.json', import.meta.url))
 const arg = n => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined }
 const has = n => process.argv.includes(n)
@@ -24,7 +24,7 @@ const { file, changes } = merge(current, generated, { today: new Date().toISOStr
 const problems = suspicious(changes, generated)
 const fmt = e => `${e.input} / ${e.cache_read} / ${e.output}`
 for (const c of changes) console.log(`${c.kind.padEnd(8)} ${c.id.padEnd(28)} ${c.was ? fmt(c.was) + ' -> ' : ''}${c.now ? fmt(c.now) : ''}`)
-console.log(`${generated.length} OpenAI models in the list, ${changes.length} changes (columns: input / cached / output, USD per million)`)
+console.log(`${generated.length} models in the list, ${changes.length} changes (columns: input / cached / output, USD per million)`)
 if (problems.length && !has('--force')) {
   console.error('Not written, the result looks wrong:\n  ' + problems.join('\n  ') + '\nCheck the list, or run with --force.')
   process.exit(1)

@@ -38,7 +38,7 @@ export async function renderModStats(r: Period): Promise<void> {
   $('mod-body').classList.toggle('hide', !d.available)
   codexReview(d.codexReview)
   if (!d.available) { // the permissions card is shared with the events: say where its first half comes from
-    $('mod-perm-sum').replaceChildren(el('p', { class: 'note', style: 'margin:0' }, 'Очікування дозволів рахують мод token-tracker (Claude) і плагін Codex: за цей період від них нічого немає.'))
+    $('mod-perm-sum').replaceChildren(el('p', { class: 'note', style: 'margin:0' }, 'Очікування дозволів рахують мод token-tracker (Claude), плагін Codex і плагін Antigravity: за цей період від них нічого немає.'))
     $('mod-perm-chart').replaceChildren()
     return
   }

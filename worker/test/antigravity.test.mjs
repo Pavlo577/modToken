@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { activityProvider } from '../src/activity.ts'
 import { sortDevices } from '../src/admin/devices.ts'
+import { aggregateCallEvents } from '../src/admin/insights.ts'
 import { importProvider } from '../src/import.ts'
 import { limitsProvider } from '../src/limits.ts'
 import { parseOtlpLogs } from '../src/otlp.ts'
@@ -298,4 +299,76 @@ test('devices: devices without interactions stay at the top (newest first), then
     { name: 'never-new', created_at: '2026-11-21T23:00:00Z', last_seen: null },
   ])
   assert.deepEqual(ordered.map(d => d.name), ['never-new', 'never-old', 'latest-used', 'older-used'])
+})
+
+test('antigravity statusline: buffers working calls on PC, normalizes display model names, and flushes in one batch', async () => {
+  const srv = await site()
+  try {
+    const { root, env } = agyEnv(srv.origin, { flush_seconds: 60 })
+    const qPath = join(root, 'token-tracker', 'queue.json')
+    const base = { conversation_id: 'conv-buf-1', context_window: { context_window_size: 1000000, current_usage: { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+
+    await runPy(STATUSLINE, [], env, JSON.stringify({
+      ...base, agent_state: 'working', model: { display_name: 'Gemini 4 Neon (High)' },
+      context_window: { ...base.context_window, total_input_tokens: 100, total_output_tokens: 50 },
+    }))
+    await runPy(STATUSLINE, [], env, JSON.stringify({
+      ...base, agent_state: 'working', model: { display_name: 'Claude Opus 5.5 (Low)' },
+      context_window: { ...base.context_window, total_input_tokens: 300, total_output_tokens: 120 },
+    }))
+    assert.equal(srv.got.length, 0, 'working calls should stay buffered locally on PC')
+    assert.equal(JSON.parse(readFileSync(qPath, 'utf8')).records.length, 2)
+
+    // 3rd call with --flush --sync flushes all 3 records in a single /v1/logs batch
+    await runPy(STATUSLINE, ['--sync'], env, JSON.stringify({
+      ...base, agent_state: 'idle', model: { display_name: 'Gemini 3.8 Flash (Medium)' },
+      context_window: { ...base.context_window, total_input_tokens: 500, total_output_tokens: 200 },
+    }))
+    assert.equal(srv.got.length, 1, 'all 3 calls delivered in one batched HTTP POST')
+    const calls = parseOtlpLogs(JSON.parse(srv.got[0].body)).calls
+    assert.deepEqual(calls.map(c => c.model), ['gemini-4-neon-high', 'claude-opus-5-5-low', 'gemini-3.8-flash-medium'])
+    assert.deepEqual(JSON.parse(readFileSync(qPath, 'utf8')).records, [])
+  } finally { srv.close() }
+})
+
+test('antigravity statusline: keeps buffered records offline and delivers them once reachable', async () => {
+  const { root, env } = agyEnv('http://127.0.0.1:1')
+  const qPath = join(root, 'token-tracker', 'queue.json')
+  const cfgPath = join(root, 'token-tracker', 'config.json')
+  await runPy(STATUSLINE, ['--sync'], env, JSON.stringify({
+    conversation_id: 'conv-offline-1',
+    model: { id: 'gemini-4-neon-high' },
+    context_window: { total_input_tokens: 400, total_output_tokens: 80 },
+  }))
+  assert.equal(JSON.parse(readFileSync(qPath, 'utf8')).records.length, 1)
+  assert.ok(readFileSync(join(root, 'token-tracker', 'last-error.txt'), 'utf8').includes('statusline:'))
+
+  const srv = await site()
+  try {
+    writeFileSync(cfgPath, JSON.stringify({ site: srv.origin, token: TOKEN }))
+    await runPy(STATUSLINE, ['--flush', '--sync'], env, '')
+    assert.equal(srv.got.length, 1)
+    assert.equal(parseOtlpLogs(JSON.parse(srv.got[0].body)).calls.length, 1)
+    assert.deepEqual(JSON.parse(readFileSync(qPath, 'utf8')).records, [])
+  } finally { srv.close() }
+})
+
+test('insights: aggregateCallEvents supports Claude, Codex, and Antigravity and prices missing cost_usd_micros', () => {
+  const prices = {
+    updated: '2026-11-22', source: 'test', note: '',
+    models: [{ match: 'gemini-4-neon', input: 3, output: 15, cache_read: 0.15, cache_write: 3 }],
+  }
+  const agg = aggregateCallEvents([
+    { ts: '2026-11-22T01:00:00Z', name: 'api_request', service: 'claude-code', session_id: 's1', surface: 'vscode', attrs: JSON.stringify({ query_source: 'repl_main_thread', model: 'claude-sonnet-5-5', input_tokens: 100, output_tokens: 50, cache_read_tokens: 0, cache_creation_tokens: 0, duration_ms: 1200, cost_usd_micros: 5000 }) },
+    { ts: '2026-11-22T02:00:00Z', name: 'antigravity.api_request', service: 'antigravity-cli', session_id: 's2', surface: '', attrs: JSON.stringify({ query_source: 'repl_main_thread', model: 'gemini-4-neon-high', input_tokens: 1000, output_tokens: 100, cache_read_tokens: 10000, cache_creation_tokens: 0, duration_ms: 800, cost_usd_micros: 0 }) },
+    { ts: '2026-11-22T03:00:00Z', name: 'codex.sse_event', service: 'codex-app-server', session_id: 's3', surface: 'Codex_Desktop', attrs: JSON.stringify({ 'event.kind': 'response.completed', originator: 'Codex_Desktop', model: 'gpt-5.6-sol', input_token_count: 500, cached_token_count: 400, output_token_count: 40 }) },
+    { ts: '2026-11-22T03:01:00Z', name: 'codex.sse_event', service: 'codex-app-server', session_id: 's3', surface: 'Codex_Desktop', attrs: JSON.stringify({ 'event.kind': 'response.created', originator: 'Codex_Desktop', model: 'gpt-5.6-sol' }) },
+  ], prices)
+
+  assert.equal(agg.bySource.reduce((s, r) => s + r.calls, 0), 3, 'non-completed Codex SSE skipped')
+  assert.deepEqual(agg.bySurface.map(s => s.surface).sort(), ['Codex_Desktop', 'antigravity-cli', 'vscode'])
+  // Antigravity call cost: 1000*3 + 100*15 + 10000*0.15 = 3000 + 1500 + 1500 = 6000 micros
+  assert.equal(agg.bySurface.find(s => s.surface === 'antigravity-cli')?.cost_micros, 6000)
+  assert.equal(agg.latencyStats.duration.n, 2)
+  assert.equal(agg.latency.find(l => l.model === 'gemini-4-neon-high')?.dur_p50, 800)
 })

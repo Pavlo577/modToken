@@ -46,14 +46,14 @@ export async function limitsIngest(req: Request, env: Env): Promise<Response> {
   await recordDropped(env, dev.id, 'limits', parsed)
   const provider = limitsProvider(parsed)
   const now = new Date().toISOString()
-  if (limits.length) {
-    await env.DB.batch(limits.map(l => env.DB.prepare(
-      `INSERT INTO plan_limits (user_email, device_id, ts, kind, percent_used, resets_at, provider)
-       SELECT ?1, ?2, ?3, ?4, ?5, NULLIF(?6, ''), ?7
-       WHERE NOT EXISTS (
-         SELECT 1 FROM plan_limits WHERE id = (SELECT MAX(id) FROM plan_limits WHERE device_id = ?2 AND kind = ?4 AND provider = ?7)
-           AND percent_used = ?5 AND IFNULL(resets_at, '') = ?6)`,
-    ).bind(dev.user_email, dev.id, now, l.kind, l.percent, l.resets_at, provider)))
-  }
+  const stmts = limits.map(l => env.DB.prepare(
+    `INSERT INTO plan_limits (user_email, device_id, ts, kind, percent_used, resets_at, provider)
+     SELECT ?1, ?2, ?3, ?4, ?5, NULLIF(?6, ''), ?7
+     WHERE NOT EXISTS (
+       SELECT 1 FROM plan_limits WHERE id = (SELECT MAX(id) FROM plan_limits WHERE device_id = ?2 AND kind = ?4 AND provider = ?7)
+         AND percent_used = ?5 AND IFNULL(resets_at, '') = ?6)`,
+  ).bind(dev.user_email, dev.id, now, l.kind, l.percent, l.resets_at, provider))
+  stmts.push(env.DB.prepare('UPDATE devices SET last_seen = MAX(COALESCE(last_seen, ?1), ?1) WHERE id = ?2').bind(now, dev.id))
+  await env.DB.batch(stmts)
   return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
 }

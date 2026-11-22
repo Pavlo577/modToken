@@ -38,4 +38,4 @@ syncControls()
 
 setTab(state.tab)
 
-fetch('prices.json').then(r => r.json() as Promise<Prices>).then(p => { store.prices = p }).catch(() => {}).finally(() => void load().then(startLive))
+api<Prices>('/prices').catch(() => fetch('prices.json').then(r => r.json() as Promise<Prices>)).then(p => { store.prices = p }).catch(() => {}).finally(() => void load().then(startLive))

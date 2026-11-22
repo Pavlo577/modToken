@@ -9,11 +9,18 @@ import { deviceRoutes } from './devices.ts'
 import { historyRoutes } from './history.ts'
 import { insightRoutes } from './insights.ts'
 import { modStatsRoutes } from './modstats.ts'
-import { statsRoutes } from './stats.ts'
+import { getPrices } from '../prices.ts'
 
 const me: Routes = async ({ req, email, path }) => (path === '/me' && req.method === 'GET' ? json({ email }) : null)
+const prices: Routes = async ({ req, env, url, path }) => {
+  if (path !== '/prices' || req.method !== 'GET') return null
+  const refresh = url.searchParams.has('refresh')
+  const res = json(await getPrices(env, { refresh }))
+  if (!refresh) res.headers.set('cache-control', 'max-age=3600')
+  return res
+}
 
-const GROUPS: Routes[] = [me, deviceRoutes, historyRoutes, dataRoutes, statsRoutes, insightRoutes, modStatsRoutes]
+const GROUPS: Routes[] = [me, prices, deviceRoutes, historyRoutes, dataRoutes, insightRoutes, modStatsRoutes]
 
 export async function admin(req: Request, env: Env, url: URL): Promise<Response> {
   const who = await accessCheck(req, env)

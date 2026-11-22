@@ -6,7 +6,7 @@
 # - Stop: ends the turn with wall_ms, think_ms, and context fill from statusline.py's state file.
 # Reads ONLY conversationId, workspacePaths (used locally for git remote only) and modelName from stdin; never lastUserInput or transcriptPath.
 # Always prints `{}` to stdout and exits 0 so Antigravity is never blocked.
-import hashlib, json, os, re, sys, tempfile, time, urllib.request
+import hashlib, json, os, re, subprocess, sys, tempfile, time, urllib.request
 from datetime import datetime, timezone
 
 CLI_DIR = os.environ.get('ANTIGRAVITY_CLI_DIR') or os.path.join(os.path.expanduser('~'), '.gemini', 'antigravity-cli')
@@ -245,6 +245,14 @@ def main():
             call(site, token, '/v1/activity', body)
             state['sent'] = True
             save_json(st_path, state)
+            q = load_json(os.path.join(DATA, 'queue.json'))
+            if q.get('records') or q.get('limits'):
+                sl = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'statusline.py')
+                if os.path.isfile(sl):
+                    subprocess.Popen(
+                        [sys.executable, sl, '--flush'],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                    )
     except Exception as e:
         report_error(site, token, e)
 

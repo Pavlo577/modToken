@@ -4,6 +4,7 @@ import { lineChart } from '../charts/line.ts'
 import { COLORS } from '../charts/base.ts'
 import { PALETTE } from '../core/palette.ts'
 import { currentRange } from '../core/range.ts'
+import { state } from '../core/state.ts'
 import { get, q } from '../core/store.ts'
 import { $, el } from '../lib/dom.ts'
 import { renderModStats } from './modstats.ts'
@@ -48,17 +49,28 @@ const bytes = (v: N): string => (v == null ? '—' : v >= 1_048_576 ? (v / 1_048
 
 /** What the exporter calls a source of a request, in words. */
 const SOURCE: Record<string, string> = {
-  repl_main_thread: 'Твої запити (термінал, IDE)', sdk: 'Застосунок і хмара (SDK)', generate_session_title: 'Назви сесій',
+  repl_main_thread: 'Твої запити (термінал, IDE)', sdk: 'Застосунок і хмара (SDK)', subagent: 'Субагенти',
+  prompt_suggestion: 'Підказки вводу', generate_session_title: 'Назви сесій',
   away_summary: 'Підсумки «поки тебе не було»', compact: 'Стиснення контексту',
+  'antigravity-cli': 'Antigravity CLI', Codex_Desktop: 'Codex Desktop', codex_cli_rs: 'Codex CLI', codex_exec: 'Codex Exec', codex: 'Codex',
 }
 const sourceLabel = (s: string | null): string => (s ? SOURCE[s] ?? s : 'невідомо')
-/** What kind of work a source is: yours, or Claude working on its own. */
-const isBackground = (s: string | null): boolean => !!s && !['repl_main_thread', 'sdk'].includes(s)
+/** What kind of work a source is: yours, or background work done by the agent on its own. */
+const isBackground = (s: string | null): boolean =>
+  !!s && ['generate_session_title', 'away_summary', 'compact', 'prompt_suggestion'].includes(s)
 
-const SURFACE: Record<string, string> = { 'non-interactive': 'Застосунок Claude', pycharm: 'PyCharm', 'ssh-session': 'SSH-сесія', linux: 'Хмара (Linux)', vscode: 'VS Code', cursor: 'Cursor', tmux: 'Термінал (tmux)', 'iTerm.app': 'Термінал (iTerm)' }
+const SURFACE: Record<string, string> = {
+  'non-interactive': 'Застосунок Claude', pycharm: 'PyCharm', 'ssh-session': 'SSH-сесія', linux: 'Хмара (Linux)',
+  vscode: 'VS Code', cursor: 'Cursor', tmux: 'Термінал (tmux)', 'iTerm.app': 'Термінал (iTerm)',
+  'antigravity-cli': 'Antigravity CLI', Codex_Desktop: 'Codex Desktop', codex_cli_rs: 'Codex CLI',
+}
 const surfaceLabel = (s: string): string => SURFACE[s] ?? (s || 'невідомо')
 
-const DECISION: Record<string, string> = { config: 'за налаштуваннями', user_reject: 'відхилив ти', user_temporary: 'дозволив ти один раз', user_permanent: 'дозволив ти назавжди', hook: 'за хуком', classifier: 'за класифікатором' }
+const DECISION: Record<string, string> = {
+  config: 'за налаштуваннями', Config: 'за налаштуваннями',
+  user_reject: 'відхилив ти', user_temporary: 'дозволив ти один раз', user_permanent: 'дозволив ти назавжди', User: 'вирішив ти',
+  hook: 'за хуком', classifier: 'за класифікатором', AutomatedReviewer: 'автоперевірка Codex',
+}
 
 const bars = (box: HTMLElement, rows: { name: string; value: number; label: string; title?: string; color?: string }[], empty = 'Немає даних'): void => {
   const max = Math.max(1e-9, ...rows.map(r => r.value))
@@ -79,7 +91,9 @@ export async function renderInsights(): Promise<void> {
   const r = currentRange()
   void renderModStats(r)
   let d: Insights
-  try { d = await get<Insights>('/insights?' + q(r.from, r.to)) } catch (e) {
+  try {
+    d = await get<Insights>('/insights?' + q(r.from, r.to) + (state.provider ? '&provider=' + encodeURIComponent(state.provider) : ''))
+  } catch (e) {
     $('ins-kpis').replaceChildren(el('div', { class: 'empty', style: 'grid-column:1/-1' }, 'Не вдалося завантажити: ' + (e as Error).message)); return
   }
   $('ins-off').classList.toggle('hide', d.available)
@@ -90,13 +104,13 @@ export async function renderInsights(): Promise<void> {
   const cost = d.bySource.reduce((a, s) => a + usd(s.cost_micros), 0)
   const bg = d.bySource.filter(s => isBackground(s.source)).reduce((a, s) => a + usd(s.cost_micros), 0)
   const runs = d.tools.reduce((a, t) => a + t.runs, 0), okRuns = d.tools.reduce((a, t) => a + (t.ok ?? 0), 0)
-  const rejected = d.decisions.filter(x => x.decision === 'reject').reduce((a, x) => a + x.n, 0)
+  const rejected = d.decisions.filter(x => x.decision === 'reject' || x.decision === 'denied' || x.decision === 'abort').reduce((a, x) => a + x.n, 0)
   const decided = d.decisions.reduce((a, x) => a + x.n, 0)
   const lat = d.latency.reduce((a, l) => a + l.calls, 0)
   const ttft = lat ? d.latency.reduce((a, l) => a + l.ttft_p50 * l.calls, 0) / lat : null
   const tiles: [string, string, string, string][] = [
     ['Запитів до моделі', fmt(calls), 'var(--in)', `у ${d.totals.sessions} сесіях`],
-    ['Вартість запитів', fmtUsd(cost), 'var(--out)', 'за оцінкою Claude (cost_usd)'],
+    ['Вартість запитів', fmtUsd(cost), 'var(--out)', 'оцінка агентів та API-цін'],
     ['Фонова робота', fmtPct(cost ? bg / cost : null, 1), 'var(--cache)', 'вартості: назви, підсумки, стиснення'],
     ['Інструментів запущено', fmt(runs), 'var(--ok)', runs ? `успішно ${fmtPct(okRuns / runs)}` : 'немає даних'],
     ['Відхилено дозволів', fmt(rejected), 'var(--warn)', decided ? `з ${fmt(decided)} рішень` : 'немає даних'],
@@ -106,7 +120,7 @@ export async function renderInsights(): Promise<void> {
 
   // where the money goes
   bars($('ins-source'), d.bySource.map((s, i) => ({ name: sourceLabel(s.source), value: usd(s.cost_micros), label: `${fmtUsd(usd(s.cost_micros))} · ${fmt(s.calls)}`, title: `${s.source ?? ''}: вихідні ${fmt(s.output)}, нові вхідні ${fmt(s.fresh_input)}`, color: isBackground(s.source) ? COLORS.cache : PALETTE[i % PALETTE.length] })))
-  $('ins-source-note').textContent = d.bySource.some(s => isBackground(s.source)) ? 'Фіолетовим показано роботу, яку Claude робить сам, без твого повідомлення: придумує назви сесій, підсумовує, стискає контекст.' : ''
+  $('ins-source-note').textContent = d.bySource.some(s => isBackground(s.source)) ? 'Фіолетовим показано фонову роботу агента без прямого запиту: назви сесій, підсумки, підказки чи стиснення контексту.' : ''
 
   // money by day, by source
   const days = [...new Set(d.byDay.map(x => x.day))].sort()
@@ -147,7 +161,7 @@ export async function renderInsights(): Promise<void> {
   const perTool = new Map<string, { accept: number; reject: number }>()
   for (const x of d.decisions) {
     const e = perTool.get(x.tool ?? 'невідомо') ?? { accept: 0, reject: 0 }
-    if (x.decision === 'reject') e.reject += x.n; else e.accept += x.n
+    if (x.decision === 'reject' || x.decision === 'denied' || x.decision === 'abort') e.reject += x.n; else e.accept += x.n
     perTool.set(x.tool ?? 'невідомо', e)
   }
   const bySource = new Map<string, number>()
